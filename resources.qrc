@@ -1,0 +1,16 @@
+<RCC>
+    <qresource prefix="/">
+        <file>CANJoystickToolContent/App.qml</file>
+        <file>CANJoystickToolContent/Screen01.qml</file>
+        <file>CANJoystickTool/Constants.qml</file>
+        <file>CANJoystickTool/AluminumPanel.qml</file>
+        <file>CANJoystickTool/AxisValueBar.qml</file>
+        <file>CANJoystickTool/DirectoryFontLoader.qml</file>
+        <file>CANJoystickTool/EventListModel.qml</file>
+        <file>CANJoystickTool/EventListSimulator.qml</file>
+        <file>CANJoystickTool/JoystickPad.qml</file>
+        <file>CANJoystickTool/StatusIndicator.qml</file>
+        <file>CANJoystickTool/qmldir</file>
+        <file>qtquickcontrols2.conf</file>
+    </qresource>
+</RCC>

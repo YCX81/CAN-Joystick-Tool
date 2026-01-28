@@ -1,0 +1,32 @@
+# Build directories
+build/
+debug/
+release/
+*.pro.user
+*.pro.user.*
+
+# Qt Creator
+*.autosave
+CMakeLists.txt.user*
+*.qmlproject.user
+
+# Qt Design Studio
+*.qmlproject.qtds
+
+# Compiled files
+*.o
+*.obj
+*.moc
+*.qmlc
+*.jsc
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db

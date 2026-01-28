@@ -1,0 +1,112 @@
+MetaInfo {
+    Type {
+        name: "CANJoystickTool.EventListSimulator"
+        icon: ":/qtquickplugin/images/item-icon16.png"
+
+        Hints {
+            visibleInNavigator: true
+            canBeDroppedInNavigator: true
+            canBeDroppedInFormEditor: false
+            canBeDroppedInView3D: false
+        }
+    }
+
+    Type {
+        name: "CANJoystickTool.StatusIndicator"
+        icon: ":/qtquickplugin/images/item-icon16.png"
+
+        Hints {
+            visibleInNavigator: true
+            canBeDroppedInNavigator: true
+            canBeDroppedInFormEditor: true
+            canBeDroppedInView3D: false
+        }
+
+        ItemLibraryEntry {
+            name: "Status Indicator"
+            category: "CANJoystickTool - Controls"
+            libraryIcon: ":/qtquickplugin/images/item-icon.png"
+            version: "1.0"
+            requiredImport: "CANJoystickTool"
+
+            Property { name: "indicatorSize"; type: "int"; value: 16 }
+            Property { name: "active"; type: "bool"; value: false }
+            Property { name: "activeColor"; type: "color"; value: "#00ff88" }
+        }
+    }
+
+    Type {
+        name: "CANJoystickTool.AluminumPanel"
+        icon: ":/qtquickplugin/images/item-icon16.png"
+
+        Hints {
+            visibleInNavigator: true
+            canBeDroppedInNavigator: true
+            canBeDroppedInFormEditor: true
+            canBeDroppedInView3D: false
+        }
+
+        ItemLibraryEntry {
+            name: "Aluminum Panel"
+            category: "CANJoystickTool - Containers"
+            libraryIcon: ":/qtquickplugin/images/item-icon.png"
+            version: "1.0"
+            requiredImport: "CANJoystickTool"
+
+            Property { name: "panelWidth"; type: "int"; value: 400 }
+            Property { name: "panelHeight"; type: "int"; value: 400 }
+            Property { name: "borderRadius"; type: "int"; value: 16 }
+        }
+    }
+
+    Type {
+        name: "CANJoystickTool.AxisValueBar"
+        icon: ":/qtquickplugin/images/item-icon16.png"
+
+        Hints {
+            visibleInNavigator: true
+            canBeDroppedInNavigator: true
+            canBeDroppedInFormEditor: true
+            canBeDroppedInView3D: false
+        }
+
+        ItemLibraryEntry {
+            name: "Axis Value Bar"
+            category: "CANJoystickTool - Controls"
+            libraryIcon: ":/qtquickplugin/images/item-icon.png"
+            version: "1.0"
+            requiredImport: "CANJoystickTool"
+
+            Property { name: "value"; type: "real"; value: 0.0 }
+            Property { name: "label"; type: "string"; value: "X" }
+            Property { name: "barHeight"; type: "int"; value: 24 }
+            Property { name: "showValue"; type: "bool"; value: true }
+            Property { name: "showThumb"; type: "bool"; value: true }
+        }
+    }
+
+    Type {
+        name: "CANJoystickTool.JoystickPad"
+        icon: ":/qtquickplugin/images/item-icon16.png"
+
+        Hints {
+            visibleInNavigator: true
+            canBeDroppedInNavigator: true
+            canBeDroppedInFormEditor: true
+            canBeDroppedInView3D: false
+        }
+
+        ItemLibraryEntry {
+            name: "Joystick Pad"
+            category: "CANJoystickTool - Controls"
+            libraryIcon: ":/qtquickplugin/images/item-icon.png"
+            version: "1.0"
+            requiredImport: "CANJoystickTool"
+
+            Property { name: "padSize"; type: "int"; value: 280 }
+            Property { name: "handleSize"; type: "int"; value: 60 }
+            Property { name: "returnToCenter"; type: "bool"; value: true }
+            Property { name: "deadzone"; type: "real"; value: 0.05 }
+        }
+    }
+}

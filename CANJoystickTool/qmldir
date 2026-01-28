@@ -1,0 +1,9 @@
+module CANJoystickTool
+singleton Constants 1.0 Constants.qml
+EventListSimulator 1.0 EventListSimulator.qml
+EventListModel 1.0 EventListModel.qml
+DirectoryFontLoader 1.0 DirectoryFontLoader.qml
+StatusIndicator 1.0 StatusIndicator.qml
+AluminumPanel 1.0 AluminumPanel.qml
+AxisValueBar 1.0 AxisValueBar.qml
+JoystickPad 1.0 JoystickPad.qml
