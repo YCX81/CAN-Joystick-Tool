@@ -29,8 +29,14 @@ qt_add_qml_module(CANJoystickTool
         CANJoystickTool/EventListSimulator.qml
         CANJoystickTool/JoystickPad.qml
         CANJoystickTool/StatusIndicator.qml
+        CANJoystickTool/RollerWheel.qml
+        CANJoystickTool/RockerSwitch.qml
+        CANJoystickTool/IndustrialButton.qml
         CANJoystickToolContent/App.qml
         CANJoystickToolContent/Screen01.qml
+        CANJoystickToolContent/XYAxisCard.qml
+        CANJoystickToolContent/RollersCard.qml
+        CANJoystickToolContent/HandleCard.qml
     RESOURCES
         qtquickcontrols2.conf
 )

@@ -26,7 +26,7 @@ Item {
     property color activeGlowColor: "#00e0ff"  // 青色
 
     // 模式: "omnidirectional"(万向), "cross"(十字), "vertical"(Y轴), "horizontal"(X轴)
-    property string mode: "cross"
+    property string mode: "omnidirectional"
 
     // 状态
     property bool isDragging: false
@@ -294,8 +294,6 @@ Item {
             // ============================================================
             // 阴影层 - 使用 MultiEffect mask 裁剪到凹槽形状
             // ============================================================
-
-            // Mask 源 - 与凹槽形状完全一致
             Item {
                 id: shadowMask
                 anchors.fill: parent
@@ -354,7 +352,7 @@ Item {
                 }
             }
 
-            // 阴影内容层 - 应用 mask 裁剪
+            // 阴影内容层
             Item {
                 id: shadowLayer
                 anchors.fill: parent
@@ -455,16 +453,36 @@ Item {
                 property bool isCircleMode: mode !== "omnidirectional"
 
                 anchors.right: parent.right
-                anchors.verticalCenter: parent.verticalCenter
-                anchors.top: isCircleMode ? undefined : parent.top
-                anchors.bottom: isCircleMode ? undefined : parent.bottom
                 anchors.rightMargin: isCircleMode ? -20 : -15
                 width: isCircleMode ? edgeGlowContainer.circleSize : 30
-                height: isCircleMode ? edgeGlowContainer.circleSize : undefined
                 radius: isCircleMode ? edgeGlowContainer.circleSize / 2 : 4
                 color: edgeGlowContainer.glowColorBase
                 opacity: intensity * 0.6
                 visible: intensity > 0.01 && (mode === "omnidirectional" || mode === "cross" || mode === "horizontal")
+
+                states: [
+                    State {
+                        name: "circle"
+                        when: rightGlow.isCircleMode
+                        AnchorChanges {
+                            target: rightGlow
+                            anchors.verticalCenter: parent.verticalCenter
+                            anchors.top: undefined
+                            anchors.bottom: undefined
+                        }
+                        PropertyChanges { target: rightGlow; height: edgeGlowContainer.circleSize }
+                    },
+                    State {
+                        name: "bar"
+                        when: !rightGlow.isCircleMode
+                        AnchorChanges {
+                            target: rightGlow
+                            anchors.verticalCenter: undefined
+                            anchors.top: parent.top
+                            anchors.bottom: parent.bottom
+                        }
+                    }
+                ]
 
                 layer.enabled: visible
                 layer.effect: MultiEffect {
@@ -481,16 +499,36 @@ Item {
                 property bool isCircleMode: mode !== "omnidirectional"
 
                 anchors.left: parent.left
-                anchors.verticalCenter: parent.verticalCenter
-                anchors.top: isCircleMode ? undefined : parent.top
-                anchors.bottom: isCircleMode ? undefined : parent.bottom
                 anchors.leftMargin: isCircleMode ? -20 : -15
                 width: isCircleMode ? edgeGlowContainer.circleSize : 30
-                height: isCircleMode ? edgeGlowContainer.circleSize : undefined
                 radius: isCircleMode ? edgeGlowContainer.circleSize / 2 : 4
                 color: edgeGlowContainer.glowColorBase
                 opacity: intensity * 0.6
                 visible: intensity > 0.01 && (mode === "omnidirectional" || mode === "cross" || mode === "horizontal")
+
+                states: [
+                    State {
+                        name: "circle"
+                        when: leftGlow.isCircleMode
+                        AnchorChanges {
+                            target: leftGlow
+                            anchors.verticalCenter: parent.verticalCenter
+                            anchors.top: undefined
+                            anchors.bottom: undefined
+                        }
+                        PropertyChanges { target: leftGlow; height: edgeGlowContainer.circleSize }
+                    },
+                    State {
+                        name: "bar"
+                        when: !leftGlow.isCircleMode
+                        AnchorChanges {
+                            target: leftGlow
+                            anchors.verticalCenter: undefined
+                            anchors.top: parent.top
+                            anchors.bottom: parent.bottom
+                        }
+                    }
+                ]
 
                 layer.enabled: visible
                 layer.effect: MultiEffect {
@@ -507,16 +545,36 @@ Item {
                 property bool isCircleMode: mode !== "omnidirectional"
 
                 anchors.bottom: parent.bottom
-                anchors.horizontalCenter: parent.horizontalCenter
-                anchors.left: isCircleMode ? undefined : parent.left
-                anchors.right: isCircleMode ? undefined : parent.right
                 anchors.bottomMargin: isCircleMode ? -20 : -15
-                width: isCircleMode ? edgeGlowContainer.circleSize : undefined
                 height: isCircleMode ? edgeGlowContainer.circleSize : 30
                 radius: isCircleMode ? edgeGlowContainer.circleSize / 2 : 4
                 color: edgeGlowContainer.glowColorBase
                 opacity: intensity * 0.6
                 visible: intensity > 0.01 && (mode === "omnidirectional" || mode === "cross" || mode === "vertical")
+
+                states: [
+                    State {
+                        name: "circle"
+                        when: bottomGlow.isCircleMode
+                        AnchorChanges {
+                            target: bottomGlow
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            anchors.left: undefined
+                            anchors.right: undefined
+                        }
+                        PropertyChanges { target: bottomGlow; width: edgeGlowContainer.circleSize }
+                    },
+                    State {
+                        name: "bar"
+                        when: !bottomGlow.isCircleMode
+                        AnchorChanges {
+                            target: bottomGlow
+                            anchors.horizontalCenter: undefined
+                            anchors.left: parent.left
+                            anchors.right: parent.right
+                        }
+                    }
+                ]
 
                 layer.enabled: visible
                 layer.effect: MultiEffect {
@@ -533,16 +591,36 @@ Item {
                 property bool isCircleMode: mode !== "omnidirectional"
 
                 anchors.top: parent.top
-                anchors.horizontalCenter: parent.horizontalCenter
-                anchors.left: isCircleMode ? undefined : parent.left
-                anchors.right: isCircleMode ? undefined : parent.right
                 anchors.topMargin: isCircleMode ? -20 : -15
-                width: isCircleMode ? edgeGlowContainer.circleSize : undefined
                 height: isCircleMode ? edgeGlowContainer.circleSize : 30
                 radius: isCircleMode ? edgeGlowContainer.circleSize / 2 : 4
                 color: edgeGlowContainer.glowColorBase
                 opacity: intensity * 0.6
                 visible: intensity > 0.01 && (mode === "omnidirectional" || mode === "cross" || mode === "vertical")
+
+                states: [
+                    State {
+                        name: "circle"
+                        when: topGlow.isCircleMode
+                        AnchorChanges {
+                            target: topGlow
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            anchors.left: undefined
+                            anchors.right: undefined
+                        }
+                        PropertyChanges { target: topGlow; width: edgeGlowContainer.circleSize }
+                    },
+                    State {
+                        name: "bar"
+                        when: !topGlow.isCircleMode
+                        AnchorChanges {
+                            target: topGlow
+                            anchors.horizontalCenter: undefined
+                            anchors.left: parent.left
+                            anchors.right: parent.right
+                        }
+                    }
+                ]
 
                 layer.enabled: visible
                 layer.effect: MultiEffect {
@@ -557,14 +635,14 @@ Item {
             }
         }
 
-        // 手柄容器 - HTML: maxOffset = (rect.width/2) - 32 - 4
+        // 手柄容器
         Item {
             id: handleContainer
             z: 2  // 确保手柄在边缘发光层之上
             anchors.fill: parent
             anchors.margins: handleSize / 2 + 4  // 32 + 4 = 36
 
-            // 手柄 - HTML: control-knob
+            // 手柄
             Rectangle {
                 id: handle
                 width: handleSize
@@ -574,18 +652,18 @@ Item {
                 x: (parent.width / 2) + (xValue * parent.width / 2) - width/2
                 y: (parent.height / 2) + (yValue * parent.height / 2) - height/2
 
-                // 手柄渐变 - HTML: linear-gradient(135deg, #ffffff 0%, #e0e0e0 100%)
+                // 手柄渐变
                 gradient: Gradient {
                     GradientStop { position: 0.0; color: handleHighlight }
                     GradientStop { position: 0.4; color: "#f0f0f0" }
                     GradientStop { position: 1.0; color: handleBaseColor }
                 }
 
-                // 内边框 - HTML: 1px solid rgba(255,255,255,0.2)
+                // 内边框
                 border.width: 1
                 border.color: "#33FFFFFF"
 
-                // 手柄阴影 - HTML: 12px 12px 24px rgba(0,0,0,0.15)
+                // 手柄阴影
                 layer.enabled: true
                 layer.effect: MultiEffect {
                     shadowEnabled: true
@@ -611,8 +689,7 @@ Item {
                     }
                 }
 
-                // 中心点 - 模拟HTML knob-light的自然光晕效果
-                // HTML: box-shadow: 0 0 12px #00e0ff (自然衰减的光晕)
+                // 中心点
                 Item {
                     id: knobLight
                     anchors.centerIn: parent
@@ -665,7 +742,7 @@ Item {
                             }
                         }
 
-                        // 底部高光阴影 - HTML: 0 1px 1px rgba(255,255,255,0.5)
+                        // 底部高光阴影
                         layer.enabled: true
                         layer.effect: MultiEffect {
                             shadowEnabled: !isDragging
@@ -677,7 +754,7 @@ Item {
                     }
                 }
 
-                // 回中动画 - HTML: 0.5s cubic-bezier(0.22, 1, 0.36, 1)
+                // 回中动画
                 Behavior on x {
                     enabled: !isDragging
                     NumberAnimation {

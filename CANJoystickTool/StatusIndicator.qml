@@ -1,7 +1,7 @@
 import QtQuick 6.5
 import QtQuick.Effects
 
-// 状态指示灯 - Ive风格浅色LED设计
+// 状态指示灯
 Item {
     id: root
 

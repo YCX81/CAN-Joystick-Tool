@@ -2,6 +2,7 @@
     <qresource prefix="/">
         <file>CANJoystickToolContent/App.qml</file>
         <file>CANJoystickToolContent/Screen01.qml</file>
+        <file>CANJoystickToolContent/XYAxisCard.qml</file>
         <file>CANJoystickTool/Constants.qml</file>
         <file>CANJoystickTool/AluminumPanel.qml</file>
         <file>CANJoystickTool/AxisValueBar.qml</file>

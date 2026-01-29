@@ -1,7 +1,8 @@
 import QtQuick 6.5
 import QtQuick.Effects
 
-// 双向轴值进度条 - Ive风格浅色设计
+// 双向轴值进度条 - 完全复刻JoystickTool.html设计
+// 支持horizontal(水平)和vertical(垂直)两种方向
 Item {
     id: root
 
@@ -10,175 +11,321 @@ Item {
     property real minValue: -1.0
     property real maxValue: 1.0
 
-    // 外观配置 - Ive风格
-    property color trackColor: "#80c8c8c8"    // 浅灰半透明
-    property color fillColor: "#4b5563"        // gray-600 深灰
-    property color thumbColor: "#374151"       // gray-700
-    property color textColorValue: "#4b5563"   // 统一深灰
+    // 方向: "horizontal" 或 "vertical"
+    property string orientation: "horizontal"
+    property bool isHorizontal: orientation === "horizontal"
+
+    // 外观配置
+    property color trackColor: "#dcdcdc"         // track-well背景
+    property color fillColor: "#6b7280"          // Gray-500 填充色
+    property color fillColorActive: "#4b5563"    // Gray-600 激活填充色
+    property color centerMarkColor: "#26000000"  // 15%黑 中心刻度线
+    property color textColorLabel: "#86868b"     // 标签色
+    property color textColorValue: "#6b7280"     // 数值色
+
+    // 激活状态 (拖动时)
+    property bool active: false
 
     // 显示选项
-    property bool showThumb: true
+    property bool showLabel: true
     property bool showValue: true
     property string label: "X"
-    property int decimals: 2
+    property int decimals: 0
+    property string valueUnit: "%"
 
-    // 尺寸
-    property int barHeight: 24
-    property int thumbWidth: 6
-    property int thumbHeight: 14
+    // 尺寸: 12px轨道, 8px填充条
+    property int trackSize: 12
+    property int barSize: 8
 
-    width: 200
-    height: barHeight + (showValue ? 20 : 0)
+    // 根据方向计算尺寸
+    width: isHorizontal ? 200 : 64
+    height: isHorizontal ? 64 : 200
 
-    // 计算归一化值 (0-1)
+    // 计算归一化值 (0-1范围)
     property real normalizedValue: (value - minValue) / (maxValue - minValue)
-    // 中心点位置 (0-1)
+    // 中心点位置 (0-1范围), 对于-1到1范围, centerPoint = 0.5
     property real centerPoint: -minValue / (maxValue - minValue)
 
-    // 轨道背景
-    Rectangle {
-        id: track
-        anchors.left: parent.left
-        anchors.right: parent.right
-        anchors.top: parent.top
-        height: barHeight
-        radius: barHeight / 2
-        color: trackColor
+    // 计算填充条的位置和尺寸
+    property real fillRatio: Math.abs(normalizedValue - centerPoint)
+    property real fillStart: value >= 0 ? centerPoint : (centerPoint - fillRatio)
 
-        // 内凹效果 - 浅色Neumorphic
-        Rectangle {
-            anchors.fill: parent
-            anchors.margins: 2
-            radius: parent.radius - 2
-            color: "#e8e8e8"
+    // ========== 水平方向布局 ==========
+    Item {
+        id: horizontalLayout
+        visible: isHorizontal
+        anchors.fill: parent
 
-            // 顶部内阴影
+        // 进度条区域
+        Item {
+            id: hTrackContainer
+            anchors.top: parent.top
+            anchors.left: parent.left
+            anchors.right: parent.right
+            height: trackSize
+
+            // 圆角遮罩源
+            Item {
+                id: hTrackMask
+                anchors.fill: parent
+                layer.enabled: true
+                visible: false
+
+                Rectangle {
+                    anchors.fill: parent
+                    radius: 999
+                    color: "#FFFFFF"
+                }
+            }
+
+            // 轨道主体 - 应用MultiEffect圆角剪裁
             Rectangle {
-                anchors.top: parent.top
+                id: hTrack
+                anchors.fill: parent
+                color: trackColor
+                radius: 999
+
+                layer.enabled: true
+                layer.effect: MultiEffect {
+                    maskEnabled: true
+                    maskSource: hTrackMask
+                    maskThresholdMin: 0.5
+                    maskSpreadAtMin: 1.0
+                }
+
+                // 内凹阴影 - 顶部深色
+                Rectangle {
+                    anchors.top: parent.top
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    height: 4
+                    radius: parent.radius
+                    gradient: Gradient {
+                        GradientStop { position: 0.0; color: "#26000000" }
+                        GradientStop { position: 1.0; color: "transparent" }
+                    }
+                }
+
+                // 内凹高光 - 底部亮色
+                Rectangle {
+                    anchors.bottom: parent.bottom
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    height: 4
+                    radius: parent.radius
+                    gradient: Gradient {
+                        GradientStop { position: 0.0; color: "transparent" }
+                        GradientStop { position: 1.0; color: "#CCFFFFFF" }
+                    }
+                }
+
+                // 中心刻度线 - 垂直
+                Rectangle {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    anchors.top: parent.top
+                    anchors.bottom: parent.bottom
+                    anchors.topMargin: 2
+                    anchors.bottomMargin: 2
+                    width: 1
+                    color: centerMarkColor
+                    z: 1
+                }
+
+                // 填充条
+                Rectangle {
+                    id: hFillBar
+                    anchors.verticalCenter: parent.verticalCenter
+                    height: barSize
+                    radius: 999
+                    color: active ? fillColorActive : fillColor
+
+                    // 定位和宽度计算
+                    x: fillStart * parent.width
+                    width: fillRatio * parent.width
+
+                    z: 2
+
+                    Behavior on color {
+                        ColorAnimation { duration: 50 }
+                    }
+                }
+            }
+        }
+
+        // 标签和数值行
+        Item {
+            visible: showLabel || showValue
+            anchors.top: hTrackContainer.bottom
+            anchors.topMargin: 6
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.leftMargin: 4
+            anchors.rightMargin: 4
+            height: 16
+
+            Text {
+                visible: showLabel
                 anchors.left: parent.left
+                anchors.verticalCenter: parent.verticalCenter
+                text: "AXIS " + label
+                color: textColorLabel
+                font.pixelSize: 9
+                font.bold: true
+                font.letterSpacing: 0.5
+            }
+
+            Text {
+                visible: showValue
                 anchors.right: parent.right
-                height: 6
-                radius: parent.radius
-                gradient: Gradient {
-                    GradientStop { position: 0.0; color: "#18000000" }
-                    GradientStop { position: 1.0; color: "transparent" }
-                }
+                anchors.verticalCenter: parent.verticalCenter
+                text: (value * 100).toFixed(decimals) + valueUnit
+                color: textColorValue
+                font.pixelSize: 10
+                font.family: "JetBrains Mono, Consolas, monospace"
+                font.bold: true
             }
-        }
-
-        // 刻度线容器
-        Item {
-            anchors.fill: parent
-            anchors.margins: 4
-
-            // 中心刻度线
-            Rectangle {
-                anchors.centerIn: parent
-                width: 2
-                height: parent.height * 0.5
-                color: "#c0c0c0"
-                radius: 1
-            }
-
-            // 左侧刻度
-            Repeater {
-                model: 4
-                Rectangle {
-                    x: parent.width * (0.1 + index * 0.1) - width/2
-                    anchors.verticalCenter: parent.verticalCenter
-                    width: 1
-                    height: parent.height * 0.25
-                    color: "#d0d0d0"
-                }
-            }
-
-            // 右侧刻度
-            Repeater {
-                model: 4
-                Rectangle {
-                    x: parent.width * (0.6 + index * 0.1) - width/2
-                    anchors.verticalCenter: parent.verticalCenter
-                    width: 1
-                    height: parent.height * 0.25
-                    color: "#d0d0d0"
-                }
-            }
-        }
-
-        // 进度填充区域
-        Item {
-            id: fillArea
-            anchors.fill: parent
-            anchors.margins: 4
-            clip: true
-
-            // 进度条填充 - 统一深灰色
-            Rectangle {
-                id: fillBar
-                height: parent.height
-                radius: height / 2
-
-                // 根据值的正负决定位置和宽度
-                x: value >= 0 ? parent.width * centerPoint : parent.width * normalizedValue
-                width: Math.abs(value) / (maxValue - minValue) * parent.width
-
-                color: fillColor
-
-                // Behavior on x { NumberAnimation { duration: 50 } }
-                // Behavior on width { NumberAnimation { duration: 50 } }
-            }
-        }
-
-        // 滑块指示器 - 改为竖向椭圆
-        Rectangle {
-            id: thumb
-            visible: showThumb
-            width: thumbWidth
-            height: thumbHeight
-            radius: thumbWidth / 2
-
-            x: fillArea.x + fillArea.width * normalizedValue - width/2
-            anchors.verticalCenter: parent.verticalCenter
-
-            color: thumbColor
-
-            // 滑块阴影
-            layer.enabled: true
-            layer.effect: MultiEffect {
-                shadowEnabled: true
-                shadowColor: "#40000000"
-                shadowBlur: 0.3
-                shadowVerticalOffset: 2
-                shadowHorizontalOffset: 0
-            }
-
-            // Behavior on x { NumberAnimation { duration: 50 } }
         }
     }
 
-    // 数值显示
-    Row {
-        visible: showValue
-        anchors.top: track.bottom
-        anchors.topMargin: 4
-        anchors.horizontalCenter: parent.horizontalCenter
-        spacing: 8
+    // ========== 垂直方向布局 ==========
+    Item {
+        id: verticalLayout
+        visible: !isHorizontal
+        anchors.fill: parent
 
-        Text {
-            text: label + ":"
-            color: "#86868b"  // textSecondary
-            font.pixelSize: 11
-            font.family: "Consolas"
+        // 进度条区域 - 左侧
+        Item {
+            id: vTrackContainer
+            anchors.top: parent.top
+            anchors.bottom: parent.bottom
+            anchors.left: parent.left
+            width: trackSize
+
+            // 圆角遮罩源
+            Item {
+                id: vTrackMask
+                anchors.fill: parent
+                layer.enabled: true
+                visible: false
+
+                Rectangle {
+                    anchors.fill: parent
+                    radius: 999
+                    color: "#FFFFFF"
+                }
+            }
+
+            // 轨道主体 - 应用MultiEffect圆角剪裁
+            Rectangle {
+                id: vTrack
+                anchors.fill: parent
+                color: trackColor
+                radius: 999
+
+                layer.enabled: true
+                layer.effect: MultiEffect {
+                    maskEnabled: true
+                    maskSource: vTrackMask
+                    maskThresholdMin: 0.5
+                    maskSpreadAtMin: 1.0
+                }
+
+                // 内凹阴影 - 左侧深色
+                Rectangle {
+                    anchors.top: parent.top
+                    anchors.bottom: parent.bottom
+                    anchors.left: parent.left
+                    width: 4
+                    radius: parent.radius
+                    gradient: Gradient {
+                        orientation: Gradient.Horizontal
+                        GradientStop { position: 0.0; color: "#26000000" }
+                        GradientStop { position: 1.0; color: "transparent" }
+                    }
+                }
+
+                // 内凹高光 - 右侧亮色
+                Rectangle {
+                    anchors.top: parent.top
+                    anchors.bottom: parent.bottom
+                    anchors.right: parent.right
+                    width: 4
+                    radius: parent.radius
+                    gradient: Gradient {
+                        orientation: Gradient.Horizontal
+                        GradientStop { position: 0.0; color: "transparent" }
+                        GradientStop { position: 1.0; color: "#CCFFFFFF" }
+                    }
+                }
+
+                // 中心刻度线 - 水平
+                Rectangle {
+                    anchors.verticalCenter: parent.verticalCenter
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.leftMargin: 2
+                    anchors.rightMargin: 2
+                    height: 1
+                    color: centerMarkColor
+                    z: 1
+                }
+
+                // 填充条 - 垂直方向
+                // Y轴正值向上, 负值向下 (QML中y坐标向下增加)
+                Rectangle {
+                    id: vFillBar
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    width: barSize
+                    radius: 999
+                    color: active ? fillColorActive : fillColor
+
+                    // 使用统一的fillRatio计算
+                    // 正值时：从(centerPoint - fillRatio)开始，向下延伸
+                    // 负值时：从centerPoint开始，向下延伸
+                    y: (value >= 0 ? (centerPoint - fillRatio) : centerPoint) * parent.height
+                    height: fillRatio * parent.height
+
+                    z: 2
+
+                    Behavior on color {
+                        ColorAnimation { duration: 50 }
+                    }
+                }
+            }
         }
 
+        // 标签 - 轨道顶部右侧，留边距，右对齐
         Text {
-            text: value >= 0 ? "+" + value.toFixed(decimals) : value.toFixed(decimals)
-            color: textColorValue
-            font.pixelSize: 11
-            font.family: "Consolas"
+            id: vLabel
+            visible: showLabel
+            anchors.top: parent.top
+            anchors.topMargin: 4
+            anchors.left: vTrackContainer.right
+            anchors.leftMargin: 6
+            width: 36  // 与数值同宽
+            text: "AXIS " + label
+            color: textColorLabel
+            font.pixelSize: 9
             font.bold: true
+            font.letterSpacing: 0.5
+            horizontalAlignment: Text.AlignRight
+        }
 
-            Behavior on color { ColorAnimation { duration: 100 } }
+        // 数值 - 轨道底部右侧，固定宽度右对齐
+        Text {
+            id: vValue
+            visible: showValue
+            anchors.bottom: parent.bottom
+            anchors.bottomMargin: 4
+            anchors.left: vTrackContainer.right
+            anchors.leftMargin: 6
+            width: 36  // 预留 "-100%" 的宽度
+            text: (value * 100).toFixed(decimals) + valueUnit
+            color: textColorValue
+            font.pixelSize: 10
+            font.family: "JetBrains Mono, Consolas, monospace"
+            font.bold: true
+            horizontalAlignment: Text.AlignRight
         }
     }
 }

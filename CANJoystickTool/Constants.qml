@@ -60,19 +60,19 @@ QtObject {
     readonly property color gridColor: "#08000000"  // 3%透明度黑色
     readonly property color axisLineColor: "#0F000000"  // 6%黑轴线
 
-    // ========== 统一圆角值 (基于HTML参考) ==========
+    // ========== 统一圆角值 ==========
     readonly property int radiusPanel: 44       // 主面板
     readonly property int radiusRecessed: 36    // 凹槽区域
     readonly property int radiusCard: 12        // 轴卡片
     readonly property int radiusButton: 8       // 按钮
 
-    // ========== 阴影参数 (基于HTML box-shadow) ==========
+    // ========== 阴影参数 ==========
     readonly property int panelShadowOffset: 30   // 面板阴影偏移
     readonly property int panelShadowBlur: 60     // 面板阴影模糊
     readonly property int insetShadowOffset: 8    // 内凹阴影偏移
     readonly property int insetShadowBlur: 20     // 内凹阴影模糊
 
-    // ========== 阴影颜色 (rgba转QML格式) ==========
+    // ========== 阴影颜色 ==========
     readonly property color shadowDark12: "#1F000000"    // 12%黑 - 内凹主阴影
     readonly property color shadowDark05: "#0D000000"    // 5%黑 - 细微阴影
     readonly property color shadowDark15: "#26000000"    // 15%黑 - 手柄阴影
@@ -85,4 +85,26 @@ QtObject {
     readonly property color highlightWhite40: "#66FFFFFF"   // 40%白 - 手柄内边框
     readonly property color borderWhite30: "#4DFFFFFF"      // 30%白 - 卡片背景
     readonly property color borderWhite20: "#33FFFFFF"      // 20%白 - 手柄边框
+
+    // ========== 滚轮组件颜色 ==========
+    readonly property color rollerHousingColor: "#d4d4d4"
+    readonly property color rollerWheelColor: "#222222"
+    readonly property color rollerIndicatorColor: "#ff9500"
+
+    // ========== 翘板开关颜色 ==========
+    readonly property color rockerHousingColor: "#111111"
+    readonly property color rockerGradientStart: "#f59e0b"
+    readonly property color rockerGradientEnd: "#fbbf24"
+    readonly property color fnrForwardColor: "#22c55e"
+    readonly property color fnrNeutralColor: "#10b981"
+    readonly property color fnrReverseColor: "#ef4444"
+
+    // ========== 工业按钮颜色 ==========
+    readonly property color buttonBezelColor: "#1a1a1a"
+    readonly property color buttonRedColor: "#ef4444"
+    readonly property color buttonGreyColor: "#9ca3af"
+    readonly property color buttonGreenColor: "#00d648"
+    readonly property color buttonOrangeColor: "#f59e0b"
+    readonly property color buttonBlackColor: "#3f3f46"
+    readonly property color buttonBlueColor: "#3b82f6"
 }

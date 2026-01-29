@@ -1,7 +1,7 @@
 import QtQuick 6.5
 import QtQuick.Effects
 
-// 铝合金面板容器 - Ive风格浅色Neumorphic设计
+// 铝合金面板容器
 Item {
     id: root
 
@@ -19,7 +19,7 @@ Item {
     width: panelWidth
     height: panelHeight
 
-    // 左上高光阴影层 (HTML: -30px -30px 60px #ffffff)
+    // 左上高光阴影层
     Rectangle {
         id: topLeftShadow
         anchors.fill: parent
@@ -39,7 +39,7 @@ Item {
         }
     }
 
-    // 右下深色阴影层 (HTML: 30px 30px 60px #b0b0b0)
+    // 右下深色阴影层
     Rectangle {
         id: bottomRightShadow
         anchors.fill: parent
@@ -95,7 +95,7 @@ Item {
         Component.onCompleted: requestPaint()
     }
 
-    // 内边框高光 (HTML: inset 0 0 0 1px rgba(255,255,255,0.5))
+    // 内边框高光
     Rectangle {
         anchors.fill: parent
         radius: borderRadius
