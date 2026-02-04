@@ -139,9 +139,13 @@ Item {
                     radius: 999
                     color: active ? fillColorActive : fillColor
 
-                    // 定位和宽度计算
-                    x: fillStart * parent.width
-                    width: fillRatio * parent.width
+                    // 端点间隙（与上下间隙一致）
+                    property int endPadding: 2
+                    property real availableWidth: parent.width - 2 * endPadding
+
+                    // 定位和宽度计算（在可用区域内）
+                    x: endPadding + fillStart * availableWidth
+                    width: fillRatio * availableWidth
 
                     z: 2
 
@@ -279,11 +283,15 @@ Item {
                     radius: 999
                     color: active ? fillColorActive : fillColor
 
-                    // 使用统一的fillRatio计算
+                    // 端点间隙（与左右间隙一致）
+                    property int endPadding: 2
+                    property real availableHeight: parent.height - 2 * endPadding
+
+                    // 使用统一的fillRatio计算（在可用区域内）
                     // 正值时：从(centerPoint - fillRatio)开始，向下延伸
                     // 负值时：从centerPoint开始，向下延伸
-                    y: (value >= 0 ? (centerPoint - fillRatio) : centerPoint) * parent.height
-                    height: fillRatio * parent.height
+                    y: endPadding + (value >= 0 ? (centerPoint - fillRatio) : centerPoint) * availableHeight
+                    height: fillRatio * availableHeight
 
                     z: 2
 

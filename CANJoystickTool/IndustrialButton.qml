@@ -100,20 +100,12 @@ Item {
                 border.color: "#1A000000"
             }
 
-            // 内按钮 (button-cap)
-            Rectangle {
+            // 内按钮 (button-cap) - Canvas实现径向渐变
+            Item {
                 id: cap
                 anchors.centerIn: parent
                 width: capSize
                 height: capSize
-                radius: width / 2
-
-                // 按钮颜色渐变 (径向效果用线性渐变模拟)
-                gradient: Gradient {
-                    GradientStop { position: 0.0; color: buttonColorLight }
-                    GradientStop { position: 0.4; color: buttonColor }
-                    GradientStop { position: 1.0; color: buttonColorDark }
-                }
 
                 // 按下效果
                 scale: root.isPressed ? 0.92 : 1.0
@@ -137,26 +129,91 @@ Item {
                     shadowVerticalOffset: 3
                 }
 
-                // 顶部高光
+                // 径向渐变按钮 (radial-gradient at 35% 30%)
+                Canvas {
+                    id: capCanvas
+                    anchors.fill: parent
+
+                    property color btnLight: buttonColorLight
+                    property color btnMain: buttonColor
+                    property color btnDark: buttonColorDark
+
+                    onBtnLightChanged: requestPaint()
+                    onBtnMainChanged: requestPaint()
+                    onBtnDarkChanged: requestPaint()
+
+                    onPaint: {
+                        var ctx = getContext("2d")
+                        ctx.clearRect(0, 0, width, height)
+
+                        var centerX = width * 0.35
+                        var centerY = height * 0.30
+                        var radius = width / 2
+
+                        // 绘制圆形裁剪区域
+                        ctx.save()
+                        ctx.beginPath()
+                        ctx.arc(width / 2, height / 2, radius, 0, 2 * Math.PI)
+                        ctx.clip()
+
+                        // 径向渐变 (从高光点向外扩散)
+                        var gradient = ctx.createRadialGradient(
+                            centerX, centerY, 0,
+                            centerX, centerY, radius * 1.5
+                        )
+                        gradient.addColorStop(0, btnLight.toString())
+                        gradient.addColorStop(0.4, btnMain.toString())
+                        gradient.addColorStop(1, btnDark.toString())
+
+                        ctx.fillStyle = gradient
+                        ctx.fillRect(0, 0, width, height)
+
+                        ctx.restore()
+                    }
+
+                    Component.onCompleted: requestPaint()
+                }
+
+                // 圆形遮罩边框
                 Rectangle {
+                    anchors.fill: parent
+                    radius: width / 2
+                    color: "transparent"
+                    border.width: 1
+                    border.color: "#00000000"
+                }
+
+                // 顶部高光 (blur效果)
+                Rectangle {
+                    id: highlight
                     anchors.top: parent.top
                     anchors.horizontalCenter: parent.horizontalCenter
-                    anchors.topMargin: parent.height * 0.05
+                    anchors.topMargin: parent.height * 0.08
+                    anchors.horizontalCenterOffset: -parent.width * 0.08
                     width: parent.width * 0.45
-                    height: parent.height * 0.3
+                    height: parent.height * 0.30
                     radius: height / 2
-                    rotation: -15
+                    rotation: -45
+                    opacity: 0.7
 
                     gradient: Gradient {
-                        GradientStop { position: 0.0; color: "#B3FFFFFF" }  // 70%白
+                        GradientStop { position: 0.0; color: "#FFFFFFFF" }
                         GradientStop { position: 1.0; color: "transparent" }
+                    }
+
+                    // 模糊效果
+                    layer.enabled: true
+                    layer.effect: MultiEffect {
+                        blurEnabled: true
+                        blur: 0.3
+                        blurMax: 4
                     }
                 }
 
                 // 按下时的内凹阴影
                 Rectangle {
                     anchors.fill: parent
-                    radius: parent.radius
+                    radius: width / 2
                     visible: root.isPressed
                     gradient: Gradient {
                         GradientStop { position: 0.0; color: "#40000000" }
@@ -167,7 +224,7 @@ Item {
                 // 边缘高光
                 Rectangle {
                     anchors.fill: parent
-                    radius: parent.radius
+                    radius: width / 2
                     color: "transparent"
                     border.width: 1
                     border.color: root.isPressed ? "#1AFFFFFF" : "#33FFFFFF"

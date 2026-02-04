@@ -7,8 +7,8 @@ AluminumPanel {
     id: root
 
     // 卡片尺寸
-    panelWidth: 360
-    panelHeight: 360
+    panelWidth: 480
+    panelHeight: 480
 
     // 输出值
     readonly property real trimValue: trimRoller.value      // 竖向滚轮 (TRIM)
@@ -90,32 +90,20 @@ AluminumPanel {
                     RollerWheel {
                         id: trimRoller
                         orientation: "vertical"
-                        width: 48
-                        height: 200
+                        // 使用默认尺寸 72x200
                         anchors.verticalCenter: parent.verticalCenter
 
                         onValueChanged: root.trimChanged(trimRoller.value)
                     }
 
-                    // 进度条 + 标签
-                    Column {
-                        spacing: 0
+                    // 进度条 + 数值
+                    Row {
                         anchors.verticalCenter: parent.verticalCenter
-                        height: 200
-
-                        // 标签
-                        Text {
-                            text: "TRIM"
-                            color: Constants.textSecondary
-                            font.pixelSize: 8
-                            font.weight: Font.Bold
-                            font.letterSpacing: 0.5
-                        }
-
-                        Item { width: 1; height: 4 }
+                        spacing: 6
 
                         // 进度条
                         AxisValueBar {
+                            id: trimBar
                             orientation: "vertical"
                             value: trimRoller.value
                             active: trimRoller.isDragging
@@ -124,18 +112,18 @@ AluminumPanel {
                             showLabel: false
                             showValue: false
                             width: 12
-                            height: 170
+                            height: 180
+                            anchors.verticalCenter: parent.verticalCenter
                         }
 
-                        Item { width: 1; height: 4 }
-
-                        // 数值
+                        // 数值 - 进度条右侧居中
                         Text {
                             text: (trimRoller.value * 100).toFixed(0)
                             color: Constants.textSecondary
                             font.pixelSize: 10
                             font.family: "JetBrains Mono, Consolas, monospace"
                             font.weight: Font.Bold
+                            anchors.verticalCenter: parent.verticalCenter
                         }
                     }
                 }
@@ -160,8 +148,7 @@ AluminumPanel {
                     RollerWheel {
                         id: panRoller
                         orientation: "horizontal"
-                        width: 200
-                        height: 40
+                        // 使用默认尺寸 200x60
                         anchors.horizontalCenter: parent.horizontalCenter
 
                         onValueChanged: root.panChanged(panRoller.value)
@@ -169,6 +156,7 @@ AluminumPanel {
 
                     // 进度条
                     AxisValueBar {
+                        id: panBar
                         orientation: "horizontal"
                         value: panRoller.value
                         active: panRoller.isDragging
@@ -181,33 +169,14 @@ AluminumPanel {
                         anchors.horizontalCenter: parent.horizontalCenter
                     }
 
-                    // 标签和数值行
-                    Item {
-                        width: 200
-                        height: 16
+                    // 数值 - 居中显示
+                    Text {
+                        text: (panRoller.value * 100).toFixed(0)
+                        color: Constants.textSecondary
+                        font.pixelSize: 10
+                        font.family: "JetBrains Mono, Consolas, monospace"
+                        font.weight: Font.Bold
                         anchors.horizontalCenter: parent.horizontalCenter
-
-                        Text {
-                            anchors.left: parent.left
-                            anchors.leftMargin: 2
-                            text: "PAN"
-                            color: Constants.textSecondary
-                            font.pixelSize: 8
-                            font.weight: Font.Bold
-                            font.letterSpacing: 0.5
-                            anchors.verticalCenter: parent.verticalCenter
-                        }
-
-                        Text {
-                            anchors.right: parent.right
-                            anchors.rightMargin: 2
-                            text: (panRoller.value * 100).toFixed(0)
-                            color: Constants.textSecondary
-                            font.pixelSize: 10
-                            font.family: "JetBrains Mono, Consolas, monospace"
-                            font.weight: Font.Bold
-                            anchors.verticalCenter: parent.verticalCenter
-                        }
                     }
                 }
             }

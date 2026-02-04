@@ -5,9 +5,9 @@ import QtQuick.Effects
 Item {
     id: root
 
-    // 尺寸
-    property int switchWidth: 78
-    property int switchHeight: 142
+    // 尺寸 (HTML原型: 86×150px)
+    property int switchWidth: 86
+    property int switchHeight: 150
 
     // 状态: "F" (Forward), "N" (Neutral), "R" (Reverse)
     property string switchState: "N"
@@ -89,8 +89,25 @@ Item {
                     }
                 }
 
-                // 3D变换
+                // 3D变换 (模拟CSS perspective: 600px + rotateX)
                 transform: [
+                    // 透视变换矩阵 (模拟perspective效果)
+                    Scale {
+                        id: perspectiveScale
+                        origin.x: rocker.width / 2
+                        origin.y: rocker.height / 2
+                        // 模拟透视：按下F时顶部变小，按下R时底部变小
+                        xScale: 1.0
+                        yScale: root.switchState === "F" ? 0.97 :
+                                root.switchState === "R" ? 0.97 : 1.0
+
+                        Behavior on yScale {
+                            NumberAnimation {
+                                duration: 150
+                                easing.type: Easing.OutQuad
+                            }
+                        }
+                    },
                     Rotation {
                         id: rockerRotation
                         origin.x: rocker.width / 2
@@ -301,14 +318,15 @@ Item {
                     border.color: "#80FFFFFF"
                 }
 
-                // 按压阴影效果
+                // 按压阴影效果 (HTML: inset 0 ±20px 30px rgba(0,0,0,0.6))
                 Rectangle {
                     anchors.fill: parent
                     radius: parent.radius
                     visible: root.switchState === "F"
                     gradient: Gradient {
-                        GradientStop { position: 0.0; color: "#4D000000" }
-                        GradientStop { position: 0.3; color: "transparent" }
+                        GradientStop { position: 0.0; color: "#99000000" }  // 60% black
+                        GradientStop { position: 0.25; color: "#4D000000" }
+                        GradientStop { position: 0.5; color: "transparent" }
                         GradientStop { position: 1.0; color: "transparent" }
                     }
                 }
@@ -319,8 +337,9 @@ Item {
                     visible: root.switchState === "R"
                     gradient: Gradient {
                         GradientStop { position: 0.0; color: "transparent" }
-                        GradientStop { position: 0.7; color: "transparent" }
-                        GradientStop { position: 1.0; color: "#4D000000" }
+                        GradientStop { position: 0.5; color: "transparent" }
+                        GradientStop { position: 0.75; color: "#4D000000" }
+                        GradientStop { position: 1.0; color: "#99000000" }  // 60% black
                     }
                 }
             }
