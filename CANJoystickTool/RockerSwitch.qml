@@ -16,6 +16,8 @@ Item {
     property color housingColor: Constants.rockerHousingColor
     property color rockerGradientStart: Constants.rockerGradientStart
     property color rockerGradientEnd: Constants.rockerGradientEnd
+    property color rockerDark: "#b45309"  // 按压时的深色
+    property color rockerShadow: "#92400e"  // 厚度阴影色
     property color forwardGlow: Constants.fnrForwardColor
     property color neutralGlow: Constants.fnrNeutralColor
     property color reverseGlow: Constants.fnrReverseColor
@@ -23,22 +25,14 @@ Item {
     width: switchWidth
     height: switchHeight
 
-    // 外壳 (fnr-housing)
+    // 外壳 (fnr-housing) - 匹配HTML: background: #111
     Rectangle {
         id: housing
         anchors.fill: parent
         radius: 8
         color: housingColor
 
-        // 外壳内凹效果
-        gradient: Gradient {
-            GradientStop { position: 0.0; color: Qt.lighter(housingColor, 1.3) }
-            GradientStop { position: 0.1; color: housingColor }
-            GradientStop { position: 0.9; color: housingColor }
-            GradientStop { position: 1.0; color: Qt.darker(housingColor, 1.2) }
-        }
-
-        // 外壳阴影
+        // 外壳阴影 - 匹配HTML: box-shadow多层
         layer.enabled: true
         layer.effect: MultiEffect {
             shadowEnabled: true
@@ -49,72 +43,112 @@ Item {
             shadowVerticalOffset: 4
         }
 
-        // 内凹边框
+        // 顶部内高光 - 匹配HTML: inset 0 2px 4px rgba(255,255,255,0.2)
         Rectangle {
-            anchors.fill: parent
+            anchors.top: parent.top
+            anchors.left: parent.left
+            anchors.right: parent.right
+            height: 6
             radius: parent.radius
-            color: "transparent"
-            border.width: 1
-            border.color: "#33FFFFFF"
+            gradient: Gradient {
+                GradientStop { position: 0.0; color: "#33FFFFFF" }
+                GradientStop { position: 1.0; color: "transparent" }
+            }
         }
 
-        // 翘板容器
+        // 底部内阴影 - 匹配HTML: inset 0 -2px 4px rgba(0,0,0,0.5)
+        Rectangle {
+            anchors.bottom: parent.bottom
+            anchors.left: parent.left
+            anchors.right: parent.right
+            height: 6
+            radius: parent.radius
+            gradient: Gradient {
+                GradientStop { position: 0.0; color: "transparent" }
+                GradientStop { position: 1.0; color: "#80000000" }
+            }
+        }
+
+        // 翘板容器 - 带透视效果
         Item {
             id: rockerContainer
             anchors.fill: parent
             anchors.margins: 4
 
+            // 厚度阴影层 - 模拟翘板翘起时的底部厚度
+            // F状态: 底部可见 (0 6px 0 #92400e)
+            Rectangle {
+                id: bottomThickness
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.bottom: parent.bottom
+                height: root.switchState === "F" ? 6 : 0
+                radius: 4
+                color: rockerShadow
+
+                Behavior on height {
+                    NumberAnimation { duration: 150; easing.type: Easing.OutQuad }
+                }
+            }
+
+            // R状态: 顶部可见 (0 -6px 0 #92400e)
+            Rectangle {
+                id: topThickness
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.top: parent.top
+                height: root.switchState === "R" ? 6 : 0
+                radius: 4
+                color: rockerShadow
+
+                Behavior on height {
+                    NumberAnimation { duration: 150; easing.type: Easing.OutQuad }
+                }
+            }
+
             // 翘板主体 (rocker-switch)
             Rectangle {
                 id: rocker
                 anchors.fill: parent
+                anchors.topMargin: root.switchState === "R" ? 6 : 0
+                anchors.bottomMargin: root.switchState === "F" ? 6 : 0
                 radius: 4
 
-                // 翘板渐变 - 根据状态变化
+                Behavior on anchors.topMargin {
+                    NumberAnimation { duration: 150; easing.type: Easing.OutQuad }
+                }
+                Behavior on anchors.bottomMargin {
+                    NumberAnimation { duration: 150; easing.type: Easing.OutQuad }
+                }
+
+                // 翘板渐变 - 根据状态变化，匹配HTML
                 gradient: Gradient {
                     GradientStop {
                         position: 0.0
-                        color: root.switchState === "F" ? Qt.darker(rockerGradientStart, 1.2) :
+                        color: root.switchState === "F" ? rockerDark :
                                root.switchState === "R" ? rockerGradientEnd : rockerGradientStart
                     }
                     GradientStop {
                         position: 0.4
-                        color: root.switchState === "F" ? rockerGradientStart :
-                               root.switchState === "R" ? rockerGradientStart : rockerGradientEnd
+                        color: root.switchState === "F" ? "#d97706" :
+                               root.switchState === "R" ? "#d97706" : rockerGradientEnd
                     }
                     GradientStop {
                         position: 1.0
                         color: root.switchState === "F" ? rockerGradientEnd :
-                               root.switchState === "R" ? Qt.darker(rockerGradientStart, 1.2) : rockerGradientEnd
+                               root.switchState === "R" ? rockerDark : rockerGradientEnd
                     }
                 }
 
-                // 3D变换 (模拟CSS perspective: 600px + rotateX)
+                // 3D变换 - 增强透视效果
                 transform: [
-                    // 透视变换矩阵 (模拟perspective效果)
-                    Scale {
-                        id: perspectiveScale
-                        origin.x: rocker.width / 2
-                        origin.y: rocker.height / 2
-                        // 模拟透视：按下F时顶部变小，按下R时底部变小
-                        xScale: 1.0
-                        yScale: root.switchState === "F" ? 0.97 :
-                                root.switchState === "R" ? 0.97 : 1.0
-
-                        Behavior on yScale {
-                            NumberAnimation {
-                                duration: 150
-                                easing.type: Easing.OutQuad
-                            }
-                        }
-                    },
                     Rotation {
                         id: rockerRotation
                         origin.x: rocker.width / 2
                         origin.y: rocker.height / 2
-                        axis { x: 1; y: 0; z: 0 }  // 绕X轴旋转
-                        angle: root.switchState === "F" ? 18 :
-                               root.switchState === "R" ? -18 : 0
+                        axis { x: 1; y: 0; z: 0 }
+                        angle: root.switchState === "F" ? 12 :
+                               root.switchState === "R" ? -12 : 0
 
                         Behavior on angle {
                             NumberAnimation {
@@ -135,56 +169,74 @@ Item {
                         width: parent.width
                         height: parent.height / 3
 
-                        // 条纹装饰
-                        Canvas {
+                        // 条纹装饰 - 匹配HTML rocker-ridges
+                        Rectangle {
                             id: topRidges
                             anchors.top: parent.top
-                            anchors.topMargin: 8
+                            anchors.topMargin: 10
                             anchors.horizontalCenter: parent.horizontalCenter
                             width: parent.width * 0.7
                             height: 12
+                            color: "transparent"
 
-                            onPaint: {
-                                var ctx = getContext("2d")
-                                ctx.clearRect(0, 0, width, height)
-                                ctx.strokeStyle = "#26000000"
-                                ctx.lineWidth = 1
-                                for (var y = 0; y < height; y += 3) {
-                                    ctx.beginPath()
-                                    ctx.moveTo(0, y)
-                                    ctx.lineTo(width, y)
-                                    ctx.stroke()
+                            // 使用Repeater生成条纹
+                            Column {
+                                anchors.fill: parent
+                                spacing: 1
+                                Repeater {
+                                    model: 4
+                                    Rectangle {
+                                        width: parent.width
+                                        height: 2
+                                        color: index % 2 === 0 ? "#26000000" : "#1AFFFFFF"
+                                    }
                                 }
                             }
-                            Component.onCompleted: requestPaint()
                         }
 
+                        // F字母 - 增强发光效果
                         Text {
+                            id: textF
                             anchors.centerIn: parent
-                            anchors.verticalCenterOffset: 4
+                            anchors.verticalCenterOffset: 6
                             text: "F"
-                            font.pixelSize: 16
-                            font.weight: Font.ExtraBold
-                            color: root.switchState === "F" ? "#FFFFFF" : "#40000000"
+                            font.pixelSize: 14
+                            font.weight: Font.Black
+                            color: root.switchState === "F" ? "#FFFFFF" : "#1a1a1a"
+                            style: root.switchState !== "F" ? Text.Raised : Text.Normal
+                            styleColor: "#4DFFFFFF"
 
-                            // 发光效果
+                            // 双层发光效果 - 匹配HTML text-shadow
                             layer.enabled: root.switchState === "F"
                             layer.effect: MultiEffect {
                                 shadowEnabled: true
                                 shadowColor: forwardGlow
                                 shadowBlur: 1.0
-                                blurMax: 16
+                                blurMax: 24
                                 shadowHorizontalOffset: 0
                                 shadowVerticalOffset: 0
                             }
                         }
 
+                        // 额外发光层
+                        Text {
+                            visible: root.switchState === "F"
+                            anchors.centerIn: textF
+                            text: "F"
+                            font: textF.font
+                            color: "transparent"
+                            layer.enabled: true
+                            layer.effect: MultiEffect {
+                                shadowEnabled: true
+                                shadowColor: forwardGlow
+                                shadowBlur: 0.5
+                                blurMax: 8
+                            }
+                        }
+
                         MouseArea {
                             anchors.fill: parent
-                            onClicked: {
-                                root.switchState = "F"
-                                // state changed to("F")
-                            }
+                            onClicked: root.switchState = "F"
                         }
                     }
 
@@ -193,30 +245,58 @@ Item {
                         width: parent.width
                         height: parent.height / 3
 
-                        // 上分隔线
+                        // 上分隔线 - 匹配HTML rocker-center-line
                         Rectangle {
                             anchors.top: parent.top
                             anchors.left: parent.left
                             anchors.right: parent.right
                             height: 1
                             color: "#1A000000"
+
+                            Rectangle {
+                                anchors.top: parent.bottom
+                                anchors.left: parent.left
+                                anchors.right: parent.right
+                                height: 1
+                                color: "#4DFFFFFF"
+                            }
                         }
 
+                        // N字母
                         Text {
+                            id: textN
                             anchors.centerIn: parent
                             text: "N"
-                            font.pixelSize: 16
-                            font.weight: Font.ExtraBold
-                            color: root.switchState === "N" ? "#FFFFFF" : "#40000000"
+                            font.pixelSize: 14
+                            font.weight: Font.Black
+                            color: root.switchState === "N" ? "#FFFFFF" : "#1a1a1a"
+                            style: root.switchState !== "N" ? Text.Raised : Text.Normal
+                            styleColor: "#4DFFFFFF"
 
                             layer.enabled: root.switchState === "N"
                             layer.effect: MultiEffect {
                                 shadowEnabled: true
                                 shadowColor: neutralGlow
                                 shadowBlur: 1.0
-                                blurMax: 16
+                                blurMax: 24
                                 shadowHorizontalOffset: 0
                                 shadowVerticalOffset: 0
+                            }
+                        }
+
+                        // 额外发光层
+                        Text {
+                            visible: root.switchState === "N"
+                            anchors.centerIn: textN
+                            text: "N"
+                            font: textN.font
+                            color: "transparent"
+                            layer.enabled: true
+                            layer.effect: MultiEffect {
+                                shadowEnabled: true
+                                shadowColor: neutralGlow
+                                shadowBlur: 0.5
+                                blurMax: 8
                             }
                         }
 
@@ -227,14 +307,19 @@ Item {
                             anchors.right: parent.right
                             height: 1
                             color: "#1A000000"
+
+                            Rectangle {
+                                anchors.top: parent.bottom
+                                anchors.left: parent.left
+                                anchors.right: parent.right
+                                height: 1
+                                color: "#4DFFFFFF"
+                            }
                         }
 
                         MouseArea {
                             anchors.fill: parent
-                            onClicked: {
-                                root.switchState = "N"
-                                // state changed to("N")
-                            }
+                            onClicked: root.switchState = "N"
                         }
                     }
 
@@ -243,73 +328,90 @@ Item {
                         width: parent.width
                         height: parent.height / 3
 
+                        // R字母
                         Text {
+                            id: textR
                             anchors.centerIn: parent
-                            anchors.verticalCenterOffset: -4
+                            anchors.verticalCenterOffset: -6
                             text: "R"
-                            font.pixelSize: 16
-                            font.weight: Font.ExtraBold
-                            color: root.switchState === "R" ? "#FFFFFF" : "#40000000"
+                            font.pixelSize: 14
+                            font.weight: Font.Black
+                            color: root.switchState === "R" ? "#FFFFFF" : "#1a1a1a"
+                            style: root.switchState !== "R" ? Text.Raised : Text.Normal
+                            styleColor: "#4DFFFFFF"
 
                             layer.enabled: root.switchState === "R"
                             layer.effect: MultiEffect {
                                 shadowEnabled: true
                                 shadowColor: reverseGlow
                                 shadowBlur: 1.0
-                                blurMax: 16
+                                blurMax: 24
                                 shadowHorizontalOffset: 0
                                 shadowVerticalOffset: 0
                             }
                         }
 
+                        // 额外发光层
+                        Text {
+                            visible: root.switchState === "R"
+                            anchors.centerIn: textR
+                            text: "R"
+                            font: textR.font
+                            color: "transparent"
+                            layer.enabled: true
+                            layer.effect: MultiEffect {
+                                shadowEnabled: true
+                                shadowColor: reverseGlow
+                                shadowBlur: 0.5
+                                blurMax: 8
+                            }
+                        }
+
                         // 条纹装饰
-                        Canvas {
+                        Rectangle {
                             id: bottomRidges
                             anchors.bottom: parent.bottom
-                            anchors.bottomMargin: 8
+                            anchors.bottomMargin: 10
                             anchors.horizontalCenter: parent.horizontalCenter
                             width: parent.width * 0.7
                             height: 12
+                            color: "transparent"
 
-                            onPaint: {
-                                var ctx = getContext("2d")
-                                ctx.clearRect(0, 0, width, height)
-                                ctx.strokeStyle = "#26000000"
-                                ctx.lineWidth = 1
-                                for (var y = 0; y < height; y += 3) {
-                                    ctx.beginPath()
-                                    ctx.moveTo(0, y)
-                                    ctx.lineTo(width, y)
-                                    ctx.stroke()
+                            Column {
+                                anchors.fill: parent
+                                spacing: 1
+                                Repeater {
+                                    model: 4
+                                    Rectangle {
+                                        width: parent.width
+                                        height: 2
+                                        color: index % 2 === 0 ? "#26000000" : "#1AFFFFFF"
+                                    }
                                 }
                             }
-                            Component.onCompleted: requestPaint()
                         }
 
                         MouseArea {
                             anchors.fill: parent
-                            onClicked: {
-                                root.switchState = "R"
-                                // state changed to("R")
-                            }
+                            onClicked: root.switchState = "R"
                         }
                     }
                 }
 
-                // 翘板表面光效
+                // 翘板表面光效 - 匹配HTML ::after
                 Rectangle {
                     anchors.fill: parent
                     radius: parent.radius
                     gradient: Gradient {
-                        GradientStop { position: 0.0; color: "#66FFFFFF" }
-                        GradientStop { position: 0.15; color: "transparent" }
-                        GradientStop { position: 0.5; color: "#0D000000" }
-                        GradientStop { position: 0.85; color: "transparent" }
-                        GradientStop { position: 1.0; color: "#4DFFFFFF" }
+                        GradientStop { position: 0.0; color: "#66FFFFFF" }  // 40%白
+                        GradientStop { position: 0.20; color: "transparent" }
+                        GradientStop { position: 0.50; color: "#0D000000" }  // 5%黑
+                        GradientStop { position: 0.80; color: "transparent" }
+                        GradientStop { position: 1.0; color: "#4DFFFFFF" }  // 30%白
                     }
                 }
 
-                // 翘板边框高光
+                // 翘板边框高光 - 匹配HTML inset边框
                 Rectangle {
                     anchors.fill: parent
                     radius: parent.radius
@@ -318,28 +420,66 @@ Item {
                     border.color: "#80FFFFFF"
                 }
 
-                // 按压阴影效果 (HTML: inset 0 ±20px 30px rgba(0,0,0,0.6))
+                // 按压阴影效果 - F状态 (HTML: inset 0 20px 30px rgba(0,0,0,0.6))
                 Rectangle {
                     anchors.fill: parent
                     radius: parent.radius
+                    opacity: root.switchState === "F" ? 1.0 : 0.0
+                    gradient: Gradient {
+                        GradientStop { position: 0.0; color: "#99000000" }   // 60% black - 深阴影
+                        GradientStop { position: 0.15; color: "#80000000" }  // 50% black
+                        GradientStop { position: 0.35; color: "#40000000" }  // 25% black
+                        GradientStop { position: 0.55; color: "transparent" }
+                        GradientStop { position: 1.0; color: "transparent" }
+                    }
+
+                    Behavior on opacity {
+                        NumberAnimation { duration: 150 }
+                    }
+                }
+
+                // 按压阴影效果 - R状态 (HTML: inset 0 -20px 30px rgba(0,0,0,0.6))
+                Rectangle {
+                    anchors.fill: parent
+                    radius: parent.radius
+                    opacity: root.switchState === "R" ? 1.0 : 0.0
+                    gradient: Gradient {
+                        GradientStop { position: 0.0; color: "transparent" }
+                        GradientStop { position: 0.45; color: "transparent" }
+                        GradientStop { position: 0.65; color: "#40000000" }
+                        GradientStop { position: 0.85; color: "#80000000" }
+                        GradientStop { position: 1.0; color: "#99000000" }
+                    }
+
+                    Behavior on opacity {
+                        NumberAnimation { duration: 150 }
+                    }
+                }
+
+                // 额外的顶部/底部阴影强调
+                Rectangle {
+                    anchors.top: parent.top
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    height: 8
+                    radius: parent.radius
                     visible: root.switchState === "F"
                     gradient: Gradient {
-                        GradientStop { position: 0.0; color: "#99000000" }  // 60% black
-                        GradientStop { position: 0.25; color: "#4D000000" }
-                        GradientStop { position: 0.5; color: "transparent" }
+                        GradientStop { position: 0.0; color: "#66000000" }
                         GradientStop { position: 1.0; color: "transparent" }
                     }
                 }
 
                 Rectangle {
-                    anchors.fill: parent
+                    anchors.bottom: parent.bottom
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    height: 8
                     radius: parent.radius
                     visible: root.switchState === "R"
                     gradient: Gradient {
                         GradientStop { position: 0.0; color: "transparent" }
-                        GradientStop { position: 0.5; color: "transparent" }
-                        GradientStop { position: 0.75; color: "#4D000000" }
-                        GradientStop { position: 1.0; color: "#99000000" }  // 60% black
+                        GradientStop { position: 1.0; color: "#66000000" }
                     }
                 }
             }

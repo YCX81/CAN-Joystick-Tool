@@ -1,5 +1,6 @@
 import QtQuick 6.5
 import QtQuick.Layouts
+import QtQuick.Effects
 import CANJoystickTool
 
 // 手柄控制卡片 - HANDLE
@@ -47,66 +48,19 @@ AluminumPanel {
             }
         }
 
-        // FNR状态标签 - 右上角
-        Rectangle {
-            anchors.top: parent.top
-            anchors.right: parent.right
-            anchors.topMargin: 4
-            anchors.rightMargin: 4
-            width: 36
-            height: 18
-            radius: 4
-            color: {
-                switch(root.fnrState) {
-                    case "F": return "#dcfce7"  // green-100
-                    case "R": return "#ffedd5"  // orange-100
-                    default: return "#e5e7eb"   // gray-200
-                }
-            }
 
-            // 内凹效果
-            Rectangle {
-                anchors.fill: parent
-                radius: parent.radius
-                color: "transparent"
-                border.width: 1
-                border.color: "#1A000000"
-            }
-
-            Text {
-                anchors.centerIn: parent
-                text: {
-                    switch(root.fnrState) {
-                        case "F": return "FWD"
-                        case "R": return "REV"
-                        default: return "NEU"
-                    }
-                }
-                color: {
-                    switch(root.fnrState) {
-                        case "F": return "#16a34a"  // green-600
-                        case "R": return "#ea580c"  // orange-600
-                        default: return "#4b5563"   // gray-600
-                    }
-                }
-                font.pixelSize: 10
-                font.family: "JetBrains Mono, Consolas, monospace"
-                font.weight: Font.Bold
-            }
-        }
-
-        // ========== 主体区域 ==========
+        // ========== 主体区域 ========== 匹配HTML: flex gap-5 px-2 pb-2
         Row {
             id: content
             anchors.top: header.bottom
-            anchors.topMargin: 16
+            anchors.topMargin: 24   // 匹配HTML: mb-6
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.bottom: parent.bottom
             anchors.bottomMargin: 8
             anchors.leftMargin: 8
             anchors.rightMargin: 8
-            spacing: 12
+            spacing: 20             // 匹配HTML: gap-5 (20px)
 
             // 左列: FNR翘板开关
             Item {
@@ -128,26 +82,167 @@ AluminumPanel {
                         }
                     }
 
-                    Text {
-                        text: "DRIVE"
-                        color: Constants.textSecondary
-                        font.pixelSize: 8
-                        font.weight: Font.Bold
-                        font.letterSpacing: 0.5
+                    // FNR 状态指示器 - DigitalDisplay 风格 + 框选高亮
+                    Rectangle {
+                        id: fnrIndicator
+                        width: 78
+                        height: 30
+                        radius: 8
                         anchors.horizontalCenter: parent.horizontalCenter
+                        color: Constants.rollerHousingColor  // #d4d4d4
+
+                        // 外壳内凹阴影效果
+                        Rectangle {
+                            anchors.fill: parent
+                            radius: parent.radius
+                            gradient: Gradient {
+                                orientation: Gradient.Horizontal
+                                GradientStop { position: 0.0; color: "#26000000" }
+                                GradientStop { position: 0.2; color: "transparent" }
+                                GradientStop { position: 0.8; color: "transparent" }
+                                GradientStop { position: 1.0; color: "#15FFFFFF" }
+                            }
+                        }
+
+                        // 屏幕区域
+                        Rectangle {
+                            id: screen
+                            anchors.fill: parent
+                            anchors.margins: 3
+                            radius: 5
+                            color: "#1a1a1a"
+
+                            // 屏幕内凹阴影边框
+                            Rectangle {
+                                anchors.fill: parent
+                                radius: parent.radius
+                                color: "transparent"
+                                border.width: 1
+                                border.color: "#26FFFFFF"
+                            }
+
+                            // 屏幕内凹阴影
+                            Rectangle {
+                                anchors.fill: parent
+                                radius: parent.radius
+                                color: "transparent"
+                                border.width: 3
+                                border.color: "#E6000000"
+                                opacity: 0.5
+                            }
+
+                            // 顶部阴影渐变
+                            Rectangle {
+                                anchors.fill: parent
+                                radius: parent.radius
+                                gradient: Gradient {
+                                    GradientStop { position: 0.0; color: "#40000000" }
+                                    GradientStop { position: 0.3; color: "transparent" }
+                                    GradientStop { position: 1.0; color: "transparent" }
+                                }
+                            }
+
+                            // F - N - R 带框显示
+                            Row {
+                                anchors.centerIn: parent
+                                spacing: 3
+
+                                // F 框
+                                Rectangle {
+                                    width: 20
+                                    height: 18
+                                    radius: 3
+                                    color: root.fnrState === "F" ? "#22c55e" : "transparent"
+                                    border.width: root.fnrState === "F" ? 0 : 1
+                                    border.color: "#333333"
+
+                                    Text {
+                                        anchors.centerIn: parent
+                                        text: "F"
+                                        font.family: "JetBrains Mono"
+                                        font.pixelSize: 11
+                                        font.bold: true
+                                        color: root.fnrState === "F" ? "#FFFFFF" : "#505050"
+
+                                        layer.enabled: root.fnrState === "F"
+                                        layer.effect: MultiEffect {
+                                            shadowEnabled: true
+                                            shadowColor: "#FFFFFF"
+                                            shadowBlur: 0.3
+                                            blurMax: 4
+                                        }
+                                    }
+                                }
+
+                                // N 框
+                                Rectangle {
+                                    width: 20
+                                    height: 18
+                                    radius: 3
+                                    color: root.fnrState === "N" ? "#6b7280" : "transparent"
+                                    border.width: root.fnrState === "N" ? 0 : 1
+                                    border.color: "#333333"
+
+                                    Text {
+                                        anchors.centerIn: parent
+                                        text: "N"
+                                        font.family: "JetBrains Mono"
+                                        font.pixelSize: 11
+                                        font.bold: true
+                                        color: root.fnrState === "N" ? "#FFFFFF" : "#505050"
+
+                                        layer.enabled: root.fnrState === "N"
+                                        layer.effect: MultiEffect {
+                                            shadowEnabled: true
+                                            shadowColor: "#FFFFFF"
+                                            shadowBlur: 0.3
+                                            blurMax: 4
+                                        }
+                                    }
+                                }
+
+                                // R 框
+                                Rectangle {
+                                    width: 20
+                                    height: 18
+                                    radius: 3
+                                    color: root.fnrState === "R" ? "#ef4444" : "transparent"
+                                    border.width: root.fnrState === "R" ? 0 : 1
+                                    border.color: "#333333"
+
+                                    Text {
+                                        anchors.centerIn: parent
+                                        text: "R"
+                                        font.family: "JetBrains Mono"
+                                        font.pixelSize: 11
+                                        font.bold: true
+                                        color: root.fnrState === "R" ? "#FFFFFF" : "#505050"
+
+                                        layer.enabled: root.fnrState === "R"
+                                        layer.effect: MultiEffect {
+                                            shadowEnabled: true
+                                            shadowColor: "#FFFFFF"
+                                            shadowBlur: 0.3
+                                            blurMax: 4
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
+
                 }
             }
 
-            // 分隔线
+            // 分隔线 - 匹配HTML: w-[1px] h-full bg-gray-300/50
             Rectangle {
                 width: 1
-                height: parent.height - 40
+                height: parent.height - 20
                 anchors.verticalCenter: parent.verticalCenter
-                color: "#33000000"
+                color: "#80d1d5db"   // gray-300/50
             }
 
-            // 右列: 6按钮矩阵 (2x3 grid)
+            // 右列: 6按钮矩阵 (2x3 grid) - 匹配HTML: gap-x-4 (16px) gap-y-6 (24px)
             Item {
                 width: parent.width - 120
                 height: parent.height
@@ -157,8 +252,8 @@ AluminumPanel {
                     anchors.centerIn: parent
                     columns: 2
                     rows: 3
-                    rowSpacing: 8
-                    columnSpacing: 16
+                    rowSpacing: 16      // 调整为更接近HTML的 gap-y-6 (原本24px，但考虑按钮自带label间距)
+                    columnSpacing: 16   // 匹配HTML: gap-x-4 (16px)
 
                     // 按钮1: 红色
                     IndustrialButton {
