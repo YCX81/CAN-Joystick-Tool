@@ -14,9 +14,6 @@ AluminumPanel {
     // FNR状态
     property string fnrState: "N"     // "F", "N", "R"
 
-    // 按钮状态 (6个按钮)
-    property var buttonStates: [false, false, false, false, false, false]
-
     // 信号
     signal fnrChanged(string state)
     signal buttonClicked(int index)
@@ -49,18 +46,18 @@ AluminumPanel {
         }
 
 
-        // ========== 主体区域 ========== 匹配HTML: flex gap-5 px-2 pb-2
+        // ========== 主体区域 ==========
         Row {
             id: content
             anchors.top: header.bottom
-            anchors.topMargin: 24   // 匹配HTML: mb-6
+            anchors.topMargin: 24
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.bottom: parent.bottom
             anchors.bottomMargin: 8
             anchors.leftMargin: 8
             anchors.rightMargin: 8
-            spacing: 20             // 匹配HTML: gap-5 (20px)
+            spacing: 20
 
             // 左列: FNR翘板开关
             Item {
@@ -234,7 +231,7 @@ AluminumPanel {
                 }
             }
 
-            // 分隔线 - 匹配HTML: w-[1px] h-full bg-gray-300/50
+            // 分隔线
             Rectangle {
                 width: 1
                 height: parent.height - 20
@@ -242,7 +239,7 @@ AluminumPanel {
                 color: "#80d1d5db"   // gray-300/50
             }
 
-            // 右列: 6按钮矩阵 (2x3 grid) - 匹配HTML: gap-x-4 (16px) gap-y-6 (24px)
+            // 右列: 6按钮矩阵 (2x3 grid)
             Item {
                 width: parent.width - 120
                 height: parent.height
@@ -252,55 +249,49 @@ AluminumPanel {
                     anchors.centerIn: parent
                     columns: 2
                     rows: 3
-                    rowSpacing: 16      // 调整为更接近HTML的 gap-y-6 (原本24px，但考虑按钮自带label间距)
-                    columnSpacing: 16   // 匹配HTML: gap-x-4 (16px)
+                    rowSpacing: 16
+                    columnSpacing: 16
 
                     // 按钮1: 红色
                     IndustrialButton {
                         variant: "red"
                         label: "BUTTON 1"
-                        ledActive: root.buttonStates[0]
-                        onClicked: root.buttonClicked(0)
+                                                onClicked: root.buttonClicked(0)
                     }
 
                     // 按钮2: 灰色
                     IndustrialButton {
                         variant: "grey"
                         label: "BUTTON 2"
-                        ledActive: root.buttonStates[1]
-                        onClicked: root.buttonClicked(1)
+                                                onClicked: root.buttonClicked(1)
                     }
 
                     // 按钮3: 绿色
                     IndustrialButton {
                         variant: "green"
                         label: "BUTTON 3"
-                        ledActive: root.buttonStates[2]
-                        onClicked: root.buttonClicked(2)
+                                                onClicked: root.buttonClicked(2)
                     }
 
                     // 按钮4: 橙色
                     IndustrialButton {
                         variant: "orange"
                         label: "BUTTON 4"
-                        ledActive: root.buttonStates[3]
-                        onClicked: root.buttonClicked(3)
+                                                onClicked: root.buttonClicked(3)
                     }
 
                     // 按钮5: 黑色
                     IndustrialButton {
                         variant: "black"
                         label: "BUTTON 5"
-                        ledActive: root.buttonStates[4]
-                        onClicked: root.buttonClicked(4)
+                                                onClicked: root.buttonClicked(4)
                     }
 
                     // 按钮6: 蓝色
                     IndustrialButton {
                         variant: "blue"
                         label: "BUTTON 6"
-                        ledActive: root.buttonStates[5]
-                        onClicked: root.buttonClicked(5)
+                                                onClicked: root.buttonClicked(5)
                     }
                 }
             }

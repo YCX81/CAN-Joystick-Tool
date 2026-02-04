@@ -11,11 +11,11 @@ Item {
 
     // 配置
     property int padSize: 380
-    property int handleSize: 64  // HTML: w-16 = 64px
-    property real deadzone: 0.0  // 移除死区，与HTML一致
+    property int handleSize: 64
+    property real deadzone: 0.0
     property real edgeThreshold: 0.95  // 触发边缘光效的阈值
     property bool returnToCenter: true
-    property int returnDuration: 500  // HTML: 0.5s
+    property int returnDuration: 500
 
     // 颜色配置 - Ive风格浅色
     property color grooveColor: "#e6e6e6"
@@ -77,14 +77,14 @@ Item {
         }
     }
 
-    // 凹槽底座 - Neumorphic内凹效果 (HTML: recessed-well overflow-hidden)
+    // 凹槽底座 - Neumorphic内凹效果
     Rectangle {
         id: groove
         anchors.fill: parent
-        radius: 36  // HTML: 36px
+        radius: 36
         color: grooveColor
         border.width: 1
-        border.color: "#4DFFFFFF"  // HTML: white/30
+        border.color: "#4DFFFFFF"
 
         // 使用 MultiEffect 的 mask 实现真正的圆角裁剪
         layer.enabled: true
@@ -101,7 +101,7 @@ Item {
             anchors.fill: parent
             visible: mode === "omnidirectional"
 
-            // 左上内阴影 (模拟凹陷) - HTML: inset 8px 8px 20px 12%黑
+            // 左上内阴影 (模拟凹陷)
             Rectangle {
                 anchors.top: parent.top
                 anchors.left: parent.left
@@ -128,7 +128,7 @@ Item {
                 }
             }
 
-            // 右下内高光 - HTML: inset -8px -8px 20px 100%白
+            // 右下内高光
             Rectangle {
                 anchors.bottom: parent.bottom
                 anchors.left: parent.left
@@ -169,7 +169,7 @@ Item {
                 ctx.strokeStyle = gridColor.toString()
                 ctx.lineWidth = 1
 
-                var step = 40  // HTML: 固定40px间距
+                var step = 40
 
                 // 垂直线
                 for (var x = step; x < width; x += step) {
@@ -670,7 +670,6 @@ Item {
                     shadowColor: "#26000000"
                     shadowBlur: 1.0
                     blurMax: 24
-                    // HTML: shadowX = 12 + (x / 14)
                     shadowHorizontalOffset: 12 + xValue * 7
                     shadowVerticalOffset: 12 + yValue * 7
                 }
@@ -814,7 +813,7 @@ Item {
             var nx = dx / (containerWidth / 2)
             var ny = dy / (containerHeight / 2)
 
-            // 方形限制 - HTML: Math.max(-maxOffset, Math.min(maxOffset, mouse))
+            // 方形限制
             if (Math.abs(nx) > 1) nx = nx > 0 ? 1 : -1
             if (Math.abs(ny) > 1) ny = ny > 0 ? 1 : -1
 

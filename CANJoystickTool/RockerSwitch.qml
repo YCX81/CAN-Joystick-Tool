@@ -5,7 +5,7 @@ import QtQuick.Effects
 Item {
     id: root
 
-    // 尺寸 (HTML原型: 86×150px)
+    // 尺寸
     property int switchWidth: 86
     property int switchHeight: 150
 
@@ -25,14 +25,14 @@ Item {
     width: switchWidth
     height: switchHeight
 
-    // 外壳 (fnr-housing) - 匹配HTML: background: #111
+    // 外壳 (fnr-housing)
     Rectangle {
         id: housing
         anchors.fill: parent
         radius: 8
         color: housingColor
 
-        // 外壳阴影 - 匹配HTML: box-shadow多层
+        // 外壳阴影
         layer.enabled: true
         layer.effect: MultiEffect {
             shadowEnabled: true
@@ -43,7 +43,7 @@ Item {
             shadowVerticalOffset: 4
         }
 
-        // 顶部内高光 - 匹配HTML: inset 0 2px 4px rgba(255,255,255,0.2)
+        // 顶部内高光
         Rectangle {
             anchors.top: parent.top
             anchors.left: parent.left
@@ -56,7 +56,7 @@ Item {
             }
         }
 
-        // 底部内阴影 - 匹配HTML: inset 0 -2px 4px rgba(0,0,0,0.5)
+        // 底部内阴影
         Rectangle {
             anchors.bottom: parent.bottom
             anchors.left: parent.left
@@ -121,7 +121,7 @@ Item {
                     NumberAnimation { duration: 150; easing.type: Easing.OutQuad }
                 }
 
-                // 翘板渐变 - 根据状态变化，匹配HTML
+                // 翘板渐变
                 gradient: Gradient {
                     GradientStop {
                         position: 0.0
@@ -169,7 +169,7 @@ Item {
                         width: parent.width
                         height: parent.height / 3
 
-                        // 条纹装饰 - 匹配HTML rocker-ridges
+                        // 条纹装饰
                         Rectangle {
                             id: topRidges
                             anchors.top: parent.top
@@ -206,7 +206,7 @@ Item {
                             style: root.switchState !== "F" ? Text.Raised : Text.Normal
                             styleColor: "#4DFFFFFF"
 
-                            // 双层发光效果 - 匹配HTML text-shadow
+                            // 双层发光效果
                             layer.enabled: root.switchState === "F"
                             layer.effect: MultiEffect {
                                 shadowEnabled: true
@@ -245,7 +245,7 @@ Item {
                         width: parent.width
                         height: parent.height / 3
 
-                        // 上分隔线 - 匹配HTML rocker-center-line
+                        // 上分隔线
                         Rectangle {
                             anchors.top: parent.top
                             anchors.left: parent.left
@@ -398,7 +398,7 @@ Item {
                     }
                 }
 
-                // 翘板表面光效 - 匹配HTML ::after
+                // 翘板表面光效
                 Rectangle {
                     anchors.fill: parent
                     radius: parent.radius
@@ -411,7 +411,7 @@ Item {
                     }
                 }
 
-                // 翘板边框高光 - 匹配HTML inset边框
+                // 翘板边框高光
                 Rectangle {
                     anchors.fill: parent
                     radius: parent.radius
@@ -420,7 +420,7 @@ Item {
                     border.color: "#80FFFFFF"
                 }
 
-                // 按压阴影效果 - F状态 (HTML: inset 0 20px 30px rgba(0,0,0,0.6))
+                // 按压阴影效果 - F状态
                 Rectangle {
                     anchors.fill: parent
                     radius: parent.radius
@@ -438,7 +438,7 @@ Item {
                     }
                 }
 
-                // 按压阴影效果 - R状态 (HTML: inset 0 -20px 30px rgba(0,0,0,0.6))
+                // 按压阴影效果 - R状态
                 Rectangle {
                     anchors.fill: parent
                     radius: parent.radius

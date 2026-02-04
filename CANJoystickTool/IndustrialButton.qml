@@ -1,19 +1,19 @@
 import QtQuick 6.5
 import QtQuick.Effects
 
-// 工业按钮组件 - 带LED指示灯
+// 工业按钮组件 - 带底部光晕效果
 // 匹配 pad.html 中的 button-bezel + button-cap 设计
 Item {
     id: root
 
-    // 尺寸 - 匹配HTML: bezel w-14 h-14 (56px), cap w-10 h-10 (40px)
+    // 尺寸
     property int bezelSize: 56
     property int capSize: 40
 
     // 颜色变体
     property string variant: "grey"  // red, grey, green, orange, black, blue
 
-    // 主色、高光色、暗色 - 匹配HTML radial-gradient
+    // 主色、高光色、暗色
     property color buttonColor: {
         switch(variant) {
             case "red": return "#ef4444"       // btn-red-main
@@ -45,21 +45,11 @@ Item {
         }
     }
 
-    // LED颜色
-    property color ledColor: {
-        switch(variant) {
-            case "red": return "#ff3333"
-            case "green": return "#00ff41"
-            case "orange": return "#ffaa00"
-            case "blue": return "#00e0ff"
-            case "black": return "#00ff41"
-            default: return "#00ff41"
-        }
-    }
+    // 光晕颜色 - 统一绿色
+    property color glowColor: "#34c759"
 
     // 状态
     property bool isPressed: false
-    property bool ledActive: false
 
     // 标签
     property string label: ""
@@ -77,13 +67,37 @@ Item {
         height: bezelSize
         anchors.horizontalCenter: parent.horizontalCenter
 
-        // 外圈 (button-bezel) - 匹配HTML多层阴影效果
+        // 底部光晕效果 - 按下时从按钮底部一圈扩散
+        Rectangle {
+            id: bottomGlow
+            z: -1  // 在按钮层级下方
+            anchors.centerIn: parent
+            width: bezelSize + 24
+            height: bezelSize + 24
+            radius: width / 2
+            color: glowColor
+            opacity: root.isPressed ? 0.6 : 0
+            visible: opacity > 0
+
+            Behavior on opacity {
+                NumberAnimation { duration: 150; easing.type: Easing.OutQuad }
+            }
+
+            layer.enabled: visible
+            layer.effect: MultiEffect {
+                blurEnabled: true
+                blur: 1.0
+                blurMax: 32
+            }
+        }
+
+        // 外圈 (button-bezel)
         Rectangle {
             id: bezel
             anchors.fill: parent
             radius: width / 2
 
-            // 外圈渐变 - 匹配HTML: linear-gradient(145deg, #2a2a2a, #000000)
+            // 外圈渐变
             gradient: Gradient {
                 orientation: Gradient.Vertical
                 GradientStop { position: 0.0; color: "#2a2a2a" }
@@ -91,7 +105,7 @@ Item {
                 GradientStop { position: 1.0; color: "#000000" }
             }
 
-            // 外圈阴影 - 匹配HTML: 3px 3px 6px rgba(0,0,0,0.3)
+            // 外圈阴影
             layer.enabled: true
             layer.effect: MultiEffect {
                 shadowEnabled: true
@@ -102,7 +116,7 @@ Item {
                 shadowVerticalOffset: 3
             }
 
-            // 左上高光边框 - 匹配HTML: -1px -1px 3px rgba(255,255,255,0.4)
+            // 左上高光边框
             Rectangle {
                 anchors.fill: parent
                 radius: parent.radius
@@ -111,7 +125,7 @@ Item {
                 border.color: "#66FFFFFF"
             }
 
-            // 内圈高光 - 匹配HTML: inset 1px 1px 2px rgba(255,255,255,0.1)
+            // 内圈高光
             Rectangle {
                 anchors.fill: parent
                 anchors.margins: 3
@@ -128,7 +142,7 @@ Item {
                 width: capSize
                 height: capSize
 
-                // 按下效果 - 匹配HTML: scale(0.92) translateY(2px)
+                // 按下效果
                 scale: root.isPressed ? 0.92 : 1.0
                 transform: Translate {
                     y: root.isPressed ? 2 : 0
@@ -142,7 +156,7 @@ Item {
                     NumberAnimation { duration: 100; easing.type: Easing.OutCubic }
                 }
 
-                // 按钮阴影 - 匹配HTML: 0 3px 5px rgba(0,0,0,0.3)
+                // 按钮阴影
                 layer.enabled: true
                 layer.effect: MultiEffect {
                     shadowEnabled: !root.isPressed
@@ -153,7 +167,7 @@ Item {
                     shadowVerticalOffset: root.isPressed ? 1 : 3
                 }
 
-                // 径向渐变按钮 - 匹配HTML: radial-gradient(circle at 35% 30%, ...)
+                // 径向渐变按钮
                 Canvas {
                     id: capCanvas
                     anchors.fill: parent
@@ -181,7 +195,7 @@ Item {
                         ctx.arc(width / 2, height / 2, radius, 0, 2 * Math.PI)
                         ctx.clip()
 
-                        // 径向渐变 - 匹配HTML: circle at 35% 30%
+                        // 径向渐变
                         var gradient = ctx.createRadialGradient(
                             centerX, centerY, 0,
                             centerX, centerY, radius * 1.6
@@ -199,8 +213,7 @@ Item {
                     Component.onCompleted: requestPaint()
                 }
 
-                // 顶部高光 - 匹配HTML ::after 伪元素
-                // filter: blur(2px); opacity: 0.8
+                // 顶部高光
                 Rectangle {
                     id: highlight
                     anchors.top: parent.top
@@ -223,7 +236,7 @@ Item {
                         NumberAnimation { duration: 100 }
                     }
 
-                    // 模糊效果 - 匹配HTML: filter: blur(2px)
+                    // 模糊效果
                     layer.enabled: true
                     layer.effect: MultiEffect {
                         blurEnabled: true
@@ -258,7 +271,7 @@ Item {
                     }
                 }
 
-                // 按下时的内凹阴影 - 匹配HTML: inset 0 4px 8px rgba(0,0,0,0.4)
+                // 按下时的内凹阴影
                 Rectangle {
                     anchors.fill: parent
                     radius: width / 2
@@ -274,7 +287,7 @@ Item {
                     }
                 }
 
-                // 底部内阴影 - 匹配HTML: inset 0 -3px 3px rgba(0,0,0,0.2)
+                // 底部内阴影
                 Rectangle {
                     anchors.fill: parent
                     radius: width / 2
@@ -289,7 +302,7 @@ Item {
                     }
                 }
 
-                // 顶部内高光 - 匹配HTML: inset 0 2px 4px rgba(255,255,255,0.7)
+                // 顶部内高光
                 Rectangle {
                     anchors.fill: parent
                     radius: width / 2
@@ -321,7 +334,6 @@ Item {
 
             onPressed: {
                 root.isPressed = true
-                ledFlash.start()
             }
 
             onReleased: {
@@ -334,72 +346,17 @@ Item {
         }
     }
 
-    // LED指示灯和标签行
-    Row {
+    // 标签
+    Text {
         anchors.top: buttonArea.bottom
         anchors.topMargin: 6
         anchors.horizontalCenter: parent.horizontalCenter
-        spacing: 6
         visible: label !== ""
-
-        // LED指示灯 - 匹配HTML: 4px×4px
-        Rectangle {
-            id: led
-            width: 4
-            height: 4
-            radius: 2
-            anchors.verticalCenter: parent.verticalCenter
-
-            // 匹配HTML: background-color: #555 / ledColor
-            color: ledActive ? ledColor : "#555555"
-
-            // 匹配HTML: inset 0 1px 2px rgba(0,0,0,0.5)
-            border.width: 1
-            border.color: ledActive ? Qt.lighter(ledColor, 1.3) : "#1AFFFFFF"
-
-            // LED发光效果 - 匹配HTML: box-shadow: 0 0 6px ledColor
-            layer.enabled: ledActive
-            layer.effect: MultiEffect {
-                shadowEnabled: true
-                shadowColor: ledColor
-                shadowBlur: 1.0
-                blurMax: 10
-                shadowHorizontalOffset: 0
-                shadowVerticalOffset: 0
-            }
-
-            // 内部高光点
-            Rectangle {
-                anchors.centerIn: parent
-                anchors.verticalCenterOffset: -0.5
-                width: 1.5
-                height: 1.5
-                radius: 0.75
-                color: ledActive ? "#B3FFFFFF" : "#33FFFFFF"
-            }
-        }
-
-        // 标签 - 匹配HTML: axis-label
-        Text {
-            text: root.label
-            color: Constants.textSecondary
-            font.pixelSize: 8
-            font.weight: Font.Bold
-            font.letterSpacing: 0.05
-            textFormat: Text.PlainText
-            anchors.verticalCenter: parent.verticalCenter
-        }
-    }
-
-    // LED闪烁动画
-    SequentialAnimation {
-        id: ledFlash
-        property bool wasActive: false
-
-        onStarted: wasActive = ledActive
-
-        PropertyAction { target: root; property: "ledActive"; value: true }
-        PauseAnimation { duration: 200 }
-        PropertyAction { target: root; property: "ledActive"; value: ledFlash.wasActive }
+        text: root.label
+        color: Constants.textSecondary
+        font.pixelSize: 8
+        font.weight: Font.Bold
+        font.letterSpacing: 0.05
+        textFormat: Text.PlainText
     }
 }
