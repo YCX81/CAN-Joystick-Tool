@@ -30,6 +30,7 @@ qt_add_qml_module(CANJoystickTool
         CANJoystickTool/JoystickPad.qml
         CANJoystickTool/StatusIndicator.qml
         CANJoystickTool/RollerWheel.qml
+        CANJoystickTool/DigitalDisplay.qml
         CANJoystickTool/RockerSwitch.qml
         CANJoystickTool/IndustrialButton.qml
         CANJoystickToolContent/App.qml

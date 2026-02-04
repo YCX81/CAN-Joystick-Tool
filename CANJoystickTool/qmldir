@@ -7,3 +7,5 @@ StatusIndicator 1.0 StatusIndicator.qml
 AluminumPanel 1.0 AluminumPanel.qml
 AxisValueBar 1.0 AxisValueBar.qml
 JoystickPad 1.0 JoystickPad.qml
+RollerWheel 1.0 RollerWheel.qml
+DigitalDisplay 1.0 DigitalDisplay.qml

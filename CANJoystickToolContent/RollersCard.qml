@@ -84,7 +84,7 @@ AluminumPanel {
 
                 Row {
                     anchors.fill: parent
-                    spacing: 8
+                    spacing: 12
 
                     // 滚轮
                     RollerWheel {
@@ -96,7 +96,14 @@ AluminumPanel {
                         onValueChanged: root.trimChanged(trimRoller.value)
                     }
 
-                    // 进度条 + 数值
+                    // 数字显示框
+                    DigitalDisplay {
+                        value: (trimRoller.value * 100).toFixed(0)
+                        accentColor: Constants.rollerIndicatorColor
+                        anchors.verticalCenter: parent.verticalCenter
+                    }
+
+                    /* 进度条 + 数值 (暂时注释)
                     Row {
                         anchors.verticalCenter: parent.verticalCenter
                         spacing: 6
@@ -126,6 +133,7 @@ AluminumPanel {
                             anchors.verticalCenter: parent.verticalCenter
                         }
                     }
+                    */
                 }
             }
 
@@ -141,7 +149,7 @@ AluminumPanel {
 
                 Column {
                     anchors.fill: parent
-                    spacing: 8
+                    spacing: 12
                     anchors.horizontalCenter: parent.horizontalCenter
 
                     // 滚轮
@@ -154,6 +162,14 @@ AluminumPanel {
                         onValueChanged: root.panChanged(panRoller.value)
                     }
 
+                    // 数字显示框
+                    DigitalDisplay {
+                        value: (panRoller.value * 100).toFixed(0)
+                        accentColor: Constants.rollerIndicatorColor
+                        anchors.horizontalCenter: parent.horizontalCenter
+                    }
+
+                    /* 进度条 + 数值 (暂时注释)
                     // 进度条
                     AxisValueBar {
                         id: panBar
@@ -178,6 +194,7 @@ AluminumPanel {
                         font.weight: Font.Bold
                         anchors.horizontalCenter: parent.horizontalCenter
                     }
+                    */
                 }
             }
         }
