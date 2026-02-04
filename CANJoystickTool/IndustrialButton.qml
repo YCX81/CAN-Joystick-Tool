@@ -2,7 +2,6 @@ import QtQuick 6.5
 import QtQuick.Effects
 
 // 工业按钮组件 - 带底部光晕效果
-// 匹配 pad.html 中的 button-bezel + button-cap 设计
 Item {
     id: root
 
