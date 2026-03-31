@@ -29,7 +29,7 @@ Item {
         anchors.bottomMargin: 30
         radius: borderRadius + 10
         color: highlightColor
-        opacity: 1.0
+        opacity: 0.5
 
         layer.enabled: true
         layer.effect: MultiEffect {
@@ -49,7 +49,7 @@ Item {
         anchors.bottomMargin: -30
         radius: borderRadius + 10
         color: shadowColor
-        opacity: 1.0
+        opacity: 0.6
 
         layer.enabled: true
         layer.effect: MultiEffect {
@@ -93,6 +93,15 @@ Item {
         }
 
         Component.onCompleted: requestPaint()
+        // Repaint only once after initial layout is done
+        Timer {
+            id: repaintTimer
+            interval: 100; repeat: false
+            running: false
+            onTriggered: mainPanelCanvas.requestPaint()
+        }
+        onWidthChanged: repaintTimer.restart()
+        onHeightChanged: repaintTimer.restart()
     }
 
     // 内边框高光
@@ -104,28 +113,8 @@ Item {
         border.color: "#80FFFFFF"  // 50%白
     }
 
-    // 噪点纹理层 (模拟金属质感)
-    Canvas {
-        id: noiseCanvas
-        anchors.fill: parent
-        opacity: 0.02
-
-        onPaint: {
-            var ctx = getContext("2d")
-            ctx.clearRect(0, 0, width, height)
-
-            // 绘制随机噪点
-            for (var i = 0; i < width * height * 0.008; i++) {
-                var x = Math.random() * width
-                var y = Math.random() * height
-                var gray = Math.floor(Math.random() * 100 + 100)
-                ctx.fillStyle = "rgb(" + gray + "," + gray + "," + gray + ")"
-                ctx.fillRect(x, y, 1, 1)
-            }
-        }
-
-        Component.onCompleted: requestPaint()
-    }
+    // 噪点纹理层 (disabled for performance — too slow on large panels)
+    // If needed, use a pre-rendered noise texture image instead
 
     // 内容区域
     default property alias content: contentArea.data

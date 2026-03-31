@@ -16,7 +16,8 @@ Item {
     property color wheelColor: Constants.rollerWheelColor
     property color indicatorColor: Constants.rollerIndicatorColor
 
-    // 交互状态
+    // 交互/只读
+    property bool readOnly: false
     property bool isDragging: false
 
     // 信号 (value属性自带valueChanged信号，无需重复定义)
@@ -60,10 +61,9 @@ Item {
                 radius: 12
                 color: wheelColor  // 黑色底色 #222222
 
-                // 启用layer实现真正的圆角遮罩
                 layer.enabled: true
                 layer.smooth: true
-                layer.samples: 4  // 多重采样抗锯齿
+                layer.samples: 4
                 layer.effect: MultiEffect {
                     maskEnabled: true
                     maskThresholdMin: 0.5
@@ -194,6 +194,7 @@ Item {
     MouseArea {
         id: dragArea
         anchors.fill: parent
+        enabled: !root.readOnly
         hoverEnabled: true
 
         property real startValue

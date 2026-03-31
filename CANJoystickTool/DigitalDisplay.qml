@@ -9,6 +9,7 @@ Item {
 
     // 公开属性
     property int value: 0
+    property string textValue: ""
     property string label: "%"
     property color accentColor: Constants.rollerIndicatorColor
     property color housingColor: Constants.rollerHousingColor
@@ -80,10 +81,10 @@ Item {
                 // 数值文本
                 Text {
                     id: valueText
-                    text: root.value
+                    text: root.textValue !== "" ? root.textValue : root.value.toString()
                     color: root.accentColor
                     font.family: "JetBrains Mono, Consolas, monospace"
-                    font.pixelSize: 16
+                    font.pixelSize: Math.max(10, root.height * 0.45)
                     font.bold: true
                     verticalAlignment: Text.AlignVCenter
 

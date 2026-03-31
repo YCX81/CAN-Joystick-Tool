@@ -16,6 +16,7 @@ Item {
     property real edgeThreshold: 0.95  // 触发边缘光效的阈值
     property bool returnToCenter: true
     property int returnDuration: 500
+    property bool readOnly: false
 
     // 颜色配置 - Ive风格浅色
     property color grooveColor: "#e6e6e6"
@@ -635,12 +636,14 @@ Item {
             }
         }
 
-        // 手柄容器
-        Item {
-            id: handleContainer
-            z: 2  // 确保手柄在边缘发光层之上
-            anchors.fill: parent
-            anchors.margins: handleSize / 2 + 4  // 32 + 4 = 36
+    }
+
+    // 手柄容器 - 移到 groove 外部避免被圆角裁剪
+    Item {
+        id: handleContainer
+        z: 2
+        anchors.fill: parent
+        anchors.margins: handleSize / 2 + 4  // 32 + 4 = 36
 
             // 手柄
             Rectangle {
@@ -755,7 +758,7 @@ Item {
 
                 // 回中动画
                 Behavior on x {
-                    enabled: !isDragging
+                    enabled: !isDragging && !root.readOnly
                     NumberAnimation {
                         duration: returnDuration
                         easing.type: Easing.OutBack
@@ -763,7 +766,7 @@ Item {
                     }
                 }
                 Behavior on y {
-                    enabled: !isDragging
+                    enabled: !isDragging && !root.readOnly
                     NumberAnimation {
                         duration: returnDuration
                         easing.type: Easing.OutBack
@@ -772,12 +775,12 @@ Item {
                 }
             }
         }
-    }
 
     // 拖拽交互区域 - 必须在groove外部以接收完整鼠标事件
     MouseArea {
         id: dragArea
         anchors.fill: parent
+        enabled: !root.readOnly
 
         onPressed: function(mouse) {
             isDragging = true

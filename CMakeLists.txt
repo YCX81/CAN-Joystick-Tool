@@ -10,18 +10,33 @@ find_package(Qt6 6.5 REQUIRED COMPONENTS Quick QuickControls2 Widgets)
 
 qt_standard_project_setup(REQUIRES 6.5)
 
-qt_add_executable(CANJoystickTool main.cpp)
+qt_add_executable(CANJoystickTool
+    main.cpp
+    LayoutManager.h
+    LayoutManager.cpp
+)
 
-# 标记 Constants.qml 为 singleton（必须在 qt_add_qml_module 之前）
+# 标记 Singleton QML 文件（必须在 qt_add_qml_module 之前）
 set_source_files_properties(CANJoystickTool/Constants.qml
+    PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
+set_source_files_properties(CANJoystickTool/ComponentRegistry.qml
+    PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
+set_source_files_properties(CANJoystickTool/CardTemplateManager.qml
     PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
 
 qt_add_qml_module(CANJoystickTool
     URI CANJoystickTool
     VERSION 1.0
     RESOURCE_PREFIX /qt/qml
+    SOURCES
+        LayoutManager.h
+        LayoutManager.cpp
     QML_FILES
+        # Singleton 组件
         CANJoystickTool/Constants.qml
+        CANJoystickTool/ComponentRegistry.qml
+        CANJoystickTool/CardTemplateManager.qml
+        # 基础组件
         CANJoystickTool/AluminumPanel.qml
         CANJoystickTool/AxisValueBar.qml
         CANJoystickTool/DirectoryFontLoader.qml
@@ -33,11 +48,24 @@ qt_add_qml_module(CANJoystickTool
         CANJoystickTool/DigitalDisplay.qml
         CANJoystickTool/RockerSwitch.qml
         CANJoystickTool/IndustrialButton.qml
+        # 复合单元组件
+        CANJoystickTool/FNRSwitchUnit.qml
+        CANJoystickTool/VerticalRollerUnit.qml
+        CANJoystickTool/HorizontalRollerUnit.qml
+        CANJoystickTool/HorizontalFNRUnit.qml
+        # 布局设计器组件
+        CANJoystickTool/DraggableWrapper.qml
+        CANJoystickTool/DesignCanvas.qml
+        CANJoystickTool/ComponentPanel.qml
+        # 内容页面
         CANJoystickToolContent/App.qml
         CANJoystickToolContent/Screen01.qml
         CANJoystickToolContent/XYAxisCard.qml
         CANJoystickToolContent/RollersCard.qml
         CANJoystickToolContent/HandleCard.qml
+        CANJoystickToolContent/LayoutDesigner.qml
+        CANJoystickToolContent/CustomCard.qml
+        CANJoystickToolContent/ProductEditor.qml
     RESOURCES
         qtquickcontrols2.conf
 )

@@ -11,6 +11,7 @@ Item {
 
     // 状态: "F" (Forward), "N" (Neutral), "R" (Reverse)
     property string switchState: "N"
+    property bool readOnly: false
 
     // 颜色配置
     property color housingColor: Constants.rockerHousingColor
@@ -82,7 +83,8 @@ Item {
                 anchors.left: parent.left
                 anchors.right: parent.right
                 anchors.bottom: parent.bottom
-                height: root.switchState === "F" ? 6 : 0
+                height: root.switchState === "F" ? 6 :
+                       root.switchState === "N" ? 3 : 0
                 radius: 4
                 color: rockerShadow
 
@@ -111,7 +113,8 @@ Item {
                 id: rocker
                 anchors.fill: parent
                 anchors.topMargin: root.switchState === "R" ? 6 : 0
-                anchors.bottomMargin: root.switchState === "F" ? 6 : 0
+                anchors.bottomMargin: root.switchState === "F" ? 6 :
+                                      root.switchState === "N" ? 3 : 0
                 radius: 4
 
                 Behavior on anchors.topMargin {
@@ -126,17 +129,32 @@ Item {
                     GradientStop {
                         position: 0.0
                         color: root.switchState === "F" ? rockerDark :
-                               root.switchState === "R" ? rockerGradientEnd : rockerGradientStart
+                               root.switchState === "R" ? rockerGradientEnd :
+                               "#e8a007"  // N: 顶部略暗，模拟光照不到
                     }
                     GradientStop {
-                        position: 0.4
+                        position: root.switchState === "N" ? 0.3 : 0.4
                         color: root.switchState === "F" ? "#d97706" :
-                               root.switchState === "R" ? "#d97706" : rockerGradientEnd
+                               root.switchState === "R" ? "#d97706" :
+                               "#fcd34d"  // N: 上部过渡到亮色
+                    }
+                    GradientStop {
+                        position: 0.5
+                        color: root.switchState === "F" ? "#e8a007" :
+                               root.switchState === "R" ? "#e8a007" :
+                               "#fde68a"  // N: 中央最亮 - 凸起高光带
+                    }
+                    GradientStop {
+                        position: root.switchState === "N" ? 0.7 : 0.6
+                        color: root.switchState === "F" ? rockerGradientEnd :
+                               root.switchState === "R" ? "#d97706" :
+                               "#fbbf24"  // N: 下部过渡回正常
                     }
                     GradientStop {
                         position: 1.0
                         color: root.switchState === "F" ? rockerGradientEnd :
-                               root.switchState === "R" ? rockerDark : rockerGradientEnd
+                               root.switchState === "R" ? rockerDark :
+                               "#d97706"  // N: 底部暗，模拟厚度阴影
                     }
                 }
 
@@ -408,6 +426,51 @@ Item {
                         GradientStop { position: 0.50; color: "#0D000000" }  // 5%黑
                         GradientStop { position: 0.80; color: "transparent" }
                         GradientStop { position: 1.0; color: "#4DFFFFFF" }  // 30%白
+                    }
+                }
+
+                // N状态凸起高光 - 中央横向亮带模拟圆柱凸面
+                Rectangle {
+                    anchors.fill: parent
+                    radius: parent.radius
+                    visible: root.switchState === "N"
+                    gradient: Gradient {
+                        GradientStop { position: 0.0;  color: "transparent" }
+                        GradientStop { position: 0.35; color: "transparent" }
+                        GradientStop { position: 0.45; color: "#28FFFFFF" }
+                        GradientStop { position: 0.50; color: "#38FFFFFF" }  // 最亮中心
+                        GradientStop { position: 0.55; color: "#28FFFFFF" }
+                        GradientStop { position: 0.65; color: "transparent" }
+                        GradientStop { position: 1.0;  color: "transparent" }
+                    }
+                }
+
+                // N状态底部边缘阴影 - 增强厚度感
+                Rectangle {
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.bottom: parent.bottom
+                    height: 12
+                    radius: parent.radius
+                    visible: root.switchState === "N"
+                    gradient: Gradient {
+                        GradientStop { position: 0.0; color: "transparent" }
+                        GradientStop { position: 0.6; color: "#18000000" }
+                        GradientStop { position: 1.0; color: "#30000000" }
+                    }
+                }
+
+                // N状态顶部高光边缘 - 光从上方打下来
+                Rectangle {
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.top: parent.top
+                    height: 8
+                    radius: parent.radius
+                    visible: root.switchState === "N"
+                    gradient: Gradient {
+                        GradientStop { position: 0.0; color: "#50FFFFFF" }
+                        GradientStop { position: 1.0; color: "transparent" }
                     }
                 }
 
