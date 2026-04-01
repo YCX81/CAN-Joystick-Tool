@@ -32,8 +32,8 @@ Item {
     signal labelEditRequested()
     signal contextMenuRequested(real mx, real my)
 
-    width: wrappedComponent ? wrappedComponent.width : 100
-    height: wrappedComponent ? wrappedComponent.height : 100
+    width: componentLoader.item ? componentLoader.item.width : 100
+    height: componentLoader.item ? componentLoader.item.height : 100
 
     // 拖拽偏移量（在父坐标系下）
     property real dragOffsetX: 0
@@ -91,11 +91,11 @@ Item {
             var newX = parentPos.x - dragOffsetX
             var newY = parentPos.y - dragOffsetY
 
-            // 限制在父容器边界内
-            if (root.parent) {
-                newX = Math.max(0, Math.min(newX, root.parent.width - root.width))
-                newY = Math.max(0, Math.min(newY, root.parent.height - root.height))
-            }
+            // 限制在画布边界内
+            var boundW = canvas ? canvas.width : (root.parent ? root.parent.width : 9999)
+            var boundH = canvas ? canvas.height : (root.parent ? root.parent.height : 9999)
+            newX = Math.max(0, Math.min(newX, boundW - root.width))
+            newY = Math.max(0, Math.min(newY, boundH - root.height))
 
             root.x = newX
             root.y = newY
@@ -151,7 +151,6 @@ Item {
     // 组件加载器
     Loader {
         id: componentLoader
-        anchors.fill: parent
         onLoaded: {
             root.wrappedComponent = item
             applyConfig()

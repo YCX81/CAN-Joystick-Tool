@@ -9,6 +9,7 @@ Item {
     property int panelWidth: 400
     property int panelHeight: 400
     property int borderRadius: 44
+    property int contentMargins: 16
 
     // 颜色配置
     property color lightColor: "#f2f2f2"
@@ -122,6 +123,6 @@ Item {
     Item {
         id: contentArea
         anchors.fill: parent
-        anchors.margins: 16
+        anchors.margins: root.contentMargins
     }
 }

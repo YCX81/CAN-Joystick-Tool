@@ -367,17 +367,17 @@ Item {
                         // Header row
                         Row {
                             id: hdr; anchors.top: parent.top; anchors.left: parent.left; anchors.right: parent.right
-                            anchors.margins: 8; height: 20; spacing: 4
+                            anchors.margins: 8; height: 28; spacing: 4
 
                             Text {
                                 text: cellCard.cellTitle; color: dtTextSec
                                 font.pixelSize: 10; font.weight: Font.Bold
-                                width: parent.width - 75; elide: Text.ElideRight
+                                width: parent.width - 85; elide: Text.ElideRight
                                 anchors.verticalCenter: parent.verticalCenter
                             }
 
                             ComboBox {
-                                width: 70; height: 20; font.pixelSize: 8; flat: true; z: 10
+                                width: 80; height: 28; font.pixelSize: 10; flat: true; z: 10
                                 model: cellTypeOptions.map(function(o){ return o.label })
                                 currentIndex: { for(var i=0;i<cellTypeOptions.length;i++) if(cellTypeOptions[i].value===cellCard.cellType) return i; return 3 }
                                 onActivated: { cellCard.cellType = cellTypeOptions[currentIndex].value; hasUnsavedChanges = true; root.refreshCanvasMode() }

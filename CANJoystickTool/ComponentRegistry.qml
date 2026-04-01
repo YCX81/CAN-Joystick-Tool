@@ -133,8 +133,8 @@ QtObject {
             name: "Vertical",
             description: "垂直滚轮 + 数字显示",
             defaultWidth: 90,
-            defaultHeight: 220,
-            thumbnailScale: 0.35,
+            defaultHeight: 240,
+            thumbnailScale: 0.30,
             defaultConfig: {
                 value: 0,
                 label: ""
@@ -145,8 +145,8 @@ QtObject {
         "HorizontalFNR": {
             name: "Horizontal",
             description: "水平FNR开关 (翘板+状态灯)",
-            defaultWidth: 220,
-            defaultHeight: 100,
+            defaultWidth: 196,
+            defaultHeight: 130,
             thumbnailScale: 0.30,
             defaultConfig: {
                 switchState: "N",

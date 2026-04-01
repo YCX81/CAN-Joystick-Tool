@@ -9,6 +9,7 @@ AluminumPanel {
 
     panelWidth: 480
     panelHeight: 480
+    contentMargins: 0
 
     property int canvasWidth: 480
     property int canvasHeight: 480
@@ -29,10 +30,11 @@ AluminumPanel {
         return "comp_" + (nextComponentId++)
     }
 
-    // 组件容器
+    // 组件容器 — 直接绑定 root 尺寸，确保不受 contentArea margins 影响
     Item {
         id: componentContainer
-        anchors.fill: parent
+        width: root.width
+        height: root.height
         z: 1
         clip: true
     }
