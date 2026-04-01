@@ -53,6 +53,7 @@ qt_add_qml_module(CANJoystickTool
         CANJoystickTool/VerticalRollerUnit.qml
         CANJoystickTool/HorizontalRollerUnit.qml
         CANJoystickTool/HorizontalFNRUnit.qml
+        CANJoystickTool/HorizontalFNRRightUnit.qml
         # 布局设计器组件
         CANJoystickTool/DraggableWrapper.qml
         CANJoystickTool/DesignCanvas.qml

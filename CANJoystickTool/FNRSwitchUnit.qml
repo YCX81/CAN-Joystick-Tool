@@ -10,11 +10,21 @@ Item {
     property string switchState: "N"
     property string label: "FNR"
 
+    // 只读模式
+    property bool readOnly: false
+
     // 信号
     signal fnrChanged(string state)
 
-    width: 86
-    height: 196
+    // 缩放: 原始 86×196 的 3/4
+    property real unitScale: 0.75
+    width: 86 * unitScale
+    height: 196 * unitScale
+
+    Item {
+        width: 86; height: 196
+        scale: root.unitScale
+        transformOrigin: Item.TopLeft
 
     // 翘板开关
     RockerSwitch {
@@ -22,6 +32,7 @@ Item {
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.top: parent.top
         switchState: root.switchState
+        readOnly: root.readOnly
 
         onSwitchStateChanged: {
             root.switchState = switchState
@@ -29,7 +40,7 @@ Item {
         }
     }
 
-    // FNR 状态指示器 - DigitalDisplay 风格 + 框选高亮 (与HandleCard一致)
+    // FNR 状态指示器
     Rectangle {
         id: fnrIndicator
         width: 78
@@ -38,7 +49,7 @@ Item {
         anchors.horizontalCenter: parent.horizontalCenter
         anchors.top: rocker.bottom
         anchors.topMargin: 8
-        color: Constants.rollerHousingColor  // #d4d4d4
+        color: Constants.rollerHousingColor
 
         // 外壳内凹阴影效果
         Rectangle {
@@ -179,4 +190,5 @@ Item {
             }
         }
     }
+    } // scale container
 }

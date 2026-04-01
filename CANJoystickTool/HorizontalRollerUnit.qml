@@ -8,8 +8,14 @@ Item {
     property real value: 0.0
     property string label: ""
 
-    width: 200
-    height: 108
+    property real unitScale: 0.75
+    width: 200 * unitScale
+    height: 108 * unitScale
+
+    Item {
+        width: 200; height: 108
+        scale: root.unitScale
+        transformOrigin: Item.TopLeft
 
     Column {
         anchors.centerIn: parent
@@ -24,7 +30,6 @@ Item {
 
             onValueChanged: {
                 root.value = value
-                root.valueChanged(value)
             }
         }
 
@@ -51,4 +56,5 @@ Item {
             }
         }
     }
+    } // scale container
 }

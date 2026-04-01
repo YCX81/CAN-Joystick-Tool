@@ -167,6 +167,7 @@ Item {
         if (type.indexOf("Button") === 0) return "IndustrialButton.qml"
         if (type === "FNRSwitch") return "FNRSwitchUnit.qml"
         if (type === "HorizontalFNR") return "HorizontalFNRUnit.qml"
+        if (type === "HorizontalFNRRight") return "HorizontalFNRRightUnit.qml"
         if (type === "VerticalRoller") return "VerticalRollerUnit.qml"
         if (type === "HorizontalRoller") return "HorizontalRollerUnit.qml"
         var mapping = {

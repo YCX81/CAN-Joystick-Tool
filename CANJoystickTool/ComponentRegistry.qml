@@ -15,7 +15,7 @@ QtObject {
         {
             id: "fnr",
             name: "FNR",
-            components: ["FNRSwitch", "HorizontalFNR"]
+            components: ["FNRSwitch", "HorizontalFNR", "HorizontalFNRRight"]
         },
         {
             id: "rollers",
@@ -119,8 +119,8 @@ QtObject {
         "FNRSwitch": {
             name: "FNR Switch",
             description: "FNR翘板开关 + 状态指示",
-            defaultWidth: 86,
-            defaultHeight: 196,
+            defaultWidth: 64,
+            defaultHeight: 147,
             thumbnailScale: 0.35,
             defaultConfig: {
                 switchState: "N",
@@ -132,8 +132,8 @@ QtObject {
         "VerticalRoller": {
             name: "Vertical",
             description: "垂直滚轮 + 数字显示",
-            defaultWidth: 90,
-            defaultHeight: 240,
+            defaultWidth: 68,
+            defaultHeight: 180,
             thumbnailScale: 0.30,
             defaultConfig: {
                 value: 0,
@@ -143,10 +143,23 @@ QtObject {
         },
 
         "HorizontalFNR": {
-            name: "Horizontal",
-            description: "水平FNR开关 (翘板+状态灯)",
-            defaultWidth: 196,
-            defaultHeight: 130,
+            name: "H-FNR (F←)",
+            description: "水平FNR开关 F在左",
+            defaultWidth: 147,
+            defaultHeight: 98,
+            thumbnailScale: 0.30,
+            defaultConfig: {
+                switchState: "N",
+                label: "FNR"
+            },
+            hasLabel: true
+        },
+
+        "HorizontalFNRRight": {
+            name: "H-FNR (→F)",
+            description: "水平FNR开关 F在右",
+            defaultWidth: 147,
+            defaultHeight: 98,
             thumbnailScale: 0.30,
             defaultConfig: {
                 switchState: "N",
@@ -158,8 +171,8 @@ QtObject {
         "HorizontalRoller": {
             name: "Horizontal",
             description: "水平滚轮 + 数字显示",
-            defaultWidth: 220,
-            defaultHeight: 70,
+            defaultWidth: 150,
+            defaultHeight: 81,
             thumbnailScale: 0.35,
             defaultConfig: {
                 value: 0,

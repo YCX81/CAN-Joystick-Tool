@@ -161,10 +161,12 @@ Item {
             if (cell.cellType === "canvas" && cell.canvasItem) {
                 var vis = c.visualComponents || []
                 if (vis.length > 0) {
-                    // Load saved visual layout
+                    // Load saved visual layout with bindingIds
                     cell.canvasItem.clear()
-                    for (var j = 0; j < vis.length; j++)
-                        cell.canvasItem.addComponent(vis[j].type, vis[j].x||0, vis[j].y||0, vis[j].config||{})
+                    for (var j = 0; j < vis.length; j++) {
+                        var wrapper = cell.canvasItem.addComponent(vis[j].type, vis[j].x||0, vis[j].y||0, vis[j].config||{})
+                        if (wrapper && vis[j].bindingId) wrapper.bindingId = vis[j].bindingId
+                    }
                 } else if (c.components && c.components.length > 0) {
                     // Auto-populate from component definitions
                     populateCanvas(cell.canvasItem, c.components)
@@ -192,7 +194,7 @@ Item {
                 cd.visualComponents = []
                 var comps = cell.canvasItem.toJSON().components || []
                 for (var j = 0; j < comps.length; j++)
-                    cd.visualComponents.push({ type: comps[j].type, x: comps[j].x, y: comps[j].y, config: comps[j].config })
+                    cd.visualComponents.push({ type: comps[j].type, x: comps[j].x, y: comps[j].y, config: comps[j].config, bindingId: comps[j].bindingId || "" })
             }
             cells.push(cd)
         }
@@ -306,144 +308,172 @@ Item {
             }
         }
 
-        // ---- Center: Preview Layout ----
+        // ---- Center: Preview Layout (mirrors DownloadTool TestPanel exactly) ----
+        // DownloadTool layout: content has 8px margins, titleBar=24+8 top
+        // left=bjmCard(52%), rightCol gap 8, grid gap 8, AluminumPanel margins 16
         Item {
             Layout.fillWidth: true; Layout.fillHeight: true
 
-            // Joystick preview (left) - simplified, no AluminumPanel
-            Rectangle {
-                id: joyPrev
-                anchors.top: parent.top; anchors.bottom: parent.bottom; anchors.left: parent.left
-                width: Math.max(120, parent.width * 0.22)
-                radius: 12; color: "#eaeaec"
-                border.width: 1; border.color: dtBorder
+            // 模拟 DownloadTool 的 content 区域 (8px margins + titleBar 32px)
+            Item {
+                id: dtContent
+                anchors.fill: parent
+                // DownloadTool titleBar height=24, topMargin=8 → 32px from top
+                // plus 8px left/right/bottom margins
+                anchors.topMargin: 32; anchors.leftMargin: 8; anchors.rightMargin: 8; anchors.bottomMargin: 8
 
-                Column {
-                    anchors.fill: parent; anchors.margins: 8; spacing: 4
-                    Row {
-                        width: parent.width
-                        Text { text: "XY 轴 (BJM)"; color: dtTextSec; font.pixelSize: 10; font.weight: Font.Bold }
-                        Item { width: parent.width - 80; height: 1 }
-                        StatusIndicator { indicatorSize: 6; active: false }
-                    }
-                    Item {
-                        width: parent.width; height: parent.height - 20
-                        JoystickPad {
-                            anchors.centerIn: parent
-                            padSize: Math.min(parent.width, parent.height) * 0.85
-                            width: padSize; height: padSize; xValue: 0; yValue: 0; enabled: false
+                property real leftWidthRatio: currentConfig.layout
+                    ? ((currentConfig.layout.left || {}).widthRatio || 0.52)
+                    : 0.52
+
+                // Joystick preview (left) — same size ratio as DownloadTool
+                Rectangle {
+                    id: joyPrev
+                    anchors.top: parent.top; anchors.bottom: parent.bottom; anchors.left: parent.left
+                    width: dtContent.width * dtContent.leftWidthRatio
+                    radius: 32; color: "#eaeaec"
+                    border.width: 1; border.color: dtBorder
+
+                    Column {
+                        anchors.fill: parent; anchors.margins: 16; spacing: 4
+                        Row {
+                            width: parent.width
+                            Text { text: "XY 轴 (BJM)"; color: dtTextSec; font.pixelSize: 11; font.weight: Font.Bold; font.letterSpacing: 0.8 }
+                            Item { width: parent.width - 100; height: 1 }
+                            StatusIndicator { indicatorSize: 8; active: false }
+                        }
+                        Item {
+                            width: parent.width; height: parent.height - 20
+                            JoystickPad {
+                                anchors.centerIn: parent
+                                padSize: Math.min(parent.width, parent.height) * 0.85
+                                width: padSize; height: padSize; xValue: 0; yValue: 0; enabled: false
+                            }
                         }
                     }
                 }
-            }
 
-            // 2x2 Grid (right)
-            Item {
-                id: gridArea
-                anchors.top: parent.top; anchors.bottom: parent.bottom
-                anchors.left: joyPrev.right; anchors.leftMargin: 6; anchors.right: parent.right
-                property real cellW: (width - 6) / 2
-                property real cellH: (height - 6) / 2
+                // 2x2 Grid (right) — mirrors DownloadTool rightCol exactly
+                Item {
+                    id: gridArea
+                    anchors.top: parent.top; anchors.bottom: parent.bottom
+                    anchors.left: joyPrev.right; anchors.leftMargin: 8; anchors.right: parent.right
 
-                Repeater {
-                    id: cellRepeater; model: 4
+                    // Same formula as DownloadTool: (width - 8) / 2
+                    property real cellW: (width - 8) / 2
+                    property real cellH: (height - 8) / 2
 
-                    Rectangle {
-                        id: cellCard
-                        x: (index % 2) * (gridArea.cellW + 6)
-                        y: Math.floor(index / 2) * (gridArea.cellH + 6)
-                        width: gridArea.cellW; height: gridArea.cellH
-                        radius: 12; color: "#eaeaec"
-                        border.width: 1; border.color: dtBorder
-                        z: activeCellIndex === index ? 10 : 0
+                    Repeater {
+                        id: cellRepeater; model: 4
 
-                        property string cellTitle: ""
-                        property string cellType: "empty"
-                        property var cellCompIds: []
-                        property alias canvasItem: cvLoader.item
+                        Rectangle {
+                            id: cellCard
+                            // Same positioning as DownloadTool
+                            x: (index % 2) * (gridArea.cellW + 8)
+                            y: Math.floor(index / 2) * (gridArea.cellH + 8)
+                            width: gridArea.cellW; height: gridArea.cellH
+                            radius: 32; color: "#eaeaec"
+                            border.width: 1; border.color: dtBorder
+                            z: activeCellIndex === index ? 10 : 0
 
-                        MouseArea { anchors.fill: parent; z: -1; onClicked: { activeCellIndex = index } }
+                            property string cellTitle: ""
+                            property string cellType: "empty"
+                            property var cellCompIds: []
+                            property alias canvasItem: cvLoader.item
 
-                        // Header row
-                        Row {
-                            id: hdr; anchors.top: parent.top; anchors.left: parent.left; anchors.right: parent.right
-                            anchors.margins: 8; height: 28; spacing: 4
+                            MouseArea { anchors.fill: parent; z: -1; onClicked: { activeCellIndex = index } }
 
-                            Text {
-                                text: cellCard.cellTitle; color: dtTextSec
-                                font.pixelSize: 10; font.weight: Font.Bold
-                                width: parent.width - 85; elide: Text.ElideRight
-                                anchors.verticalCenter: parent.verticalCenter
-                            }
+                            // Content area — mirrors AluminumPanel contentMargins: 16
+                            Item {
+                                id: cellContent
+                                anchors.fill: parent; anchors.margins: 16
 
-                            ComboBox {
-                                width: 80; height: 28; font.pixelSize: 10; flat: true; z: 10
-                                model: cellTypeOptions.map(function(o){ return o.label })
-                                currentIndex: { for(var i=0;i<cellTypeOptions.length;i++) if(cellTypeOptions[i].value===cellCard.cellType) return i; return 3 }
-                                onActivated: { cellCard.cellType = cellTypeOptions[currentIndex].value; hasUnsavedChanges = true; root.refreshCanvasMode() }
-                            }
-                        }
+                                // Header — same as DownloadTool cellHeader
+                                Row {
+                                    id: hdr
+                                    anchors.top: parent.top; anchors.left: parent.left; anchors.right: parent.right
+                                    height: 20; spacing: 4
 
-                        // Content area
-                        Item {
-                            id: body; anchors.top: hdr.bottom; anchors.topMargin: 2
-                            anchors.left: parent.left; anchors.right: parent.right
-                            anchors.bottom: parent.bottom; anchors.margins: 4
+                                    Text {
+                                        text: cellCard.cellTitle; color: dtTextSec
+                                        font.pixelSize: 11; font.weight: Font.Bold; font.letterSpacing: 0.8
+                                        width: parent.width - 85; elide: Text.ElideRight
+                                        anchors.verticalCenter: parent.verticalCenter
+                                    }
 
-                            // === CAN Raw Frames ===
-                            Column {
-                                visible: cellCard.cellType === "rawFrames"
-                                anchors.fill: parent; anchors.margins: 6; spacing: 3
-                                Repeater {
-                                    model: [
-                                        { lbl: "BJM",  cid: "0x18FDD633", hex: "01 00 01 00 FF 00 00 FF" },
-                                        { lbl: "EJM",  cid: "0x18FDD733", hex: "01 00 01 00 FF FF FF FF" },
-                                        { lbl: "ADDR", cid: "0x18EEFF33", hex: "33 05 00 00 00 00 00 00" }
-                                    ]
+                                    ComboBox {
+                                        width: 80; height: 28; font.pixelSize: 10; flat: true; z: 10
+                                        model: cellTypeOptions.map(function(o){ return o.label })
+                                        currentIndex: { for(var i=0;i<cellTypeOptions.length;i++) if(cellTypeOptions[i].value===cellCard.cellType) return i; return 3 }
+                                        onActivated: { cellCard.cellType = cellTypeOptions[currentIndex].value; hasUnsavedChanges = true; root.refreshCanvasMode() }
+                                    }
+                                }
+
+                                // Body — same offset as DownloadTool (cellHeader.bottom + 6)
+                                Item {
+                                    id: body
+                                    anchors.top: hdr.bottom; anchors.topMargin: 6
+                                    anchors.left: parent.left; anchors.right: parent.right
+                                    anchors.bottom: parent.bottom
+
+                                    // === CAN Raw Frames ===
                                     Column {
-                                        spacing: 0; width: parent ? parent.width : 0
-                                        Row { spacing: 5
-                                            Text { text: modelData.lbl; color: dtAccent; font.pixelSize: 8; font.bold: true; width: 30 }
-                                            Text { text: modelData.cid; color: dtTextSec; font.pixelSize: 8; font.family: "Consolas" }
+                                        visible: cellCard.cellType === "rawFrames"
+                                        anchors.fill: parent; spacing: 3
+                                        Repeater {
+                                            model: [
+                                                { lbl: "BJM",  cid: "0x18FDD633", hex: "01 00 01 00 FF 00 00 FF" },
+                                                { lbl: "EJM",  cid: "0x18FDD733", hex: "01 00 01 00 FF FF FF FF" },
+                                                { lbl: "ADDR", cid: "0x18EEFF33", hex: "33 05 00 00 00 00 00 00" }
+                                            ]
+                                            Column {
+                                                spacing: 0; width: parent ? parent.width : 0
+                                                Row { spacing: 5
+                                                    Text { text: modelData.lbl; color: dtAccent; font.pixelSize: 8; font.bold: true; width: 30 }
+                                                    Text { text: modelData.cid; color: dtTextSec; font.pixelSize: 8; font.family: "Consolas" }
+                                                }
+                                                Text { text: modelData.hex; color: dtText; font.pixelSize: 9; font.family: "Consolas"; leftPadding: 36 }
+                                            }
                                         }
-                                        Text { text: modelData.hex; color: dtText; font.pixelSize: 9; font.family: "Consolas"; leftPadding: 36 }
+                                        Text { text: "等待CAN报文..."; color: dtTextMuted; font.pixelSize: 9 }
                                     }
-                                }
-                                Text { text: "等待CAN报文..."; color: dtTextMuted; font.pixelSize: 9 }
-                            }
 
-                            // === Device Info ===
-                            Column {
-                                visible: cellCard.cellType === "deviceInfo"
-                                anchors.fill: parent; anchors.margins: 6; spacing: 6
-                                Repeater {
-                                    model: [
-                                        { label: "烧录时间", val: "2026-03-31 10:00" },
-                                        { label: "客户名称", val: currentConfig.product ? currentConfig.product.description||"示例客户" : "示例客户" },
-                                        { label: "设备型号", val: currentConfig.product ? currentConfig.product.model||"---" : "---" },
-                                        { label: "设备ID",  val: "0x00001234" },
-                                        { label: "序列号",  val: "SN001" }
-                                    ]
-                                    Row {
-                                        spacing: 8
-                                        Text { text: modelData.label+"："; color: dtTextSec; font.pixelSize: 9; width: 50; horizontalAlignment: Text.AlignRight }
-                                        Text { text: modelData.val; color: dtAccent; font.pixelSize: 10; font.bold: true }
+                                    // === Device Info ===
+                                    Column {
+                                        visible: cellCard.cellType === "deviceInfo"
+                                        anchors.fill: parent; spacing: 6
+                                        Repeater {
+                                            model: [
+                                                { label: "烧录时间", val: "2026-03-31 10:00" },
+                                                { label: "客户名称", val: currentConfig.product ? currentConfig.product.description||"示例客户" : "示例客户" },
+                                                { label: "设备型号", val: currentConfig.product ? currentConfig.product.model||"---" : "---" },
+                                                { label: "设备ID",  val: "0x00001234" },
+                                                { label: "序列号",  val: "SN001" }
+                                            ]
+                                            Row {
+                                                spacing: 8
+                                                Text { text: modelData.label+"："; color: dtTextSec; font.pixelSize: 9; width: 50; horizontalAlignment: Text.AlignRight }
+                                                Text { text: modelData.val; color: dtAccent; font.pixelSize: 10; font.bold: true }
+                                            }
+                                        }
                                     }
+
+                                    // === Canvas (DesignCanvas free-form) ===
+                                    // 始终保持 active，切换类型不销毁画布内容
+                                    Loader {
+                                        id: cvLoader; anchors.fill: parent; active: true
+                                        visible: cellCard.cellType === "canvas"
+                                        sourceComponent: DesignCanvas {
+                                            panelWidth: body.width; panelHeight: body.height; borderRadius: 4
+                                            productBindings: currentConfig.components || []
+                                            onLayoutModified: { hasUnsavedChanges = true; root.refreshBindingStatus() }
+                                        }
+                                    }
+
+                                    // === Empty ===
+                                    Text { visible: cellCard.cellType === "empty"; anchors.centerIn: parent; text: "空白"; color: dtTextMuted; font.pixelSize: 10 }
                                 }
                             }
-
-                            // === Canvas (DesignCanvas free-form) ===
-                            Loader {
-                                id: cvLoader; anchors.fill: parent; active: cellCard.cellType === "canvas"
-                                sourceComponent: DesignCanvas {
-                                    panelWidth: body.width; panelHeight: body.height; borderRadius: 4
-                                    productBindings: currentConfig.components || []
-                                    onLayoutModified: hasUnsavedChanges = true
-                                }
-                            }
-
-                            // === Empty ===
-                            Text { visible: cellCard.cellType === "empty"; anchors.centerIn: parent; text: "空白"; color: dtTextMuted; font.pixelSize: 10 }
                         }
                     }
                 }

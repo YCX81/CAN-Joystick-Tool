@@ -383,7 +383,7 @@ AluminumPanel {
     function getBindCategory(wrapperType) {
         if (wrapperType.indexOf("Button") === 0) return "button"
         if (wrapperType === "VerticalRoller" || wrapperType === "HorizontalRoller") return "roller"
-        if (wrapperType === "FNRSwitch" || wrapperType === "HorizontalFNR") return "fnr"
+        if (wrapperType === "FNRSwitch" || wrapperType === "HorizontalFNR" || wrapperType === "HorizontalFNRRight") return "fnr"
         return "other"
     }
 
@@ -404,21 +404,8 @@ AluminumPanel {
             } else if (cat === "roller" && comp.type === "roller") {
                 result.push({ bindId: comp.id, desc: comp.label || "轴", color: "#ff9500" })
             } else if (cat === "fnr" && comp.type === "fnrSwitch") {
-                // 直接绑定独立FNR字段
-                result.push({ bindId: comp.id, desc: (comp.label || "FNR") + " (独立字段)", color: "#af52de" })
-            } else if (cat === "fnr" && comp.type === "buttonGroup") {
-                // 从按钮组合成FNR — 预设常见的3连续按钮组合
-                var cnt = comp.count || 8
-                if (cnt >= 3) {
-                    // 提供最后3个按钮作为预设（通常FNR在按钮末尾）
-                    for (var g = 0; g <= cnt - 3; g++) {
-                        result.push({
-                            bindId: comp.id + ".fnr:" + g + "," + (g+1) + "," + (g+2),
-                            desc: "按钮" + (g+1) + "/" + (g+2) + "/" + (g+3) + " → F/N/R",
-                            color: "#af52de"
-                        })
-                    }
-                }
+                // FNR 直接绑定到 fnrSwitch 组件（按钮映射在 JSON 中定义）
+                result.push({ bindId: comp.id, desc: comp.label || "FNR", color: "#af52de" })
             } else if (cat === "fnr" && comp.type === "indicator") {
                 result.push({ bindId: comp.id, desc: comp.label || "指示器", color: "#5856d6" })
             }

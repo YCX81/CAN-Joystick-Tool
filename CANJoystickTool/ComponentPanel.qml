@@ -112,30 +112,25 @@ Item {
                     Layout.fillWidth: true
                 }
 
-                Row {
+                Flow {
                     Layout.alignment: Qt.AlignHCenter
+                    Layout.fillWidth: true
+                    Layout.leftMargin: 10; Layout.rightMargin: 10
                     spacing: 10
 
-                    NeuComponentTile {
-                        componentType: "FNRSwitch"
-                        componentDef: ComponentRegistry.getDefinition("FNRSwitch")
-                        tileWidth: 60
-                        tileHeight: 72
-                        neuBg: root.neuBg
-                        neuLight: root.neuLightShadow
-                        neuDark: root.neuDarkShadow
-                        onClicked: root.componentRequested("FNRSwitch")
-                    }
+                    Repeater {
+                        model: ComponentRegistry.getComponentsInCategory("fnr")
 
-                    NeuComponentTile {
-                        componentType: "HorizontalFNR"
-                        componentDef: ComponentRegistry.getDefinition("HorizontalFNR")
-                        tileWidth: 72
-                        tileHeight: 60
-                        neuBg: root.neuBg
-                        neuLight: root.neuLightShadow
-                        neuDark: root.neuDarkShadow
-                        onClicked: root.componentRequested("HorizontalFNR")
+                        NeuComponentTile {
+                            componentType: modelData
+                            componentDef: ComponentRegistry.getDefinition(modelData)
+                            tileWidth: modelData === "FNRSwitch" ? 60 : 72
+                            tileHeight: modelData === "FNRSwitch" ? 72 : 60
+                            neuBg: root.neuBg
+                            neuLight: root.neuLightShadow
+                            neuDark: root.neuDarkShadow
+                            onClicked: root.componentRequested(modelData)
+                        }
                     }
                 }
 
@@ -396,6 +391,7 @@ Item {
             if (type.indexOf("Button") === 0) return "IndustrialButton.qml"
             if (type === "FNRSwitch") return "RockerSwitch.qml"
             if (type === "HorizontalFNR") return "HorizontalFNRUnit.qml"
+            if (type === "HorizontalFNRRight") return "HorizontalFNRRightUnit.qml"
             if (type === "VerticalRoller") return "RollerWheel.qml"
             if (type === "HorizontalRoller") return "RollerWheel.qml"
             return ""

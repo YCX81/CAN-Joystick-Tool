@@ -2,7 +2,7 @@ import QtQuick 6.5
 import QtQuick.Effects
 import CANJoystickTool
 
-// 水平FNR开关单元 - 与竖版 FNRSwitchUnit 等大，翘板横置在上，FNR状态栏在下
+// 水平FNR开关单元 (F在右) - 翘板横置 rotation:90，FNR状态栏在下
 Item {
     id: root
 
@@ -21,7 +21,7 @@ Item {
         scale: root.unitScale
         transformOrigin: Item.TopLeft
 
-    // 翘板开关 (旋转90度变横置)
+    // 翘板开关 (旋转90度，F在右)
     Item {
         id: rockerContainer
         anchors.horizontalCenter: parent.horizontalCenter
@@ -36,7 +36,7 @@ Item {
             switchHeight: 150
             switchState: root.switchState
             readOnly: root.readOnly
-            rotation: -90
+            rotation: 90
 
             onSwitchStateChanged: {
                 root.switchState = switchState
@@ -45,7 +45,7 @@ Item {
         }
     }
 
-    // FNR 状态指示器 (横排 F N R) - 与竖版完全一致的样式
+    // FNR 状态指示器 (横排 F N R)
     Rectangle {
         id: fnrIndicator
         width: 78
