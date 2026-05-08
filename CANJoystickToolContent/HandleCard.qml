@@ -8,8 +8,8 @@ AluminumPanel {
     id: root
 
     // 卡片尺寸
-    panelWidth: 360
-    panelHeight: 360
+    panelWidth: 480
+    panelHeight: 480
 
     // FNR状态
     property string fnrState: "N"     // "F", "N", "R"

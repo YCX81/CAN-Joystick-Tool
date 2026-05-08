@@ -12,8 +12,8 @@ AluminumPanel {
     property alias joystickPad: joystick
 
     // 默认尺寸
-    panelWidth: 360
-    panelHeight: 360
+    panelWidth: 480
+    panelHeight: 480
 
     // 内部容器
     Item {

@@ -314,13 +314,11 @@ Item {
         Item {
             Layout.fillWidth: true; Layout.fillHeight: true
 
-            // 模拟 DownloadTool 的 content 区域 (8px margins + titleBar 32px)
+            // 预览区域 — 编辑器自身的 topBar + margins 已扣除高度
+            // 内部用与 DownloadTool 相同的比例和间距
             Item {
                 id: dtContent
                 anchors.fill: parent
-                // DownloadTool titleBar height=24, topMargin=8 → 32px from top
-                // plus 8px left/right/bottom margins
-                anchors.topMargin: 32; anchors.leftMargin: 8; anchors.rightMargin: 8; anchors.bottomMargin: 8
 
                 property real leftWidthRatio: currentConfig.layout
                     ? ((currentConfig.layout.left || {}).widthRatio || 0.52)
