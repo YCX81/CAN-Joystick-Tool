@@ -15,11 +15,15 @@ Item {
     property color inactiveColor: "#d0d0d0"
     property color glowColor: activeColor
 
-    // 尺寸
+    // 尺寸 (设计基线)
     property int indicatorSize: 16
 
-    width: indicatorSize
-    height: indicatorSize
+    readonly property int designWidth: indicatorSize
+    readonly property int designHeight: indicatorSize
+    readonly property real contentScale: Math.min(width / designWidth, height / designHeight)
+
+    implicitWidth: designWidth
+    implicitHeight: designHeight
 
     // 闪烁定时器
     Timer {
@@ -32,6 +36,13 @@ Item {
 
     property bool internalActive: active
     onActiveChanged: internalActive = active
+
+    Item {
+        id: designSpace
+        width: root.designWidth
+        height: root.designHeight
+        anchors.centerIn: parent
+        scale: root.contentScale
 
     // 外环 - 浅色金属边框
     Rectangle {
@@ -140,6 +151,8 @@ Item {
             opacity: 0.5
         }
     }
+
+    } // designSpace
 
     // 状态变化动画
     states: [

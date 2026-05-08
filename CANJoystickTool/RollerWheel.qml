@@ -23,9 +23,20 @@ Item {
     // 信号 (value属性自带valueChanged信号，无需重复定义)
     signal rollerDoubleClicked()
 
-    // 默认尺寸 (宽度为原来的1.5倍)
-    width: orientation === "vertical" ? 72 : 200
-    height: orientation === "vertical" ? 200 : 60
+    // 设计基线
+    readonly property int designWidth: orientation === "vertical" ? 72 : 200
+    readonly property int designHeight: orientation === "vertical" ? 200 : 60
+    readonly property real contentScale: Math.min(width / designWidth, height / designHeight)
+
+    implicitWidth: designWidth
+    implicitHeight: designHeight
+
+    Item {
+        id: designSpace
+        width: root.designWidth
+        height: root.designHeight
+        anchors.centerIn: parent
+        scale: root.contentScale
 
     // 外壳 (roller-housing)
     Rectangle {
@@ -190,7 +201,9 @@ Item {
         }
     }
 
-    // 拖拽交互区域
+    } // designSpace
+
+    // 拖拽交互区域 — 覆盖整个 root 以接收完整鼠标事件
     MouseArea {
         id: dragArea
         anchors.fill: parent

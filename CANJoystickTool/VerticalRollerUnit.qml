@@ -8,14 +8,17 @@ Item {
     property real value: 0.0
     property string label: ""
 
-    property real unitScale: 0.75
-    width: 90 * unitScale
-    height: 240 * unitScale
+    readonly property real designWidth: 90
+    readonly property real designHeight: 240
+    readonly property real contentScale: Math.min(width / designWidth, height / designHeight)
+
+    implicitWidth: designWidth * 0.75
+    implicitHeight: designHeight * 0.75
 
     Item {
-        width: 90; height: 240
-        scale: root.unitScale
-        transformOrigin: Item.TopLeft
+        width: root.designWidth; height: root.designHeight
+        anchors.centerIn: parent
+        scale: root.contentScale
 
     Column {
         anchors.centerIn: parent

@@ -37,9 +37,13 @@ Item {
     property int trackSize: 12
     property int barSize: 8
 
-    // 根据方向计算尺寸
-    width: isHorizontal ? 200 : 64
-    height: isHorizontal ? 64 : 200
+    // 设计基线
+    readonly property int designWidth: isHorizontal ? 200 : 64
+    readonly property int designHeight: isHorizontal ? 64 : 200
+    readonly property real contentScale: Math.min(width / designWidth, height / designHeight)
+
+    implicitWidth: designWidth
+    implicitHeight: designHeight
 
     // 计算归一化值 (0-1范围)
     property real normalizedValue: (value - minValue) / (maxValue - minValue)
@@ -49,6 +53,13 @@ Item {
     // 计算填充条的位置和尺寸
     property real fillRatio: Math.abs(normalizedValue - centerPoint)
     property real fillStart: value >= 0 ? centerPoint : (centerPoint - fillRatio)
+
+    Item {
+        id: designSpace
+        width: root.designWidth
+        height: root.designHeight
+        anchors.centerIn: parent
+        scale: root.contentScale
 
     // ========== 水平方向布局 ==========
     Item {
@@ -336,4 +347,5 @@ Item {
             horizontalAlignment: Text.AlignRight
         }
     }
+    } // designSpace
 }

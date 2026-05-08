@@ -16,15 +16,18 @@ Item {
     // 信号
     signal fnrChanged(string state)
 
-    // 缩放: 原始 86×196 的 3/4
-    property real unitScale: 0.75
-    width: 86 * unitScale
-    height: 196 * unitScale
+    // 设计基线: 86×196。width/height 可任意指定，内部自动等比缩放
+    readonly property real designWidth: 86
+    readonly property real designHeight: 196
+    readonly property real contentScale: Math.min(width / designWidth, height / designHeight)
+
+    implicitWidth: designWidth * 0.75
+    implicitHeight: designHeight * 0.75
 
     Item {
-        width: 86; height: 196
-        scale: root.unitScale
-        transformOrigin: Item.TopLeft
+        width: root.designWidth; height: root.designHeight
+        anchors.centerIn: parent
+        scale: root.contentScale
 
     // 翘板开关
     RockerSwitch {

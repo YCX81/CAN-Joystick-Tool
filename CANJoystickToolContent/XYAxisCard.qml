@@ -11,9 +11,21 @@ AluminumPanel {
     property string title: "XY AXIS"
     property alias joystickPad: joystick
 
-    // 默认尺寸
+    // 默认尺寸 (可任意指定, 内部按设计基线自动等比缩放)
     panelWidth: 480
     panelHeight: 480
+
+    readonly property int designPanelWidth: 480
+    readonly property int designPanelHeight: 480
+    readonly property real contentScale: Math.min(panelWidth / designPanelWidth, panelHeight / designPanelHeight)
+
+    // 设计空间容器
+    Item {
+        id: designSpace
+        width: root.designPanelWidth - 2 * root.contentMargins
+        height: root.designPanelHeight - 2 * root.contentMargins
+        anchors.centerIn: parent
+        scale: root.contentScale
 
     // 内部容器
     Item {
@@ -161,4 +173,5 @@ AluminumPanel {
             }
         }
     }
+    } // designSpace
 }

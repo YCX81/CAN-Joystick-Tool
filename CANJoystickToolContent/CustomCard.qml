@@ -9,9 +9,15 @@ AluminumPanel {
     property var layoutConfig: null
     property string layoutName: ""
 
-    // 卡片尺寸 (从布局配置中读取, 默认480x480)
-    panelWidth: layoutConfig ? (layoutConfig.canvas.width || 480) : 480
-    panelHeight: layoutConfig ? (layoutConfig.canvas.height || 480) : 480
+    // 设计基线 (从布局配置中读取, 默认 480×480)
+    readonly property int designPanelWidth: layoutConfig ? (layoutConfig.canvas.width || 480) : 480
+    readonly property int designPanelHeight: layoutConfig ? (layoutConfig.canvas.height || 480) : 480
+    readonly property real contentScale: Math.min(panelWidth / designPanelWidth, panelHeight / designPanelHeight)
+
+    // 卡片尺寸默认与设计一致, 外部可任意指定; 内部组件随之等比缩放
+    panelWidth: designPanelWidth
+    panelHeight: designPanelHeight
+    contentMargins: 0  // 与 DesignCanvas 一致, 组件坐标基于完整画布
 
     // 组件实例列表
     property var componentInstances: []
@@ -19,10 +25,13 @@ AluminumPanel {
     // 信号 - 用于绑定数据
     signal componentValueChanged(string componentId, string propertyName, var value)
 
-    // 组件容器 (在 AluminumPanel 内容区内)
+    // 组件容器 — 设计空间, 自动等比缩放到面板大小
     Item {
         id: componentArea
-        anchors.fill: parent
+        width: root.designPanelWidth
+        height: root.designPanelHeight
+        anchors.centerIn: parent
+        scale: root.contentScale
     }
 
     // 从布局配置加载

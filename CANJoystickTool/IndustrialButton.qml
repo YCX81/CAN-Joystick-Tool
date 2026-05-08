@@ -56,8 +56,21 @@ Item {
     // 信号
     signal clicked()
 
-    width: bezelSize
-    height: bezelSize + (label !== "" ? 24 : 0)
+    // 设计基线 (跟随 bezelSize/capSize 配置), 外层 width/height 自由缩放
+    readonly property int designWidth: bezelSize
+    readonly property int designHeight: bezelSize + (label !== "" ? 24 : 0)
+    readonly property real contentScale: Math.min(width / designWidth, height / designHeight)
+
+    implicitWidth: designWidth
+    implicitHeight: designHeight
+
+    // 设计空间容器 — 居中等比缩放
+    Item {
+        id: designSpace
+        width: root.designWidth
+        height: root.designHeight
+        anchors.centerIn: parent
+        scale: root.contentScale
 
     // 主按钮区域
     Item {
@@ -358,4 +371,5 @@ Item {
         font.letterSpacing: 0.05
         textFormat: Text.PlainText
     }
+    } // designSpace
 }

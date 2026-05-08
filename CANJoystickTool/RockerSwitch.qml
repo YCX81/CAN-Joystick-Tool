@@ -23,8 +23,19 @@ Item {
     property color neutralGlow: Constants.fnrNeutralColor
     property color reverseGlow: Constants.fnrReverseColor
 
-    width: switchWidth
-    height: switchHeight
+    readonly property int designWidth: switchWidth
+    readonly property int designHeight: switchHeight
+    readonly property real contentScale: Math.min(width / designWidth, height / designHeight)
+
+    implicitWidth: designWidth
+    implicitHeight: designHeight
+
+    Item {
+        id: designSpace
+        width: root.designWidth
+        height: root.designHeight
+        anchors.centerIn: parent
+        scale: root.contentScale
 
     // 外壳 (fnr-housing)
     Rectangle {
@@ -548,4 +559,5 @@ Item {
             }
         }
     }
+    } // designSpace
 }

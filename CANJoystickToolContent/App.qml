@@ -34,22 +34,30 @@ Window {
         anchors.centerIn: parent
     }
 
-    // 布局设计器
+    // 布局设计器 — 与主页相同的全局等比缩放
     LayoutDesigner {
         id: layoutDesigner
         visible: currentView === "designer"
-        anchors.fill: parent
+        width: Constants.width
+        height: Constants.height
+        transformOrigin: Item.Center
+        scale: window.scaleFactor
+        anchors.centerIn: parent
 
         onExitRequested: {
             currentView = "main"
         }
     }
 
-    // 产品配置编辑器
+    // 产品配置编辑器 — 与主页相同的全局等比缩放
     ProductEditor {
         id: productEditor
         visible: currentView === "products"
-        anchors.fill: parent
+        width: Constants.width
+        height: Constants.height
+        transformOrigin: Item.Center
+        scale: window.scaleFactor
+        anchors.centerIn: parent
 
         onExitRequested: {
             currentView = "main"

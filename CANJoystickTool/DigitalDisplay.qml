@@ -4,8 +4,6 @@ import QtQuick.Effects
 // 数字显示框 - 与RollerWheel风格一致的LED屏幕效果
 Item {
     id: root
-    width: 80
-    height: 36
 
     // 公开属性
     property int value: 0
@@ -14,6 +12,21 @@ Item {
     property color accentColor: Constants.rollerIndicatorColor
     property color housingColor: Constants.rollerHousingColor
     property color screenColor: "#1a1a1a"
+
+    // 设计基线 80×36, 外层 width/height 可任意指定
+    readonly property int designWidth: 80
+    readonly property int designHeight: 36
+    readonly property real contentScale: Math.min(width / designWidth, height / designHeight)
+
+    implicitWidth: designWidth
+    implicitHeight: designHeight
+
+    Item {
+        id: designSpace
+        width: root.designWidth
+        height: root.designHeight
+        anchors.centerIn: parent
+        scale: root.contentScale
 
     // 外壳 (与RollerWheel一致)
     Rectangle {
@@ -84,7 +97,7 @@ Item {
                     text: root.textValue !== "" ? root.textValue : root.value.toString()
                     color: root.accentColor
                     font.family: "JetBrains Mono, Consolas, monospace"
-                    font.pixelSize: Math.max(10, root.height * 0.45)
+                    font.pixelSize: Math.max(10, root.designHeight * 0.45)
                     font.bold: true
                     verticalAlignment: Text.AlignVCenter
 
@@ -114,4 +127,5 @@ Item {
             }
         }
     }
+    } // designSpace
 }

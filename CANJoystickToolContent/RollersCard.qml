@@ -6,9 +6,13 @@ import CANJoystickTool
 AluminumPanel {
     id: root
 
-    // 卡片尺寸
+    // 卡片尺寸 (可任意指定, 内部按设计基线自动等比缩放)
     panelWidth: 480
     panelHeight: 480
+
+    readonly property int designPanelWidth: 480
+    readonly property int designPanelHeight: 480
+    readonly property real contentScale: Math.min(panelWidth / designPanelWidth, panelHeight / designPanelHeight)
 
     // 输出值
     readonly property real trimValue: trimRoller.value      // 竖向滚轮 (TRIM)
@@ -20,6 +24,14 @@ AluminumPanel {
     // 信号
     signal trimChanged(real value)
     signal panChanged(real value)
+
+    // 设计空间容器
+    Item {
+        id: designSpace
+        width: root.designPanelWidth - 2 * root.contentMargins
+        height: root.designPanelHeight - 2 * root.contentMargins
+        anchors.centerIn: parent
+        scale: root.contentScale
 
     // 主内容区域
     Item {
@@ -199,4 +211,5 @@ AluminumPanel {
             }
         }
     }
+    } // designSpace
 }

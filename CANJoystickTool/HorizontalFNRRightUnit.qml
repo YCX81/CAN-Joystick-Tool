@@ -12,14 +12,17 @@ Item {
 
     signal fnrChanged(string state)
 
-    property real unitScale: 0.75
-    width: 196 * unitScale
-    height: 130 * unitScale
+    readonly property real designWidth: 196
+    readonly property real designHeight: 130
+    readonly property real contentScale: Math.min(width / designWidth, height / designHeight)
+
+    implicitWidth: designWidth * 0.75
+    implicitHeight: designHeight * 0.75
 
     Item {
-        width: 196; height: 130
-        scale: root.unitScale
-        transformOrigin: Item.TopLeft
+        width: root.designWidth; height: root.designHeight
+        anchors.centerIn: parent
+        scale: root.contentScale
 
     // 翘板开关 (旋转90度，F在右)
     Item {

@@ -38,8 +38,13 @@ Item {
     signal released()
     signal edgeReached(string direction)
 
-    width: padSize
-    height: padSize
+    // 设计基线
+    readonly property int designWidth: padSize
+    readonly property int designHeight: padSize
+    readonly property real contentScale: Math.min(width / designWidth, height / designHeight)
+
+    implicitWidth: designWidth
+    implicitHeight: designHeight
 
     // 计算边缘状态
     onXValueChanged: checkEdge()
@@ -63,6 +68,14 @@ Item {
         if (absVal <= threshold) return 0
         return Math.min((absVal - threshold) / (1.0 - threshold), 1.0)
     }
+
+    // 设计空间容器 — 内部所有坐标基于 designWidth × designHeight, 由 root 等比缩放
+    Item {
+        id: designSpace
+        width: root.designWidth
+        height: root.designHeight
+        anchors.centerIn: parent
+        scale: root.contentScale
 
     // 圆角遮罩源 - 使用layer.enabled强制渲染纹理，即使visible:false
     Item {
@@ -843,4 +856,5 @@ Item {
             moved(xValue, yValue)
         }
     }
+    } // designSpace
 }
