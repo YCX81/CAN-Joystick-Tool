@@ -13,6 +13,7 @@ AluminumPanel {
 
     property int canvasWidth: 480
     property int canvasHeight: 480
+    property string scaleMode: "uniform"
 
     // 组件列表
     property var components: []
@@ -628,23 +629,31 @@ AluminumPanel {
     }
 
     function toJSON() {
-        var data = { version: "1.0", canvas: { width: canvasWidth, height: canvasHeight }, components: [] }
+        var data = {
+            version: "1.0",
+            canvas: { width: canvasWidth, height: canvasHeight, scaleMode: scaleMode || "uniform" },
+            components: []
+        }
         for (var i = 0; i < components.length; i++)
             data.components.push(components[i].toJSON())
         return data
     }
 
+    function applyCanvasMetadata(canvas) {
+        canvasWidth = canvas && canvas.width ? canvas.width : panelWidth
+        canvasHeight = canvas && canvas.height ? canvas.height : panelHeight
+        scaleMode = canvas && canvas.scaleMode ? canvas.scaleMode : "uniform"
+    }
+
     function fromJSON(data) {
         while (components.length > 0) removeComponent(components[0])
-        if (data.canvas) {
-            canvasWidth = data.canvas.width || 480
-            canvasHeight = data.canvas.height || 480
-        }
+        applyCanvasMetadata(data.canvas)
         var comps = data.components || []
         for (var i = 0; i < comps.length; i++) {
             var compData = comps[i]
             var wrapper = addComponent(compData.type, compData.x, compData.y, compData.config)
             if (wrapper && compData.id) wrapper.componentId = compData.id
+            if (wrapper && compData.bindingId) wrapper.bindingId = compData.bindingId
         }
         nextComponentId = components.length + 1
     }

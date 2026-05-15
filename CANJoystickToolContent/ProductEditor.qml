@@ -159,6 +159,7 @@ Item {
 
             // For canvas cells: populate with visual components or auto-generate from component IDs
             if (cell.cellType === "canvas" && cell.canvasItem) {
+                if (c.canvas) cell.canvasItem.applyCanvasMetadata(c.canvas)
                 var vis = c.visualComponents || []
                 if (vis.length > 0) {
                     // Load saved visual layout with bindingIds
@@ -191,8 +192,14 @@ Item {
             if (!cell) continue
             var cd = { row: Math.floor(i/2), col: i%2, title: cell.cellTitle, cellType: cell.cellType, components: cell.cellCompIds }
             if (cell.cellType === "canvas" && cell.canvasItem) {
+                var canvasData = cell.canvasItem.toJSON()
+                cd.canvas = {
+                    width: canvasData.canvas.width,
+                    height: canvasData.canvas.height,
+                    scaleMode: canvasData.canvas.scaleMode || "uniform"
+                }
                 cd.visualComponents = []
-                var comps = cell.canvasItem.toJSON().components || []
+                var comps = canvasData.components || []
                 for (var j = 0; j < comps.length; j++)
                     cd.visualComponents.push({ type: comps[j].type, x: comps[j].x, y: comps[j].y, config: comps[j].config, bindingId: comps[j].bindingId || "" })
             }
@@ -463,6 +470,7 @@ Item {
                                         visible: cellCard.cellType === "canvas"
                                         sourceComponent: DesignCanvas {
                                             panelWidth: body.width; panelHeight: body.height; borderRadius: 4
+                                            canvasWidth: body.width; canvasHeight: body.height; scaleMode: "uniform"
                                             productBindings: currentConfig.components || []
                                             onLayoutModified: { hasUnsavedChanges = true; root.refreshBindingStatus() }
                                         }
