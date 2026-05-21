@@ -5,154 +5,467 @@ import QtQuick.Dialogs
 import QtQuick.Effects
 import CANJoystickTool
 
-// 布局设计器 - Light Neumorphism 风格
+// DownloadTool-style component layout designer.
 Item {
     id: root
 
     property string layoutName: "Untitled"
     property bool hasUnsavedChanges: false
+    property int selectedCount: canvas.selectedComponents.length
+    property string canvasPreset: "square"
+    property int canvasDesignWidth: Constants.homeCardDesignSize
+    property int canvasDesignHeight: Constants.homeCardDesignSize
 
     signal exitRequested()
 
     property var layoutManager: typeof LayoutManager !== 'undefined' ? LayoutManager : null
 
-    // ========== Neumorphism 配色 (浅色) ==========
-    readonly property color neuBg: "#e0e0e5"
-    readonly property color neuLightShadow: "#ffffff"
-    readonly property color neuDarkShadow: "#bebec3"
-    readonly property color neuSurface: "#e4e4e9"
-    readonly property color neuTextPrimary: "#2a2a2e"
-    readonly property color neuTextSecondary: "#76767e"
-    readonly property color neuAccent: Constants.accentColor
+    readonly property color surfaceBg: Constants.bgPrimary
+    readonly property color panelBg: Constants.bgCard
+    readonly property color fieldBg: Constants.bgInput
+    readonly property color lineColor: Constants.border
+    readonly property color mutedColor: Constants.textMuted
+    readonly property color accentColor: Constants.accent
+    readonly property color hardwareAccent: Constants.accentColor
 
-    Component.onCompleted: {
-        loadCardTemplates()
-    }
+    Component.onCompleted: loadCardTemplates()
 
-    // ========== 背景 ==========
     Rectangle {
         anchors.fill: parent
-        color: neuBg
+        color: root.surfaceBg
     }
 
-    // ========== 中心画布区域 ==========
-    Item {
-        id: canvasArea
-        anchors.left: parent.left
-        anchors.top: parent.top
-        anchors.bottom: parent.bottom
-        anchors.right: componentPanel.left
-        anchors.rightMargin: 0
+    ColumnLayout {
+        anchors.fill: parent
+        anchors.margins: 10
+        spacing: 8
 
-        DesignCanvas {
-            id: canvas
-            anchors.centerIn: parent
+        Rectangle {
+            Layout.fillWidth: true
+            height: 48
+            radius: 8
+            color: root.panelBg
+            border.width: 1
+            border.color: root.lineColor
 
+            RowLayout {
+                anchors.fill: parent
+                anchors.leftMargin: 12
+                anchors.rightMargin: 12
+                spacing: 10
 
-            onSelectionChanged: function(selected) {
-                // 无属性面板
+                CompactAction {
+                    label: "返回"
+                    onClicked: root.exitRequested()
+                }
+
+                Rectangle {
+                    width: 1
+                    height: 22
+                    color: root.lineColor
+                }
+
+                ColumnLayout {
+                    spacing: 0
+                    Layout.minimumWidth: 180
+
+                    Label {
+                        text: "组件库设计器"
+                        color: Constants.textPrimary
+                        font.pixelSize: 14
+                        font.bold: true
+                    }
+
+                    Label {
+                        text: layoutName + (hasUnsavedChanges ? " *" : "")
+                        color: root.mutedColor
+                        font.pixelSize: 10
+                        elide: Text.ElideRight
+                        Layout.fillWidth: true
+                    }
+                }
+
+                StatusPill {
+                    label: canvas.components.length + " 组件"
+                    dotColor: canvas.components.length > 0 ? Constants.success : root.mutedColor
+                }
+
+                StatusPill {
+                    label: selectedCount > 0 ? selectedCount + " 已选择" : "未选择"
+                    dotColor: selectedCount > 0 ? root.accentColor : root.mutedColor
+                }
+
+                Item { Layout.fillWidth: true }
+
+                CompactAction {
+                    label: "新建"
+                    onClicked: newLayout()
+                }
+
+                CompactAction {
+                    label: "打开"
+                    onClicked: fileDialog.open()
+                }
+
+                CompactAction {
+                    label: "保存"
+                    emphasized: hasUnsavedChanges
+                    onClicked: saveLayout()
+                }
+
+                CompactAction {
+                    label: "保存为卡片"
+                    actionEnabled: selectedCount > 0
+                    emphasized: selectedCount > 0
+                    onClicked: saveAsCardDialog.open()
+                }
+
+                Rectangle {
+                    width: 1
+                    height: 22
+                    color: root.lineColor
+                }
+
+                CompactAction {
+                    label: "首页比例 " + Constants.homeCardDesignSize + "x" + Constants.homeCardDesignSize
+                    emphasized: canvasPreset === "square"
+                    onClicked: setCanvasPreset("square")
+                }
+
+                CompactAction {
+                    label: "重置方形"
+                    emphasized: false
+                    onClicked: setCanvasPreset("square")
+                }
+            }
+        }
+
+        RowLayout {
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            spacing: 10
+
+            Rectangle {
+                Layout.preferredWidth: 248
+                Layout.fillHeight: true
+                radius: 8
+                color: root.panelBg
+                border.width: 1
+                border.color: root.lineColor
+                clip: true
+
+                ColumnLayout {
+                    anchors.fill: parent
+                    spacing: 0
+
+                    PanelHeader {
+                        title: "组件库"
+                        subtitle: "拖放到中间画布"
+                    }
+
+                    Rectangle {
+                        Layout.fillWidth: true
+                        height: 1
+                        color: root.lineColor
+                    }
+
+                    Item {
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+
+                        ComponentPanel {
+                            id: componentPanel
+                            anchors.fill: parent
+                            panelWidth: parent.width
+                            neuBg: root.panelBg
+                            neuLightShadow: "#ffffff"
+                            neuDarkShadow: root.lineColor
+                            neuSurface: root.panelBg
+                            neuTextPrimary: Constants.textPrimary
+                            neuTextSecondary: Constants.textSecondary
+                            neuAccent: root.accentColor
+
+                            onComponentRequested: function(componentType) {
+                                var config = ComponentRegistry.getDefaultConfig(componentType)
+                                var size = ComponentRegistry.getDefaultSize(componentType)
+                                var cx = canvas.canvasWidth / 2 - size.width / 2
+                                var cy = canvas.canvasHeight / 2 - size.height / 2
+                                canvas.addComponent(componentType, cx, cy, config)
+                            }
+
+                            onComponentDragStarted: function(componentType, globalX, globalY) {
+                                dragProxy.componentType = componentType
+                                dragProxy.visible = true
+                                var lp = root.mapFromGlobal(globalX, globalY)
+                                dragProxy.x = lp.x - dragProxy.width / 2
+                                dragProxy.y = lp.y - dragProxy.height / 2
+                            }
+
+                            onComponentDragMoved: function(globalX, globalY) {
+                                var lp = root.mapFromGlobal(globalX, globalY)
+                                dragProxy.x = lp.x - dragProxy.width / 2
+                                dragProxy.y = lp.y - dragProxy.height / 2
+                            }
+
+                            onComponentDragEnded: function(globalX, globalY) {
+                                dragProxy.visible = false
+                                var displayPos = canvas.mapFromGlobal(globalX, globalY)
+                                if (displayPos.x >= 0 && displayPos.x <= canvas.width &&
+                                    displayPos.y >= 0 && displayPos.y <= canvas.height) {
+                                    var canvasPos = canvas.displayToCanvasPoint(displayPos.x, displayPos.y)
+                                    var config = ComponentRegistry.getDefaultConfig(dragProxy.componentType)
+                                    var size = ComponentRegistry.getDefaultSize(dragProxy.componentType)
+                                    canvas.addComponent(dragProxy.componentType,
+                                                        canvasPos.x - size.width / 2,
+                                                        canvasPos.y - size.height / 2,
+                                                        config)
+                                }
+                            }
+                        }
+                    }
+                }
             }
 
-            onLayoutModified: {
-                root.hasUnsavedChanges = true
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                radius: 8
+                color: root.panelBg
+                border.width: 1
+                border.color: root.lineColor
+                clip: true
+
+                ColumnLayout {
+                    anchors.fill: parent
+                    anchors.margins: 12
+                    spacing: 8
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        height: 26
+                        spacing: 8
+
+                        Label {
+                            text: "布局画布"
+                            color: Constants.textPrimary
+                            font.pixelSize: 12
+                            font.bold: true
+                        }
+
+                        Label {
+                            text: canvas.canvasWidth + " x " + canvas.canvasHeight
+                            color: Constants.textSecondary
+                            font.pixelSize: 10
+                            font.family: "Consolas"
+                        }
+
+                        Item { Layout.fillWidth: true }
+
+                        Label {
+                            text: hasUnsavedChanges ? "有未保存修改" : "已同步"
+                            color: hasUnsavedChanges ? Constants.warning : Constants.success
+                            font.pixelSize: 10
+                        }
+                    }
+
+                    Rectangle {
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        radius: 8
+                        color: root.fieldBg
+                        border.width: 1
+                        border.color: root.lineColor
+
+                        Item {
+                            id: canvasArea
+                            anchors.fill: parent
+                            anchors.margins: 16
+
+                            DesignCanvas {
+                                id: canvas
+                                anchors.centerIn: parent
+                                panelWidth: root.canvasDesignWidth
+                                panelHeight: root.canvasDesignHeight
+                                canvasWidth: root.canvasDesignWidth
+                                canvasHeight: root.canvasDesignHeight
+
+                                onSelectionChanged: function(selected) {
+                                    selectedCount = selected.length
+                                }
+
+                                onLayoutModified: {
+                                    root.hasUnsavedChanges = true
+                                    selectedCount = canvas.selectedComponents.length
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Rectangle {
+                Layout.preferredWidth: 260
+                Layout.fillHeight: true
+                radius: 8
+                color: root.panelBg
+                border.width: 1
+                border.color: root.lineColor
+                clip: true
+
+                ColumnLayout {
+                    anchors.fill: parent
+                    spacing: 0
+
+                    PanelHeader {
+                        title: "检查器"
+                        subtitle: selectedCount > 0 ? "当前选择" : "布局摘要"
+                    }
+
+                    Rectangle {
+                        Layout.fillWidth: true
+                        height: 1
+                        color: root.lineColor
+                    }
+
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        Layout.margins: 12
+                        spacing: 10
+
+                        InfoRow {
+                            name: "布局名称"
+                            value: root.layoutName
+                        }
+
+                        InfoRow {
+                            name: "组件数量"
+                            value: canvas.components.length.toString()
+                        }
+
+                        InfoRow {
+                            name: "已选择"
+                            value: selectedCount.toString()
+                        }
+
+                        InfoRow {
+                            name: "画布尺寸"
+                            value: canvas.canvasWidth + " x " + canvas.canvasHeight
+                        }
+
+                        InfoRow {
+                            name: "目标比例"
+                            value: "首页方形卡片"
+                        }
+
+                        Rectangle {
+                            Layout.fillWidth: true
+                            height: 1
+                            color: root.lineColor
+                        }
+
+                        Label {
+                            text: selectedCount > 0 ? "可用操作" : "组件库说明"
+                            color: Constants.textPrimary
+                            font.pixelSize: 11
+                            font.bold: true
+                        }
+
+                        Label {
+                            Layout.fillWidth: true
+                            text: selectedCount > 0
+                                  ? "右键组件可编辑标签、设置绑定、复制、删除或调整层级。保存为卡片会把当前选择写入模板库。"
+                                  : "默认画布使用 DownloadTool 卡片 body 比例。左侧组件库先产出稳定 JSON 和视觉组件，后续 CAN 数据运行态可直接消费这些绑定。"
+                            color: Constants.textSecondary
+                            font.pixelSize: 10
+                            wrapMode: Text.WordWrap
+                            lineHeight: 1.35
+                        }
+
+                        CompactAction {
+                            Layout.fillWidth: true
+                            label: "保存所选为卡片"
+                            actionEnabled: selectedCount > 0
+                            emphasized: selectedCount > 0
+                            onClicked: saveAsCardDialog.open()
+                        }
+
+                        Item { Layout.fillHeight: true }
+                    }
+                }
+            }
+        }
+
+        Rectangle {
+            Layout.fillWidth: true
+            height: 34
+            radius: 6
+            color: root.panelBg
+            border.width: 1
+            border.color: root.lineColor
+
+            RowLayout {
+                anchors.fill: parent
+                anchors.leftMargin: 14
+                anchors.rightMargin: 14
+                spacing: 18
+
+                StatusPill {
+                    label: "组件库"
+                    dotColor: root.accentColor
+                }
+
+                Label {
+                    text: "Ctrl+S 保存  |  Delete 删除  |  Ctrl+A 全选  |  右键打开组件菜单"
+                    color: Constants.textSecondary
+                    font.pixelSize: 10
+                }
+
+                Item { Layout.fillWidth: true }
+
+                Label {
+                    text: layoutManager ? "模板路径已连接" : "文件服务不可用"
+                    color: layoutManager ? Constants.success : Constants.error
+                    font.pixelSize: 10
+                }
             }
         }
     }
 
-    // ========== 右侧组件面板 ==========
-    ComponentPanel {
-        id: componentPanel
-        anchors.right: parent.right
-        anchors.top: parent.top
-        anchors.bottom: parent.bottom
-        panelWidth: 210
-        neuBg: root.neuBg
-        neuLightShadow: root.neuLightShadow
-        neuDarkShadow: root.neuDarkShadow
-        neuSurface: root.neuSurface
-        neuTextPrimary: root.neuTextPrimary
-        neuTextSecondary: root.neuTextSecondary
-        neuAccent: root.neuAccent
-
-        onComponentRequested: function(componentType) {
-            var def = ComponentRegistry.getDefinition(componentType)
-            var config = def ? ComponentRegistry.getDefaultConfig(componentType) : {}
-            var areaW = canvas.panelWidth - 32
-            var areaH = canvas.panelHeight - 32
-            var cx = areaW / 2 - (def ? def.defaultWidth / 2 : 50)
-            var cy = areaH / 2 - (def ? def.defaultHeight / 2 : 50)
-            canvas.addComponent(componentType, cx, cy, config)
-        }
-
-        onComponentDragStarted: function(componentType, globalX, globalY) {
-            dragProxy.componentType = componentType
-            dragProxy.visible = true
-            var lp = root.mapFromGlobal(globalX, globalY)
-            dragProxy.x = lp.x - dragProxy.width / 2
-            dragProxy.y = lp.y - dragProxy.height / 2
-        }
-
-        onComponentDragMoved: function(globalX, globalY) {
-            var lp = root.mapFromGlobal(globalX, globalY)
-            dragProxy.x = lp.x - dragProxy.width / 2
-            dragProxy.y = lp.y - dragProxy.height / 2
-        }
-
-        onComponentDragEnded: function(globalX, globalY) {
-            dragProxy.visible = false
-            // 判断是否落在画布上
-            var canvasPos = canvas.mapFromGlobal(globalX, globalY)
-            if (canvasPos.x >= 0 && canvasPos.x <= canvas.width &&
-                canvasPos.y >= 0 && canvasPos.y <= canvas.height) {
-                var def = ComponentRegistry.getDefinition(dragProxy.componentType)
-                var config = def ? ComponentRegistry.getDefaultConfig(dragProxy.componentType) : {}
-                var compW = def ? def.defaultWidth : 100
-                var compH = def ? def.defaultHeight : 100
-                canvas.addComponent(dragProxy.componentType,
-                                    canvasPos.x - compW / 2,
-                                    canvasPos.y - compH / 2, config)
-            }
-        }
-    }
-
-    // ========== 拖拽代理 — 加载实际组件缩略图 ==========
     Item {
         id: dragProxy
         visible: false
         z: 9999
-        opacity: 0.85
+        opacity: 0.88
 
         property string componentType: ""
         property real thumbScale: 0.55
 
-        // 尺寸跟随缩略图
         width: dragThumbLoader.item ? dragThumbLoader.item.width * thumbScale + 12 : 60
         height: dragThumbLoader.item ? dragThumbLoader.item.height * thumbScale + 12 : 60
 
-        // 背景 + 阴影
         Rectangle {
             anchors.fill: parent
-            radius: 10
-            color: Qt.rgba(neuBg.r, neuBg.g, neuBg.b, 0.8)
-            border.width: 1.5
-            border.color: neuAccent
+            radius: 8
+            color: "#f8f8fa"
+            border.width: 1
+            border.color: root.accentColor
 
             layer.enabled: true
             layer.effect: MultiEffect {
                 shadowEnabled: true
-                shadowColor: "#40000000"
-                shadowBlur: 0.5
-                shadowVerticalOffset: 6
+                shadowColor: "#26000000"
+                shadowBlur: 0.35
+                shadowVerticalOffset: 4
             }
         }
 
-        // 组件缩略图
         Item {
             anchors.centerIn: parent
             width: dragThumbLoader.item ? dragThumbLoader.item.width : 0
             height: dragThumbLoader.item ? dragThumbLoader.item.height : 0
             scale: dragProxy.thumbScale
-            enabled: false  // 禁止所有内部鼠标交互
+            enabled: false
 
             Loader {
                 id: dragThumbLoader
@@ -163,6 +476,8 @@ Item {
                     if (t === "FNRSwitch") return thumbFNRComp
                     if (t === "VerticalRoller") return thumbVRollerComp
                     if (t === "HorizontalRoller") return thumbHRollerComp
+                    if (t === "HorizontalFNR") return thumbHFNRComp
+                    if (t === "HorizontalFNRRight") return thumbHFNRRightComp
                     return null
                 }
                 onLoaded: applyDragThumbConfig(item, dragProxy.componentType)
@@ -170,259 +485,150 @@ Item {
         }
     }
 
-    // 缩略图组件模板
     Component { id: thumbButtonComp; IndustrialButton {} }
     Component { id: thumbFNRComp; FNRSwitchUnit {} }
     Component { id: thumbVRollerComp; VerticalRollerUnit {} }
     Component { id: thumbHRollerComp; HorizontalRollerUnit {} }
+    Component { id: thumbHFNRComp; HorizontalFNRUnit {} }
+    Component { id: thumbHFNRRightComp; HorizontalFNRRightUnit {} }
 
-    function applyDragThumbConfig(item, type) {
-        if (!item) return
-        if (type.indexOf("Button") === 0 && item.hasOwnProperty("variant")) {
-            item.variant = type.replace("Button", "").toLowerCase()
-        }
-    }
+    component CompactAction: Item {
+        id: action
 
-    // ========== 角落按钮 ==========
-
-    // 左上 - 返回按钮
-    NeuButton {
-        id: backBtn
-        anchors.left: parent.left
-        anchors.top: parent.top
-        anchors.margins: 24
-        iconText: "←"
-        labelText: "Back"
-        neuBg: root.neuBg
-        neuLight: root.neuLightShadow
-        neuDark: root.neuDarkShadow
-
-        onClicked: root.exitRequested()
-    }
-
-    // 右上 - 保存为卡片
-    NeuButton {
-        id: saveCardBtn
-        anchors.right: componentPanel.left
-        anchors.top: parent.top
-        anchors.topMargin: 24
-        anchors.rightMargin: 24
-        iconText: "💾"
-        labelText: "Save Card"
-        isAccent: true
-        enabled: canvas.selectedComponents.length > 0
-        neuBg: root.neuBg
-        neuLight: root.neuLightShadow
-        neuDark: root.neuDarkShadow
-
-        onClicked: saveAsCardDialog.open()
-    }
-
-    // 右下 - 组件计数
-    NeuInfoBadge {
-        anchors.right: componentPanel.left
-        anchors.bottom: parent.bottom
-        anchors.margins: 24
-        neuBg: root.neuBg
-        text1: canvas.components.length + " components"
-        text2: canvas.selectedComponents.length > 0
-               ? canvas.selectedComponents.length + " selected" : ""
-        accentColor: neuAccent
-    }
-
-    // ========== Neumorphic 按钮组件 ==========
-    component NeuButton: Item {
-        id: neuBtn
-        property string iconText: ""
-        property string labelText: ""
-        property bool isAccent: false
-        property bool enabled: true
-        property color neuBg: "#e0e0e5"
-        property color neuLight: "#ffffff"
-        property color neuDark: "#bebec3"
+        property string label: ""
+        property bool emphasized: false
+        property bool actionEnabled: true
 
         signal clicked()
 
-        width: btnContent.width + 28
-        height: 40
-        opacity: enabled ? 1.0 : 0.35
+        Layout.preferredHeight: 30
+        implicitWidth: Math.max(72, actionText.implicitWidth + 24)
+        implicitHeight: 30
+        opacity: actionEnabled ? 1.0 : 0.45
 
-        // 亮阴影 (左上)
         Rectangle {
-            visible: !btnMouse.pressed
-            anchors.fill: btnMain
-            anchors.margins: -1
-            anchors.leftMargin: -6
-            anchors.topMargin: -6
-            anchors.rightMargin: 6
-            anchors.bottomMargin: 6
-            radius: btnMain.radius + 2
-            color: neuBtn.neuLight
-            layer.enabled: true
-            layer.effect: MultiEffect {
-                blurEnabled: true
-                blur: 0.6
-                blurMax: 14
-            }
-        }
-
-        // 暗阴影 (右下)
-        Rectangle {
-            visible: !btnMouse.pressed
-            anchors.fill: btnMain
-            anchors.margins: -1
-            anchors.leftMargin: 6
-            anchors.topMargin: 6
-            anchors.rightMargin: -6
-            anchors.bottomMargin: -6
-            radius: btnMain.radius + 2
-            color: neuBtn.neuDark
-            layer.enabled: true
-            layer.effect: MultiEffect {
-                blurEnabled: true
-                blur: 0.6
-                blurMax: 14
-            }
-        }
-
-        // 主体
-        Rectangle {
-            id: btnMain
             anchors.fill: parent
-            radius: 12
-            color: neuBtn.neuBg
-
-            // 按下时内阴影 - 顶部暗
-            Rectangle {
-                visible: btnMouse.pressed
-                anchors.fill: parent
-                radius: parent.radius
-                gradient: Gradient {
-                    GradientStop { position: 0.0; color: "#40000000" }
-                    GradientStop { position: 0.4; color: "transparent" }
-                    GradientStop { position: 1.0; color: "transparent" }
-                }
-            }
-
-            // 按下时内阴影 - 底部亮
-            Rectangle {
-                visible: btnMouse.pressed
-                anchors.fill: parent
-                radius: parent.radius
-                gradient: Gradient {
-                    GradientStop { position: 0.0; color: "transparent" }
-                    GradientStop { position: 0.6; color: "transparent" }
-                    GradientStop { position: 1.0; color: "#15FFFFFF" }
-                }
-            }
-
-            // 未按下时微妙顶部高光
-            Rectangle {
-                visible: !btnMouse.pressed
-                anchors.fill: parent
-                radius: parent.radius
-                gradient: Gradient {
-                    GradientStop { position: 0.0; color: "#30FFFFFF" }
-                    GradientStop { position: 0.3; color: "transparent" }
-                    GradientStop { position: 1.0; color: "transparent" }
-                }
-            }
+            radius: 6
+            color: !action.actionEnabled ? root.fieldBg :
+                   actionMouse.pressed ? Qt.darker(action.emphasized ? root.accentColor : root.fieldBg, 1.08) :
+                   actionMouse.containsMouse ? (action.emphasized ? Qt.lighter(root.accentColor, 1.08) : "#fafafa") :
+                   action.emphasized ? root.accentColor : root.fieldBg
+            border.width: action.emphasized ? 0 : 1
+            border.color: root.lineColor
         }
 
-        Row {
-            id: btnContent
+        Text {
+            id: actionText
             anchors.centerIn: parent
-            spacing: 6
-
-            Text {
-                text: neuBtn.iconText
-                color: neuBtn.isAccent ? neuAccent : neuTextPrimary
-                font.pixelSize: 14
-                anchors.verticalCenter: parent.verticalCenter
-            }
-
-            Text {
-                text: neuBtn.labelText
-                color: neuBtn.isAccent ? neuAccent : neuTextPrimary
-                font.pixelSize: 12
-                font.weight: Font.Medium
-                anchors.verticalCenter: parent.verticalCenter
-            }
+            text: action.label
+            color: action.emphasized ? "white" : Constants.textPrimary
+            font.pixelSize: 11
+            font.bold: action.emphasized
         }
 
         MouseArea {
-            id: btnMouse
+            id: actionMouse
             anchors.fill: parent
-            enabled: neuBtn.enabled
+            hoverEnabled: true
+            enabled: action.actionEnabled
             cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-            onClicked: neuBtn.clicked()
+            onClicked: action.clicked()
         }
     }
 
-    // ========== Neumorphic 信息徽章 ==========
-    component NeuInfoBadge: Item {
-        property color neuBg: "#e0e0e5"
-        property string text1: ""
-        property string text2: ""
-        property color accentColor: "#00e0ff"
+    component PanelHeader: Item {
+        property string title: ""
+        property string subtitle: ""
 
-        width: badgeRow.width + 24
-        height: 32
+        Layout.fillWidth: true
+        height: 52
 
-        // 凹陷效果
+        Column {
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
+            anchors.leftMargin: 14
+            anchors.rightMargin: 14
+            spacing: 2
+
+            Text {
+                text: title
+                color: Constants.textPrimary
+                font.pixelSize: 12
+                font.bold: true
+            }
+
+            Text {
+                text: subtitle
+                color: Constants.textSecondary
+                font.pixelSize: 10
+                elide: Text.ElideRight
+                width: parent.width
+            }
+        }
+    }
+
+    component StatusPill: Row {
+        property string label: ""
+        property color dotColor: Constants.textMuted
+
+        spacing: 5
+        Layout.alignment: Qt.AlignVCenter
+
         Rectangle {
-            anchors.fill: parent
-            radius: 10
-            color: Qt.darker(neuBg, 1.15)
-
-            // 内凹顶部暗阴影
-            Rectangle {
-                anchors.fill: parent
-                radius: parent.radius
-                gradient: Gradient {
-                    GradientStop { position: 0.0; color: "#30000000" }
-                    GradientStop { position: 0.35; color: "transparent" }
-                    GradientStop { position: 1.0; color: "transparent" }
-                }
-            }
-
-            // 内凹底部亮光
-            Rectangle {
-                anchors.fill: parent
-                radius: parent.radius
-                gradient: Gradient {
-                    GradientStop { position: 0.0; color: "transparent" }
-                    GradientStop { position: 0.7; color: "transparent" }
-                    GradientStop { position: 1.0; color: "#20FFFFFF" }
-                }
-            }
+            width: 8
+            height: 8
+            radius: 4
+            color: dotColor
+            anchors.verticalCenter: parent.verticalCenter
         }
 
-        Row {
-            id: badgeRow
-            anchors.centerIn: parent
-            spacing: 12
-
-            Text {
-                text: text1
-                color: neuTextSecondary
-                font.pixelSize: 10
-                font.family: "Consolas"
-                anchors.verticalCenter: parent.verticalCenter
-            }
-
-            Text {
-                visible: text2 !== ""
-                text: text2
-                color: accentColor
-                font.pixelSize: 10
-                font.weight: Font.Medium
-                anchors.verticalCenter: parent.verticalCenter
-            }
+        Text {
+            text: label
+            color: Constants.textSecondary
+            font.pixelSize: 10
+            anchors.verticalCenter: parent.verticalCenter
         }
     }
 
-    // ========== 快捷键 ==========
+    component InfoRow: RowLayout {
+        property string name: ""
+        property string value: ""
+
+        Layout.fillWidth: true
+        spacing: 8
+
+        Text {
+            text: name
+            color: Constants.textSecondary
+            font.pixelSize: 10
+            Layout.preferredWidth: 72
+        }
+
+        Text {
+            text: value
+            color: Constants.textPrimary
+            font.pixelSize: 10
+            font.family: "Consolas"
+            elide: Text.ElideRight
+            Layout.fillWidth: true
+        }
+    }
+
+    function applyDragThumbConfig(item, type) {
+        if (!item) return
+        var defaultConfig = ComponentRegistry.getDefaultConfig(type)
+        for (var key in defaultConfig) {
+            if (item.hasOwnProperty(key)) {
+                item[key] = defaultConfig[key]
+            }
+        }
+
+        var defaultSize = ComponentRegistry.getDefaultSize(type)
+        if (defaultSize.width > 0) item.width = defaultSize.width
+        if (defaultSize.height > 0) item.height = defaultSize.height
+    }
+
     Keys.onPressed: function(event) {
         if (event.key === Qt.Key_S && (event.modifiers & Qt.ControlModifier)) {
             saveLayout()
@@ -432,11 +638,9 @@ Item {
 
     focus: true
 
-    // ========== 对话框 ==========
-
     Dialog {
         id: saveAsCardDialog
-        title: "Save as Card Template"
+        title: "保存为卡片模板"
         standardButtons: Dialog.Ok | Dialog.Cancel
         modal: true
         anchors.centerIn: parent
@@ -447,7 +651,7 @@ Item {
             spacing: 16
 
             Text {
-                text: "Save " + canvas.selectedComponents.length + " selected components as a reusable card template."
+                text: "将 " + canvas.selectedComponents.length + " 个已选择组件保存为可复用卡片模板。"
                 color: Constants.textSecondary
                 font.pixelSize: 11
                 wrapMode: Text.WordWrap
@@ -459,7 +663,7 @@ Item {
                 spacing: 4
 
                 Text {
-                    text: "Card Name:"
+                    text: "卡片名称"
                     color: Constants.textPrimary
                     font.pixelSize: 11
                     font.weight: Font.Medium
@@ -468,7 +672,7 @@ Item {
                 TextField {
                     id: cardNameField
                     Layout.fillWidth: true
-                    placeholderText: "Enter card name..."
+                    placeholderText: "输入卡片名称..."
                     font.pixelSize: 12
                 }
             }
@@ -478,7 +682,7 @@ Item {
                 spacing: 4
 
                 Text {
-                    text: "Description (optional):"
+                    text: "说明"
                     color: Constants.textPrimary
                     font.pixelSize: 11
                     font.weight: Font.Medium
@@ -488,7 +692,7 @@ Item {
                     id: cardDescField
                     Layout.fillWidth: true
                     Layout.preferredHeight: 60
-                    placeholderText: "Enter description..."
+                    placeholderText: "可选说明..."
                     font.pixelSize: 11
                     wrapMode: TextArea.Wrap
                 }
@@ -512,7 +716,7 @@ Item {
 
     FileDialog {
         id: fileDialog
-        title: "Select Layout File"
+        title: "选择布局文件"
         nameFilters: ["JSON files (*.json)", "All files (*)"]
         fileMode: FileDialog.OpenFile
         onAccepted: loadLayoutFromFile(selectedFile)
@@ -520,18 +724,18 @@ Item {
 
     FileDialog {
         id: saveFileDialog
-        title: "Save Layout"
+        title: "保存布局"
         nameFilters: ["JSON files (*.json)"]
         fileMode: FileDialog.SaveFile
         defaultSuffix: "json"
         onAccepted: saveLayoutToFile(selectedFile)
     }
 
-    // ========== 功能函数 ==========
-
     function newLayout() {
         canvas.clear()
         layoutName = "Untitled"
+        selectedCount = 0
+        setCanvasPreset("square", false)
         hasUnsavedChanges = false
     }
 
@@ -570,8 +774,10 @@ Item {
             var path = typeof filePath === 'string' ? filePath : layoutManager.fromFileUrl(filePath)
             var layoutData = layoutManager.loadLayout(path)
             if (layoutData && Object.keys(layoutData).length > 0) {
+                applyCanvasSizeFromData(layoutData.canvas)
                 canvas.fromJSON(layoutData)
                 layoutName = layoutData.name || "Untitled"
+                selectedCount = 0
                 hasUnsavedChanges = false
             }
         }
@@ -602,5 +808,27 @@ Item {
             var data = CardTemplateManager.toJSON()
             layoutManager.saveCardTemplates(data.templates)
         }
+    }
+
+    function setCanvasPreset(preset, markModified) {
+        setCanvasSize(Constants.homeCardDesignSize,
+                      Constants.homeCardDesignSize,
+                      "square", markModified)
+    }
+
+    function setCanvasSize(width, height, preset, markModified) {
+        canvasPreset = preset || "custom"
+        canvasDesignWidth = width
+        canvasDesignHeight = height
+        canvas.panelWidth = width
+        canvas.panelHeight = height
+        canvas.canvasWidth = width
+        canvas.canvasHeight = height
+        if (markModified !== false)
+            hasUnsavedChanges = true
+    }
+
+    function applyCanvasSizeFromData(canvasData) {
+        setCanvasPreset("square", false)
     }
 }

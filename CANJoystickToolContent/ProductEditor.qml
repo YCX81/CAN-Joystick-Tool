@@ -1,6 +1,7 @@
 import QtQuick 6.5
 import QtQuick.Controls 6.5
 import QtQuick.Layouts 6.5
+import QtQuick.Effects
 import CANJoystickTool
 
 Item {
@@ -11,7 +12,11 @@ Item {
     property var currentConfig: ({})
     property string currentFilePath: ""
     property bool hasUnsavedChanges: false
+    property bool loadingCells: false
     property int activeCellIndex: 0
+    readonly property int defaultCanvasWidth: Constants.homeCardDesignSize
+    readonly property int defaultCanvasHeight: Constants.homeCardDesignSize
+    readonly property real panelWidth: 320
 
     // DownloadTool colors
     readonly property color dtBg: "#f5f5f7"
@@ -32,12 +37,220 @@ Item {
 
     // Reactive canvas mode
     property bool isCanvasMode: false
+    function editableCellAt(idx) {
+        if (idx < 0 || idx >= 4)
+            return null
+        var cell = cellRepeater.itemAt(idx)
+        return cell !== null && cell.cellType === "canvas" ? cell : null
+    }
+    function activeCanvasCell() {
+        var cell = editableCellAt(activeCellIndex)
+        if (cell)
+            return cell
+        for (var i = 0; i < cellRepeater.count; i++) {
+            cell = editableCellAt(i)
+            if (cell)
+                return cell
+        }
+        return null
+    }
     function refreshCanvasMode() {
-        if (activeCellIndex < 0 || activeCellIndex >= 4) { isCanvasMode = false; return }
-        var cell = cellRepeater.itemAt(activeCellIndex)
-        isCanvasMode = cell !== null && cell.cellType === "canvas"
+        isCanvasMode = activeCanvasCell() !== null
     }
     onActiveCellIndexChanged: refreshCanvasMode()
+
+    function parseConfigNumber(value) {
+        if (value === undefined || value === null || value === "")
+            return NaN
+        if (typeof value === "number")
+            return value
+        var text = String(value).trim()
+        if (text.length === 0)
+            return NaN
+        if (text.indexOf("0x") === 0 || text.indexOf("0X") === 0)
+            return parseInt(text.substring(2), 16)
+        return parseInt(text, 10)
+    }
+
+    function hexText(value, width) {
+        if (isNaN(value))
+            return "--"
+        var text = Math.floor(value).toString(16).toUpperCase()
+        while (text.length < width)
+            text = "0" + text
+        return "0x" + text
+    }
+
+    function composeJ1939Id(priority, pgn, source, destination) {
+        var pf = (pgn >> 8) & 0xFF
+        var id = (priority & 0x7) << 26
+        id |= (pgn & 0x3FF00) << 8
+        id |= ((pf < 240) ? (destination & 0xFF) : (pgn & 0xFF)) << 8
+        id |= source & 0xFF
+        return id
+    }
+
+    function previewFrameLabel(message) {
+        var id = String(message.id || "").toLowerCase()
+        if (id === "addressclaim" || id === "address_claim")
+            return "ADDR"
+        if (id === "heartbeat")
+            return "HB"
+        if (id.length > 0)
+            return id.toUpperCase()
+        return "MSG"
+    }
+
+    function previewFramePeriodMs(message) {
+        var period = parseConfigNumber(message.period)
+        if (!isNaN(period) && period > 0)
+            return period
+
+        var id = String(message.id || "").toLowerCase()
+        var can = currentConfig.can || {}
+        var canopen = can.canopen || {}
+        if (id === "heartbeat") {
+            var heartbeat = parseConfigNumber(canopen.heartbeatMs)
+            if (!isNaN(heartbeat) && heartbeat > 0)
+                return heartbeat
+        }
+        return NaN
+    }
+
+    function previewPeriodText(message) {
+        var period = previewFramePeriodMs(message)
+        if (isNaN(period) || period <= 0)
+            return "事件触发"
+
+        var hz = 1000 / period
+        var hzText = hz >= 10 ? Math.round(hz).toString() : hz.toFixed(1)
+        return period + " ms / " + hzText + " Hz"
+    }
+
+    function previewFrameIdText(message) {
+        var product = currentConfig.product || {}
+        var protocol = String(product.protocol || "j1939").toLowerCase()
+
+        if (protocol === "canopen") {
+            var canId = parseConfigNumber(message.canId)
+            if (!isNaN(canId))
+                return hexText(canId, 3)
+            return "CAN-ID 未配置"
+        }
+
+        var pgn = parseConfigNumber(message.pgn)
+        if (isNaN(pgn))
+            return "PGN 未配置"
+
+        var source = parseConfigNumber(product.sourceAddress)
+        if (isNaN(source))
+            return "PGN " + hexText(pgn, 4) + " / SA未配置"
+
+        var id = composeJ1939Id(6, pgn, source, 0xFF)
+        return hexText(id, 8)
+    }
+
+    function previewFrameDetail(message) {
+        var product = currentConfig.product || {}
+        var protocol = String(product.protocol || "j1939").toLowerCase()
+        var parts = []
+        parts.push("DLC " + (message.dlc !== undefined ? message.dlc : 8))
+
+        if (protocol === "canopen") {
+            var formula = message.cobIdFormula || ""
+            if (formula !== "")
+                parts.push(formula)
+        } else if (message.pgn) {
+            parts.push("PGN " + String(message.pgn).toUpperCase())
+        }
+
+        var tags = previewFrameTags(message)
+        if (tags.length > 0)
+            parts.push(tags.join(" / "))
+
+        return parts.join(" · ")
+    }
+
+    function previewFrameTags(message) {
+        var fields = message.fields || []
+        var hasStatus = false
+        var hasCrc = false
+        var hasSelfCheck = false
+        var hasError = false
+
+        for (var i = 0; i < fields.length; i++) {
+            var field = fields[i] || {}
+            var type = String(field.type || "").toLowerCase()
+            var name = String(field.name || "").toLowerCase()
+            if (type === "status")
+                hasStatus = true
+            if (type === "crc" || name.indexOf("crc") >= 0)
+                hasCrc = true
+            if (type === "selfcheck" || name.indexOf("selfcheck") >= 0 || name.indexOf("self_check") >= 0)
+                hasSelfCheck = true
+            if (type.indexOf("error") >= 0 || type.indexOf("fault") >= 0 || type.indexOf("diagnostic") >= 0
+                    || name.indexOf("error") >= 0 || name.indexOf("fault") >= 0 || name.indexOf("alarm") >= 0)
+                hasError = true
+        }
+
+        var tags = []
+        if (hasStatus) tags.push("状态位")
+        if (hasCrc) tags.push("CRC")
+        if (hasSelfCheck) tags.push("自检")
+        if (hasError) tags.push("错误")
+        return tags
+    }
+
+    function expectedRawFrameRows() {
+        var can = currentConfig.can || {}
+        var messages = can.messages || []
+        var rows = []
+        for (var i = 0; i < messages.length; i++) {
+            var message = messages[i] || {}
+            rows.push({
+                lbl: previewFrameLabel(message),
+                cid: previewFrameIdText(message),
+                period: previewPeriodText(message),
+                detail: previewFrameDetail(message),
+                warn: previewFrameWarning(message)
+            })
+        }
+        return rows
+    }
+
+    function previewFrameWarning(message) {
+        var product = currentConfig.product || {}
+        var protocol = String(product.protocol || "j1939").toLowerCase()
+        var id = String(message.id || "").toLowerCase()
+
+        if (protocol === "j1939") {
+            if (isNaN(parseConfigNumber(message.pgn)))
+                return "PGN缺失"
+            if (isNaN(parseConfigNumber(product.sourceAddress)))
+                return "SA缺失"
+        } else if (protocol === "canopen" && isNaN(parseConfigNumber(message.canId))) {
+            return "ID缺失"
+        }
+
+        if (isNaN(previewFramePeriodMs(message)) && id !== "addressclaim" && id !== "address_claim")
+            return "周期未配置"
+        return ""
+    }
+
+    function previewDiagnosticText() {
+        var rows = expectedRawFrameRows()
+        var crcCount = 0
+        var errorCount = 0
+        for (var i = 0; i < rows.length; i++) {
+            if (rows[i].detail.indexOf("CRC") >= 0 || rows[i].detail.indexOf("自检") >= 0)
+                crcCount++
+            if (rows[i].detail.indexOf("错误") >= 0 || rows[i].warn !== "")
+                errorCount++
+        }
+        if (crcCount === 0 && errorCount === 0)
+            return "运行态"
+        return (crcCount > 0 ? ("校验 " + crcCount) : "") + (errorCount > 0 ? ((crcCount > 0 ? " / " : "") + "告警 " + errorCount) : "")
+    }
 
     Component.onCompleted: loadProductList()
 
@@ -82,7 +295,11 @@ Item {
     function mapToCanvasType(compDef) {
         switch (compDef.type) {
         case "buttonGroup": return { type: "ButtonRed", perItem: true, count: compDef.count || 8, label: "" }
-        case "roller": return { type: "HorizontalRoller", perItem: false, label: compDef.label || "" }
+        case "roller": return {
+            type: compDef.orientation === "vertical" ? "VerticalRoller" : "HorizontalRoller",
+            perItem: false,
+            label: compDef.label || ""
+        }
         case "fnrSwitch": return { type: "HorizontalFNR", perItem: false, label: compDef.label || "FNR" }
         case "counter": return null  // skip, shown inside button area
         case "indicator": return null
@@ -96,37 +313,140 @@ Item {
         canvas.clear()
         var resolved = resolveComponents(compIds)
         var x = 10, y = 10, maxRowH = 0
-        var canvasW = canvas.panelWidth - 32
+        var canvasW = canvas.canvasWidth - 10
 
         for (var i = 0; i < resolved.length; i++) {
             var mapping = mapToCanvasType(resolved[i])
             if (!mapping) continue
 
             if (mapping.perItem) {
-                // Buttons: lay out in grid
-                var cols = 4, spacing = 5
-                var btnSize = ComponentRegistry.getDefinition(mapping.type)
-                var bw = btnSize ? btnSize.defaultWidth : 56
-                var bh = btnSize ? btnSize.defaultHeight : 80
+                // Buttons follow the original DownloadTool density: 5 on the
+                // first row, then wrap.
+                var cols = Math.min(5, mapping.count)
+                var colSpacing = 8
+                var rowSpacing = 2
+                var btnSize = ComponentRegistry.getDefaultSize(mapping.type)
+                var bw = btnSize.width || 56
+                var bh = btnSize.height || 80
                 for (var b = 0; b < mapping.count; b++) {
-                    var bx = 10 + (b % cols) * (bw + spacing)
-                    var by = y + Math.floor(b / cols) * (bh + spacing)
-                    canvas.addComponent(mapping.type, bx, by, { variant: "red", label: (b+1).toString() })
+                    var bx = 4 + (b % cols) * (bw + colSpacing)
+                    var by = 4 + Math.floor(b / cols) * (bh + rowSpacing)
+                    var buttonConfig = ComponentRegistry.getDefaultConfig(mapping.type)
+                    buttonConfig.label = (b + 1).toString()
+                    var buttonWrapper = canvas.addComponent(mapping.type, bx, by, buttonConfig)
+                    if (buttonWrapper)
+                        buttonWrapper.bindingId = resolved[i].id + "." + b
                 }
-                y += Math.ceil(mapping.count / cols) * (bh + spacing) + 10
+                y += Math.ceil(mapping.count / cols) * (bh + rowSpacing) + 10
             } else {
                 // Single component
-                var def = ComponentRegistry.getDefinition(mapping.type)
-                var w = def ? def.defaultWidth : 200
-                var h = def ? def.defaultHeight : 100
+                var size = ComponentRegistry.getDefaultSize(mapping.type)
+                var w = size.width || 200
+                var h = size.height || 100
                 if (x + w > canvasW) { x = 10; y += maxRowH + 8; maxRowH = 0 }
-                var config = def ? ComponentRegistry.getDefaultConfig(mapping.type) : {}
+                var config = ComponentRegistry.getDefaultConfig(mapping.type)
                 if (mapping.label) config.label = mapping.label
-                canvas.addComponent(mapping.type, x, y, config)
+                var wrapper = canvas.addComponent(mapping.type, x, y, config)
+                if (wrapper)
+                    wrapper.bindingId = resolved[i].id
                 x += w + 8
                 maxRowH = Math.max(maxRowH, h)
             }
         }
+    }
+
+    function cloneConfig(config) {
+        var copy = {}
+        config = config || {}
+        for (var key in config)
+            copy[key] = config[key]
+        return copy
+    }
+
+    function mergedComponentConfig(type, config) {
+        var merged = ComponentRegistry.getDefaultConfig(type)
+        config = config || {}
+        for (var key in config)
+            merged[key] = config[key]
+        if (type.indexOf("Button") === 0) {
+            var defaults = ComponentRegistry.getDefaultConfig(type)
+            merged.bezelSize = defaults.bezelSize
+            merged.capSize = defaults.capSize
+        }
+        return merged
+    }
+
+    function sizeForComponentConfig(type, config) {
+        var size = ComponentRegistry.getDefaultSize(type)
+        config = config || {}
+        if (type.indexOf("Button") === 0) {
+            var defaults = ComponentRegistry.getDefaultConfig(type)
+            config.bezelSize = defaults.bezelSize
+            config.capSize = defaults.capSize
+        }
+        return size
+    }
+
+    function clampComponentPosition(canvas, type, x, y, config) {
+        var size = sizeForComponentConfig(type, config)
+        var targetWidth = canvas.canvasWidth || root.defaultCanvasWidth
+        var targetHeight = canvas.canvasHeight || root.defaultCanvasHeight
+        var maxX = Math.max(0, targetWidth - size.width)
+        var maxY = Math.max(0, targetHeight - size.height)
+        return {
+            x: Math.max(0, Math.min(x || 0, maxX)),
+            y: Math.max(0, Math.min(y || 0, maxY))
+        }
+    }
+
+    function addVisualComponent(canvas, visual, canvasMeta) {
+        var type = visual.type || ""
+        var config = mergedComponentConfig(type, visual.config || {})
+        var targetWidth = canvas.canvasWidth || root.defaultCanvasWidth
+        var targetHeight = canvas.canvasHeight || root.defaultCanvasHeight
+        var sourceWidth = canvasMeta && canvasMeta.width ? canvasMeta.width : targetWidth
+        var sourceHeight = canvasMeta && canvasMeta.height ? canvasMeta.height : targetHeight
+        var sx = sourceWidth > 0 ? targetWidth / sourceWidth : 1
+        var sy = sourceHeight > 0 ? targetHeight / sourceHeight : 1
+        var pos = clampComponentPosition(canvas, type, (visual.x || 0) * sx, (visual.y || 0) * sy, config)
+        var wrapper = canvas.addComponent(type, pos.x, pos.y, config)
+        if (wrapper && visual.bindingId)
+            wrapper.bindingId = visual.bindingId
+        return wrapper
+    }
+
+    function labelForCellType(value) {
+        for (var i = 0; i < cellTypeOptions.length; i++) {
+            if (cellTypeOptions[i].value === value)
+                return cellTypeOptions[i].label
+        }
+        return "空白"
+    }
+
+    function setCellType(cell, value) {
+        if (!cell || cell.cellType === value)
+            return
+        cell.cellType = value
+        hasUnsavedChanges = true
+        refreshCanvasMode()
+    }
+
+    function normalizedCanvasMeta(canvasMeta) {
+        return {
+            width: defaultCanvasWidth,
+            height: defaultCanvasHeight,
+            scaleMode: canvasMeta && canvasMeta.scaleMode ? canvasMeta.scaleMode : "uniform"
+        }
+    }
+
+    function sourceCanvasMeta(canvasMeta) {
+        var width = canvasMeta && canvasMeta.width ? canvasMeta.width : defaultCanvasWidth
+        var height = canvasMeta && canvasMeta.height ? canvasMeta.height : defaultCanvasHeight
+        if (width <= 0 || height <= 0) {
+            width = defaultCanvasWidth
+            height = defaultCanvasHeight
+        }
+        return { width: width, height: height }
     }
 
     function loadCells() {
@@ -146,6 +466,7 @@ Item {
     }
 
     function doLoadCells(cells) {
+        loadingCells = true
         for (var i = 0; i < cellRepeater.count && i < cells.length; i++) {
             var cell = cellRepeater.itemAt(i)
             if (!cell) continue
@@ -156,17 +477,20 @@ Item {
             if (oldType === "buttons" || oldType === "ejm") oldType = "canvas"
             cell.cellType = oldType
             cell.cellCompIds = c.components || []
+            var canvasMeta = normalizedCanvasMeta(c.canvas)
+            var savedCanvasMeta = sourceCanvasMeta(c.canvas)
+            cell.canvasDesignWidth = canvasMeta.width
+            cell.canvasDesignHeight = canvasMeta.height
+            cell.canvasScaleMode = canvasMeta.scaleMode
 
             // For canvas cells: populate with visual components or auto-generate from component IDs
             if (cell.cellType === "canvas" && cell.canvasItem) {
-                if (c.canvas) cell.canvasItem.applyCanvasMetadata(c.canvas)
                 var vis = c.visualComponents || []
                 if (vis.length > 0) {
                     // Load saved visual layout with bindingIds
                     cell.canvasItem.clear()
                     for (var j = 0; j < vis.length; j++) {
-                        var wrapper = cell.canvasItem.addComponent(vis[j].type, vis[j].x||0, vis[j].y||0, vis[j].config||{})
-                        if (wrapper && vis[j].bindingId) wrapper.bindingId = vis[j].bindingId
+                        addVisualComponent(cell.canvasItem, vis[j], savedCanvasMeta)
                     }
                 } else if (c.components && c.components.length > 0) {
                     // Auto-populate from component definitions
@@ -180,6 +504,8 @@ Item {
         }
         refreshCanvasMode()
         refreshBindingStatus()
+        hasUnsavedChanges = false
+        loadingCells = false
     }
 
     function saveProduct() {
@@ -285,165 +611,522 @@ Item {
 
     // ===== Main =====
     RowLayout {
-        anchors.top: topBar.bottom; anchors.topMargin: 6
+        anchors.top: topBar.bottom; anchors.topMargin: 8
         anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom
-        anchors.leftMargin: 6; anchors.rightMargin: 6; anchors.bottomMargin: 6; spacing: 6
+        anchors.leftMargin: 10; anchors.rightMargin: 10; anchors.bottomMargin: 10; spacing: 10
 
-        // ---- Product List ----
-        Rectangle {
-            Layout.preferredWidth: 170; Layout.fillHeight: true
-            color: "white"; radius: 8; border.width: 1; border.color: dtBorder
-            ColumnLayout {
-                anchors.fill: parent; anchors.margins: 8; spacing: 4
-                Label { text: "产品列表"; font.pixelSize: 11; font.bold: true; color: dtText }
-                Rectangle { Layout.fillWidth: true; height: 1; color: dtBorder }
-                ListView {
-                    id: productList; Layout.fillWidth: true; Layout.fillHeight: true
-                    model: productModel; clip: true; spacing: 1; currentIndex: -1
-                    delegate: Rectangle {
-                        width: productList.width; height: 28; radius: 4
-                        color: productList.currentIndex === index ? "#e8f0fe" : (pha.containsMouse ? dtBg : "transparent")
-                        RowLayout {
-                            anchors.fill: parent; anchors.leftMargin: 6; spacing: 4
-                            Rectangle { width: 5; height: 5; radius: 2.5; color: productList.currentIndex === index ? dtAccent : dtTextMuted }
-                            Label { Layout.fillWidth: true; text: model.name; font.pixelSize: 10; color: dtText; elide: Text.ElideRight }
+        Item {
+            id: leftSidebar
+            Layout.preferredWidth: root.panelWidth
+            Layout.fillHeight: true
+            Layout.alignment: Qt.AlignTop
+
+            readonly property real gap: Constants.downloadToolCardGap
+            readonly property real functionPanelHeight: Math.min(220, Math.max(180, height * 0.28))
+            readonly property real dashboardHeight: Math.max(320, height - functionPanelHeight - gap)
+
+            Rectangle {
+                id: productListCard
+                x: 0
+                y: 0
+                width: parent.width
+                height: Math.min(parent.height, leftSidebar.dashboardHeight)
+                color: "white"; radius: 8; border.width: 1; border.color: dtBorder
+
+                ColumnLayout {
+                    anchors.fill: parent; anchors.margins: 14; spacing: 8
+                    Label { text: "产品列表"; font.pixelSize: 12; font.bold: true; color: dtText }
+                    Rectangle { Layout.fillWidth: true; height: 1; color: dtBorder }
+                    ListView {
+                        id: productList; Layout.fillWidth: true; Layout.fillHeight: true
+                        model: productModel; clip: true; spacing: 1; currentIndex: -1
+                        delegate: Rectangle {
+                            width: productList.width; height: 46; radius: 4
+                            color: productList.currentIndex === index ? "#e8f0fe" : (pha.containsMouse ? dtBg : "transparent")
+                            RowLayout {
+                                anchors.fill: parent
+                                anchors.leftMargin: 6
+                                anchors.rightMargin: 6
+                                spacing: 6
+                                Rectangle {
+                                    width: 5
+                                    height: 28
+                                    radius: 2.5
+                                    color: productList.currentIndex === index ? dtAccent : dtTextMuted
+                                }
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 1
+                                    Label {
+                                        Layout.fillWidth: true
+                                        text: model.displayName || model.name
+                                        font.pixelSize: 10
+                                        font.bold: productList.currentIndex === index
+                                        color: dtText
+                                        elide: Text.ElideRight
+                                    }
+                                    Label {
+                                        Layout.fillWidth: true
+                                        text: (model.protocol || "j1939").toUpperCase() + "  " + (model.description || model.model || "")
+                                        font.pixelSize: 8
+                                        color: dtTextSec
+                                        elide: Text.ElideRight
+                                    }
+                                }
+                            }
+                            MouseArea {
+                                id: pha
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: { productList.currentIndex = index; loadProduct(index) }
+                            }
                         }
-                        MouseArea { id: pha; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
-                            onClicked: { productList.currentIndex = index; loadProduct(index) } }
+                    }
+                }
+            }
+
+            Rectangle {
+                id: bindingStatusCard
+                x: 0
+                y: productListCard.height + leftSidebar.gap
+                width: parent.width
+                height: Math.max(0, parent.height - y)
+                color: "white"; radius: 8; border.width: 1; border.color: dtBorder
+                visible: height > 0
+
+                ColumnLayout {
+                    anchors.fill: parent; anchors.margins: 12; spacing: 6
+
+                    Label { text: "绑定状态"; font.pixelSize: 12; font.bold: true; color: dtText }
+                    Rectangle { Layout.fillWidth: true; height: 1; color: dtBorder }
+
+                    ListView {
+                        Layout.fillWidth: true; Layout.fillHeight: true
+                        clip: true; spacing: 2
+                        model: bindingStatusModel
+
+                        delegate: Row {
+                            width: parent ? parent.width : 0; spacing: 4; height: 18
+
+                            Rectangle {
+                                width: 8; height: 8; radius: 4; anchors.verticalCenter: parent.verticalCenter
+                                color: model.bound ? dtSuccess : "#ff3b30"
+                            }
+                            Text {
+                                text: model.compId; font.pixelSize: 9; font.bold: true
+                                color: model.bound ? dtText : dtTextMuted
+                                anchors.verticalCenter: parent.verticalCenter; width: 96; elide: Text.ElideRight
+                            }
+                            Text {
+                                text: model.bound ? model.boundTo : "未绑定"
+                                font.pixelSize: 8; color: model.bound ? dtAccent : "#ff3b30"
+                                anchors.verticalCenter: parent.verticalCenter; elide: Text.ElideRight
+                                width: Math.max(60, parent.width - 116)
+                            }
+                        }
                     }
                 }
             }
         }
 
-        // ---- Center: Preview Layout (mirrors DownloadTool TestPanel exactly) ----
-        // DownloadTool layout: content has 8px margins, titleBar=24+8 top
-        // left=bjmCard(52%), rightCol gap 8, grid gap 8, AluminumPanel margins 16
         Item {
-            Layout.fillWidth: true; Layout.fillHeight: true
+            id: previewPane
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            Layout.minimumWidth: 520
 
-            // 预览区域 — 编辑器自身的 topBar + margins 已扣除高度
-            // 内部用与 DownloadTool 相同的比例和间距
-            Item {
-                id: dtContent
+            Rectangle {
                 anchors.fill: parent
+                color: dtBg
+                radius: 8
+            }
 
-                property real leftWidthRatio: currentConfig.layout
-                    ? ((currentConfig.layout.left || {}).widthRatio || 0.52)
-                    : 0.52
+            Item {
+                id: dtViewport
+                anchors.top: parent.top; anchors.topMargin: 8
+                anchors.left: parent.left; anchors.leftMargin: 8
+                anchors.right: parent.right; anchors.rightMargin: 8
+                anchors.bottom: parent.bottom; anchors.bottomMargin: 8
 
-                // Joystick preview (left) — same size ratio as DownloadTool
+                readonly property real gap: Constants.downloadToolCardGap
+                readonly property real functionPanelHeight: Math.min(220, Math.max(180, height * 0.28))
+                readonly property real dashboardHeight: Math.max(320, height - functionPanelHeight - gap)
+                readonly property var editorLayout: currentConfig && currentConfig.layout ? currentConfig.layout : ({})
+                readonly property var leftLayout: editorLayout.left ? editorLayout.left : ({})
+                readonly property real leftWidthRatio: leftLayout.widthRatio ? leftLayout.widthRatio : 0.52
+                readonly property real joySlotW: Math.max(0, Math.min(width - gap, width * leftWidthRatio))
+                readonly property real joyCardSize: Math.max(0, Math.min(joySlotW, dashboardHeight))
+                readonly property real gridW: Math.max(0, width - joySlotW - gap)
+                readonly property real gridH: dashboardHeight
+                readonly property real cellSize: Math.max(0, Math.min((gridW - gap) / 2, (dashboardHeight - gap) / 2))
+                readonly property real gridContentW: cellSize * 2 + gap
+                readonly property real gridContentH: cellSize * 2 + gap
+                readonly property real gridOffsetX: Math.max(0, (gridW - gridContentW) / 2)
+                readonly property real gridOffsetY: Math.max(0, (dashboardHeight - gridContentH) / 2)
+                readonly property real cardScale: cellSize / Constants.homeCardDesignSize
+                readonly property real joyCardScale: joyCardSize / Constants.homeCardDesignSize
+                readonly property real cardMargin: Constants.downloadToolCardMargin * cardScale
+                readonly property real joyCardMargin: Constants.downloadToolCardMargin * joyCardScale
+                readonly property real cardHeaderHeight: Constants.downloadToolCardHeaderHeight * cardScale
+                readonly property real joyCardHeaderHeight: Constants.downloadToolCardHeaderHeight * joyCardScale
+                readonly property real cardHeaderGap: Constants.downloadToolCardHeaderGap * cardScale
+
                 Rectangle {
                     id: joyPrev
-                    anchors.top: parent.top; anchors.bottom: parent.bottom; anchors.left: parent.left
-                    width: dtContent.width * dtContent.leftWidthRatio
-                    radius: 32; color: "#eaeaec"
+                    x: Math.max(0, (dtViewport.joySlotW - width) / 2)
+                    y: Math.max(0, (dtViewport.dashboardHeight - height) / 2)
+                    width: dtViewport.joyCardSize
+                    height: dtViewport.joyCardSize
+                    radius: Constants.radiusPanel * dtViewport.joyCardScale; color: "#eaeaec"
                     border.width: 1; border.color: dtBorder
 
-                    Column {
-                        anchors.fill: parent; anchors.margins: 16; spacing: 4
-                        Row {
-                            width: parent.width
-                            Text { text: "XY 轴 (BJM)"; color: dtTextSec; font.pixelSize: 11; font.weight: Font.Bold; font.letterSpacing: 0.8 }
-                            Item { width: parent.width - 100; height: 1 }
-                            StatusIndicator { indicatorSize: 8; active: false }
+                    Item {
+                        anchors.fill: parent
+                        anchors.margins: dtViewport.joyCardMargin
+
+                        Text {
+                            id: joyHeader
+                            anchors.top: parent.top
+                            anchors.left: parent.left
+                            text: "XY 轴 (BJM)"
+                            color: dtTextSec
+                            font.pixelSize: Math.max(8, 11 * dtViewport.joyCardScale)
+                            font.weight: Font.Bold
+                            font.letterSpacing: 0.8
                         }
+
+                        StatusIndicator {
+                            anchors.top: parent.top
+                            anchors.right: parent.right
+                            indicatorSize: 8 * dtViewport.joyCardScale
+                            active: false
+                        }
+
                         Item {
-                            width: parent.width; height: parent.height - 20
+                            id: joystickArea
+                            anchors.top: joyHeader.bottom
+                            anchors.topMargin: 8 * dtViewport.joyCardScale
+                            anchors.left: parent.left
+                            anchors.right: parent.right
+                            anchors.bottom: parent.bottom
+
+                            property real gap: 8 * dtViewport.joyCardScale
+                            property real sideW: 50 * dtViewport.joyCardScale
+                            property real axisH: 20 * dtViewport.joyCardScale
+                            property real botH: axisH + gap
+                            property real joySize: Math.max(1, Math.min(width - sideW - gap,
+                                                                        height - botH - gap))
+
                             JoystickPad {
-                                anchors.centerIn: parent
-                                padSize: Math.min(parent.width, parent.height) * 0.85
-                                width: padSize; height: padSize; xValue: 0; yValue: 0; enabled: false
+                                id: joystick
+                                anchors.top: parent.top
+                                anchors.horizontalCenter: parent.horizontalCenter
+                                anchors.horizontalCenterOffset: -parent.sideW / 2
+                                padSize: parent.joySize
+                                width: padSize
+                                height: padSize
+                                xValue: 0
+                                yValue: 0
+                                enabled: false
+                            }
+
+                            ColumnLayout {
+                                anchors.top: joystick.top
+                                anchors.bottom: joystick.bottom
+                                anchors.left: joystick.right
+                                anchors.leftMargin: parent.gap
+                                width: parent.sideW
+                                spacing: 4 * dtViewport.joyCardScale
+
+                                AxisValueBar {
+                                    Layout.fillHeight: true
+                                    Layout.alignment: Qt.AlignHCenter
+                                    width: 12 * dtViewport.joyCardScale
+                                    orientation: "vertical"
+                                    value: 0
+                                    active: false
+                                    label: "Y"
+                                }
+                            }
+
+                            RowLayout {
+                                anchors.top: joystick.bottom
+                                anchors.topMargin: parent.gap
+                                anchors.left: joystick.left
+                                anchors.right: joystick.right
+                                height: parent.axisH
+                                spacing: 8 * dtViewport.joyCardScale
+
+                                AxisValueBar {
+                                    Layout.fillWidth: true
+                                    Layout.alignment: Qt.AlignVCenter
+                                    height: 12 * dtViewport.joyCardScale
+                                    orientation: "horizontal"
+                                    value: 0
+                                    active: false
+                                    label: "X"
+                                }
                             }
                         }
                     }
                 }
 
-                // 2x2 Grid (right) — mirrors DownloadTool rightCol exactly
                 Item {
                     id: gridArea
-                    anchors.top: parent.top; anchors.bottom: parent.bottom
-                    anchors.left: joyPrev.right; anchors.leftMargin: 8; anchors.right: parent.right
+                    x: dtViewport.joySlotW + dtViewport.gap
+                    y: 0
+                    width: dtViewport.gridW
+                    height: dtViewport.gridH
 
-                    // Same formula as DownloadTool: (width - 8) / 2
-                    property real cellW: (width - 8) / 2
-                    property real cellH: (height - 8) / 2
+                    property real cellSize: dtViewport.cellSize
 
                     Repeater {
                         id: cellRepeater; model: 4
 
                         Rectangle {
                             id: cellCard
-                            // Same positioning as DownloadTool
-                            x: (index % 2) * (gridArea.cellW + 8)
-                            y: Math.floor(index / 2) * (gridArea.cellH + 8)
-                            width: gridArea.cellW; height: gridArea.cellH
-                            radius: 32; color: "#eaeaec"
-                            border.width: 1; border.color: dtBorder
+                            x: dtViewport.gridOffsetX + (index % 2) * (gridArea.cellSize + dtViewport.gap)
+                            y: dtViewport.gridOffsetY + Math.floor(index / 2) * (gridArea.cellSize + dtViewport.gap)
+                            width: gridArea.cellSize; height: gridArea.cellSize
+                            radius: Constants.radiusPanel * dtViewport.cardScale; color: "#eaeaec"
+                            border.width: 1; border.color: activeCellIndex === index ? dtAccent : dtBorder
                             z: activeCellIndex === index ? 10 : 0
 
                             property string cellTitle: ""
                             property string cellType: "empty"
                             property var cellCompIds: []
+                            property int canvasDesignWidth: root.defaultCanvasWidth
+                            property int canvasDesignHeight: root.defaultCanvasHeight
+                            property string canvasScaleMode: "uniform"
                             property alias canvasItem: cvLoader.item
 
                             MouseArea { anchors.fill: parent; z: -1; onClicked: { activeCellIndex = index } }
 
-                            // Content area — mirrors AluminumPanel contentMargins: 16
                             Item {
                                 id: cellContent
-                                anchors.fill: parent; anchors.margins: 16
+                                anchors.fill: parent
+                                anchors.margins: cellCard.cellType === "canvas" ? 0 : dtViewport.cardMargin
 
-                                // Header — same as DownloadTool cellHeader
                                 Row {
                                     id: hdr
-                                    anchors.top: parent.top; anchors.left: parent.left; anchors.right: parent.right
-                                    height: 20; spacing: 4
+                                    anchors.top: parent.top
+                                    anchors.topMargin: cellCard.cellType === "canvas" ? dtViewport.cardMargin : 0
+                                    anchors.left: parent.left
+                                    anchors.leftMargin: cellCard.cellType === "canvas" ? dtViewport.cardMargin : 0
+                                    anchors.right: parent.right
+                                    anchors.rightMargin: cellCard.cellType === "canvas" ? dtViewport.cardMargin : 0
+                                    height: dtViewport.cardHeaderHeight; spacing: 4 * dtViewport.cardScale
+                                    z: 20
 
                                     Text {
                                         text: cellCard.cellTitle; color: dtTextSec
-                                        font.pixelSize: 11; font.weight: Font.Bold; font.letterSpacing: 0.8
-                                        width: parent.width - 85; elide: Text.ElideRight
+                                        font.pixelSize: Math.max(8, 11 * dtViewport.cardScale); font.weight: Font.Bold; font.letterSpacing: 0.8
+                                        width: Math.max(1, parent.width - typeSelector.width - 6)
+                                        elide: Text.ElideRight
                                         anchors.verticalCenter: parent.verticalCenter
                                     }
 
-                                    ComboBox {
-                                        width: 80; height: 28; font.pixelSize: 10; flat: true; z: 10
-                                        model: cellTypeOptions.map(function(o){ return o.label })
-                                        currentIndex: { for(var i=0;i<cellTypeOptions.length;i++) if(cellTypeOptions[i].value===cellCard.cellType) return i; return 3 }
-                                        onActivated: { cellCard.cellType = cellTypeOptions[currentIndex].value; hasUnsavedChanges = true; root.refreshCanvasMode() }
+                                    Rectangle {
+                                        id: typeSelector
+                                        width: Math.max(72, 80 * dtViewport.cardScale)
+                                        height: Math.max(24, 28 * dtViewport.cardScale)
+                                        radius: 4
+                                        color: "#f5f5f7"
+                                        border.width: 1
+                                        border.color: typeMouse.containsMouse ? dtAccent : "#8e8e93"
+                                        anchors.verticalCenter: parent.verticalCenter
+
+                                        Text {
+                                            anchors.left: parent.left
+                                            anchors.leftMargin: 10
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            text: root.labelForCellType(cellCard.cellType)
+                                            color: dtText
+                                            font.pixelSize: Math.max(8, 10 * dtViewport.cardScale)
+                                            font.bold: true
+                                        }
+
+                                        Canvas {
+                                            width: 12; height: 8
+                                            anchors.right: parent.right
+                                            anchors.rightMargin: 8
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            onPaint: {
+                                                var ctx = getContext("2d")
+                                                ctx.clearRect(0, 0, width, height)
+                                                ctx.fillStyle = dtText
+                                                ctx.beginPath()
+                                                ctx.moveTo(0, 0)
+                                                ctx.lineTo(width, 0)
+                                                ctx.lineTo(width / 2, height)
+                                                ctx.closePath()
+                                                ctx.fill()
+                                            }
+                                        }
+
+                                        MouseArea {
+                                            id: typeMouse
+                                            anchors.fill: parent
+                                            hoverEnabled: true
+                                            cursorShape: Qt.PointingHandCursor
+                                            onClicked: {
+                                                activeCellIndex = index
+                                                cellTypePopup.openFor(cellCard, typeSelector)
+                                            }
+                                        }
                                     }
                                 }
 
-                                // Body — same offset as DownloadTool (cellHeader.bottom + 6)
                                 Item {
                                     id: body
-                                    anchors.top: hdr.bottom; anchors.topMargin: 6
+                                    anchors.top: cellCard.cellType === "canvas" ? parent.top : hdr.bottom
+                                    anchors.topMargin: cellCard.cellType === "canvas" ? 0 : dtViewport.cardHeaderGap
                                     anchors.left: parent.left; anchors.right: parent.right
                                     anchors.bottom: parent.bottom
+                                    z: cellCard.cellType === "canvas" ? 0 : 1
 
-                                    // === CAN Raw Frames ===
                                     Column {
+                                        id: rawFramesPanel
                                         visible: cellCard.cellType === "rawFrames"
-                                        anchors.fill: parent; spacing: 3
-                                        Repeater {
-                                            model: [
-                                                { lbl: "BJM",  cid: "0x18FDD633", hex: "01 00 01 00 FF 00 00 FF" },
-                                                { lbl: "EJM",  cid: "0x18FDD733", hex: "01 00 01 00 FF FF FF FF" },
-                                                { lbl: "ADDR", cid: "0x18EEFF33", hex: "33 05 00 00 00 00 00 00" }
-                                            ]
-                                            Column {
-                                                spacing: 0; width: parent ? parent.width : 0
-                                                Row { spacing: 5
-                                                    Text { text: modelData.lbl; color: dtAccent; font.pixelSize: 8; font.bold: true; width: 30 }
-                                                    Text { text: modelData.cid; color: dtTextSec; font.pixelSize: 8; font.family: "Consolas" }
+                                        anchors.fill: parent
+                                        spacing: Math.max(5, 6 * dtViewport.cardScale)
+                                        clip: true
+
+                                        readonly property real labelFont: Math.max(10, 12 * dtViewport.cardScale)
+                                        readonly property real idFont: Math.max(9, 10 * dtViewport.cardScale)
+                                        readonly property real dataFont: Math.max(11, 13 * dtViewport.cardScale)
+                                        readonly property real metaFont: Math.max(8, 9 * dtViewport.cardScale)
+                                        readonly property string protocolText: currentConfig.product && currentConfig.product.protocol
+                                                                           ? currentConfig.product.protocol.toUpperCase()
+                                                                           : "J1939"
+                                        readonly property string productText: currentConfig.product
+                                                                           ? (currentConfig.product.model || currentConfig.product.name || "---")
+                                                                           : "---"
+                                        readonly property var expectedRows: expectedRawFrameRows()
+
+                                        Flow {
+                                            width: parent.width
+                                            spacing: 4
+
+                                            Repeater {
+                                                model: [
+                                                    { label: "协议", value: rawFramesPanel.protocolText },
+                                                    { label: "产品", value: rawFramesPanel.productText },
+                                                    { label: "报文", value: rawFramesPanel.expectedRows.length + " 条" },
+                                                    { label: "异常", value: previewDiagnosticText() }
+                                                ]
+
+                                                Rectangle {
+                                                    height: Math.max(18, 20 * dtViewport.cardScale)
+                                                    width: Math.min(rawInfoText.implicitWidth + 14, body.width)
+                                                    radius: height / 2
+                                                    color: "#f5f5f7"
+                                                    border.width: 1
+                                                    border.color: dtBorder
+
+                                                    Text {
+                                                        id: rawInfoText
+                                                        anchors.centerIn: parent
+                                                        text: modelData.label + " " + modelData.value
+                                                        color: modelData.label === "异常" ? dtWarning : dtTextSec
+                                                        font.pixelSize: rawFramesPanel.metaFont
+                                                        font.bold: modelData.label === "异常"
+                                                        elide: Text.ElideRight
+                                                        width: parent.width - 10
+                                                    }
                                                 }
-                                                Text { text: modelData.hex; color: dtText; font.pixelSize: 9; font.family: "Consolas"; leftPadding: 36 }
                                             }
                                         }
-                                        Text { text: "等待CAN报文..."; color: dtTextMuted; font.pixelSize: 9 }
+
+                                        Rectangle {
+                                            width: parent.width
+                                            height: 1
+                                            color: dtBorder
+                                            opacity: 0.75
+                                        }
+
+                                        Repeater {
+                                            model: rawFramesPanel.expectedRows
+                                            Row {
+                                                width: parent ? parent.width : 0
+                                                spacing: Math.max(6, 8 * dtViewport.cardScale)
+                                                height: Math.max(36, 42 * dtViewport.cardScale)
+
+                                                Text {
+                                                    id: frameLabel
+                                                    text: modelData.lbl
+                                                    color: modelData.warn !== "" ? dtWarning : dtAccent
+                                                    font.pixelSize: rawFramesPanel.labelFont
+                                                    font.bold: true
+                                                    width: Math.max(36, 42 * dtViewport.cardScale)
+                                                    anchors.top: parent.top
+                                                    anchors.topMargin: 2
+                                                }
+
+                                                Column {
+                                                    width: Math.max(1, parent.width - frameLabel.width - parent.spacing)
+                                                    spacing: 1
+
+                                                    Row {
+                                                        width: parent.width
+                                                        spacing: Math.max(5, 6 * dtViewport.cardScale)
+
+                                                        Text {
+                                                            id: frameIdText
+                                                            text: modelData.cid
+                                                            color: modelData.warn !== "" ? dtWarning : dtTextSec
+                                                            font.pixelSize: rawFramesPanel.idFont
+                                                            font.family: "Consolas"
+                                                            font.bold: modelData.warn !== ""
+                                                            elide: Text.ElideRight
+                                                            width: Math.max(88, parent.width * 0.46)
+                                                        }
+                                                        Text {
+                                                            text: modelData.period
+                                                            color: dtText
+                                                            font.pixelSize: rawFramesPanel.idFont
+                                                            font.family: "Consolas"
+                                                            font.bold: true
+                                                            elide: Text.ElideRight
+                                                            width: Math.max(1, parent.width - frameIdText.width - parent.spacing)
+                                                        }
+                                                    }
+                                                    Text {
+                                                        text: modelData.warn !== "" ? (modelData.detail + " · " + modelData.warn) : modelData.detail
+                                                        color: modelData.warn !== "" ? dtWarning : dtText
+                                                        font.pixelSize: rawFramesPanel.metaFont
+                                                        font.family: "Consolas"
+                                                        elide: Text.ElideRight
+                                                        width: parent.width
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        Row {
+                                            width: parent.width
+                                            spacing: 5
+
+                                            Rectangle {
+                                                width: 8
+                                                height: 8
+                                                radius: 4
+                                                color: dtTextMuted
+                                                anchors.verticalCenter: parent.verticalCenter
+                                            }
+                                            Text {
+                                                text: rawFramesPanel.expectedRows.length > 0
+                                                      ? "预览配置：周期来自产品JSON，错误帧/超时由下载工具运行态统计"
+                                                      : "未配置CAN报文"
+                                                color: dtTextMuted
+                                                font.pixelSize: rawFramesPanel.metaFont
+                                                elide: Text.ElideRight
+                                                width: parent.width - 14
+                                            }
+                                        }
                                     }
 
-                                    // === Device Info ===
                                     Column {
                                         visible: cellCard.cellType === "deviceInfo"
                                         anchors.fill: parent; spacing: 6
@@ -458,131 +1141,299 @@ Item {
                                             Row {
                                                 spacing: 8
                                                 Text { text: modelData.label+"："; color: dtTextSec; font.pixelSize: 9; width: 50; horizontalAlignment: Text.AlignRight }
-                                                Text { text: modelData.val; color: dtAccent; font.pixelSize: 10; font.bold: true }
+                                                Text { text: modelData.val; color: dtAccent; font.pixelSize: 10; font.bold: true; elide: Text.ElideRight; width: Math.max(80, body.width - 62) }
                                             }
                                         }
                                     }
 
-                                    // === Canvas (DesignCanvas free-form) ===
-                                    // 始终保持 active，切换类型不销毁画布内容
-                                    Loader {
-                                        id: cvLoader; anchors.fill: parent; active: true
+                                    Item {
+                                        id: canvasViewport
+                                        anchors.fill: parent
                                         visible: cellCard.cellType === "canvas"
-                                        sourceComponent: DesignCanvas {
-                                            panelWidth: body.width; panelHeight: body.height; borderRadius: 4
-                                            canvasWidth: body.width; canvasHeight: body.height; scaleMode: "uniform"
-                                            productBindings: currentConfig.components || []
-                                            onLayoutModified: { hasUnsavedChanges = true; root.refreshBindingStatus() }
+                                        clip: true
+
+                                        readonly property real displayCanvasWidth: Math.max(1, width)
+                                        readonly property real displayCanvasHeight: Math.max(1, height)
+
+                                        Loader {
+                                            id: cvLoader
+                                            active: true
+                                            anchors.fill: parent
+                                            sourceComponent: DesignCanvas {
+                                                panelWidth: canvasViewport.displayCanvasWidth
+                                                panelHeight: canvasViewport.displayCanvasHeight
+                                                borderRadius: Constants.radiusPanel
+                                                panelChromeVisible: false
+                                                canvasWidth: cellCard.canvasDesignWidth
+                                                canvasHeight: cellCard.canvasDesignHeight
+                                                scaleMode: cellCard.canvasScaleMode
+                                                productBindings: currentConfig.components || []
+                                                onCanvasPressed: {
+                                                    root.activeCellIndex = index
+                                                }
+                                                onLayoutModified: {
+                                                    if (!root.loadingCells)
+                                                        hasUnsavedChanges = true
+                                                    root.refreshBindingStatus()
+                                                }
+                                            }
                                         }
                                     }
 
-                                    // === Empty ===
                                     Text { visible: cellCard.cellType === "empty"; anchors.centerIn: parent; text: "空白"; color: dtTextMuted; font.pixelSize: 10 }
                                 }
                             }
                         }
                     }
                 }
+
+                Rectangle {
+                    id: componentDock
+                    x: 0
+                    y: dtViewport.dashboardHeight + dtViewport.gap
+                    width: parent.width
+                    height: Math.max(120, parent.height - y)
+                    radius: 24
+                    color: "#eaeaec"
+                    border.width: 1
+                    border.color: dtBorder
+                    clip: true
+
+                    ComponentPanel {
+                        id: componentPanel
+                        anchors.fill: parent
+                        anchors.margins: Math.max(10, 16 * dtViewport.cardScale)
+                        panelWidth: width
+                        visible: root.isCanvasMode
+                        neuBg: dtBg
+                        neuLightShadow: "#ffffff"
+                        neuDarkShadow: dtBorder
+                        neuSurface: "white"
+                        neuTextPrimary: dtText
+                        neuTextSecondary: dtTextSec
+                        neuAccent: dtAccent
+
+                        onComponentRequested: function(ct) {
+                            var cell = root.activeCanvasCell()
+                            if (!cell || !cell.canvasItem) return
+                            var size = ComponentRegistry.getDefaultSize(ct)
+                            var cfg = ComponentRegistry.getDefaultConfig(ct)
+                            cell.canvasItem.addComponent(ct,
+                                                         (cell.canvasItem.canvasWidth - size.width) / 2,
+                                                         (cell.canvasItem.canvasHeight - size.height) / 2,
+                                                         cfg)
+                            hasUnsavedChanges = true
+                            refreshBindingStatus()
+                        }
+
+                        onComponentDragStarted: function(ct,gx,gy) {
+                            dp.componentType = ct
+                            dp.visible = true
+                            var p = root.mapFromGlobal(gx, gy)
+                            dp.x = p.x - dp.width / 2
+                            dp.y = p.y - dp.height / 2
+                        }
+
+                        onComponentDragMoved: function(gx,gy) {
+                            var p = root.mapFromGlobal(gx, gy)
+                            dp.x = p.x - dp.width / 2
+                            dp.y = p.y - dp.height / 2
+                        }
+
+                        onComponentDragEnded: function(gx,gy) {
+                            dp.visible = false
+                            for (var i = 0; i < cellRepeater.count; i++) {
+                                var cell = cellRepeater.itemAt(i)
+                                if (!cell || cell.cellType !== "canvas" || !cell.canvasItem) continue
+                                var displayPos = cell.canvasItem.mapFromGlobal(gx, gy)
+                                if (displayPos.x >= 0 && displayPos.x <= cell.canvasItem.width
+                                        && displayPos.y >= 0 && displayPos.y <= cell.canvasItem.height) {
+                                    activeCellIndex = i
+                                    var pos = cell.canvasItem.displayToCanvasPoint(displayPos.x, displayPos.y)
+                                    var size = ComponentRegistry.getDefaultSize(dp.componentType)
+                                    var cfg = ComponentRegistry.getDefaultConfig(dp.componentType)
+                                    cell.canvasItem.addComponent(dp.componentType,
+                                                                 pos.x - size.width / 2,
+                                                                 pos.y - size.height / 2,
+                                                                 cfg)
+                                    hasUnsavedChanges = true
+                                    refreshBindingStatus()
+                                    return
+                                }
+                            }
+                        }
+                    }
+
+                    Column {
+                        anchors.centerIn: parent
+                        spacing: 8
+                        width: Math.min(parent.width - 32, 320)
+                        visible: !root.isCanvasMode
+
+                        Label {
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            text: "组件面板"
+                            font.pixelSize: 13
+                            font.bold: true
+                            color: dtText
+                        }
+                        Rectangle { width: parent.width; height: 1; color: dtBorder }
+                        Label {
+                            width: parent.width
+                            wrapMode: Text.WordWrap
+                            horizontalAlignment: Text.AlignHCenter
+                            text: "选择「画布」类型的卡片后可拖放组件"
+                            font.pixelSize: 10
+                            color: dtTextSec
+                            lineHeight: 1.4
+                        }
+                    }
+                }
             }
         }
 
-        // ---- Right: Component Panel + Binding Status ----
-        ColumnLayout {
-            Layout.preferredWidth: 200; Layout.maximumWidth: 200; Layout.fillHeight: true; spacing: 6
+    }
 
-            // Component Panel (upper 60%)
-            Rectangle {
-                Layout.fillWidth: true; Layout.fillHeight: true; Layout.maximumHeight: root.height * 0.55
-                color: "white"; radius: 8; border.width: 1; border.color: dtBorder
+    Popup {
+        id: cellTypePopup
+        parent: root
+        width: 108
+        height: typePopupContent.implicitHeight + 8
+        padding: 4
+        modal: false
+        focus: true
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        z: 10000
 
-                ComponentPanel {
-                    id: componentPanel; anchors.fill: parent; panelWidth: 200; visible: root.isCanvasMode
-                    neuBg: dtBg; neuLightShadow: "#ffffff"; neuDarkShadow: dtBorder; neuSurface: "white"
-                    neuTextPrimary: dtText; neuTextSecondary: dtTextSec; neuAccent: dtAccent
+        property var targetCell: null
 
-                    onComponentRequested: function(ct) {
-                        if (activeCellIndex < 0) return
-                        var cell = cellRepeater.itemAt(activeCellIndex)
-                        if (!cell || cell.cellType !== "canvas" || !cell.canvasItem) return
-                        var def = ComponentRegistry.getDefinition(ct); var cfg = def ? ComponentRegistry.getDefaultConfig(ct) : {}
-                        cell.canvasItem.addComponent(ct, (cell.canvasItem.panelWidth-(def?def.defaultWidth:100))/2, (cell.canvasItem.panelHeight-(def?def.defaultHeight:100))/2, cfg)
-                        hasUnsavedChanges = true; refreshBindingStatus()
+        background: Rectangle {
+            radius: 6
+            color: "white"
+            border.width: 1
+            border.color: dtBorder
+        }
+
+        contentItem: Column {
+            id: typePopupContent
+            spacing: 2
+            Repeater {
+                model: cellTypeOptions
+                delegate: Rectangle {
+                    width: cellTypePopup.width - 8
+                    height: 28
+                    radius: 4
+                    color: typeChoiceMouse.containsMouse ? "#e8f0fe" : "transparent"
+
+                    Text {
+                        anchors.left: parent.left
+                        anchors.leftMargin: 10
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: modelData.label
+                        color: dtText
+                        font.pixelSize: 10
+                        font.bold: cellTypePopup.targetCell && cellTypePopup.targetCell.cellType === modelData.value
                     }
-                    onComponentDragStarted: function(ct,gx,gy) { dp.componentType=ct; dp.visible=true; var p=root.mapFromGlobal(gx,gy); dp.x=p.x-28; dp.y=p.y-28 }
-                    onComponentDragMoved: function(gx,gy) { var p=root.mapFromGlobal(gx,gy); dp.x=p.x-28; dp.y=p.y-28 }
-                    onComponentDragEnded: function(gx,gy) {
-                        dp.visible = false
-                        for (var i = 0; i < cellRepeater.count; i++) {
-                            var cell = cellRepeater.itemAt(i)
-                            if (!cell || cell.cellType !== "canvas" || !cell.canvasItem) continue
-                            var pos = cell.canvasItem.mapFromGlobal(gx, gy)
-                            if (pos.x >= 0 && pos.x <= cell.canvasItem.width && pos.y >= 0 && pos.y <= cell.canvasItem.height) {
-                                activeCellIndex = i
-                                var def = ComponentRegistry.getDefinition(dp.componentType)
-                                var cfg = def ? ComponentRegistry.getDefaultConfig(dp.componentType) : {}
-                                cell.canvasItem.addComponent(dp.componentType, pos.x-(def?def.defaultWidth/2:50), pos.y-(def?def.defaultHeight/2:50), cfg)
-                                hasUnsavedChanges = true; refreshBindingStatus(); return
-                            }
-                        }
-                    }
-                }
 
-                Column {
-                    anchors.centerIn: parent; spacing: 8; width: 160; visible: !root.isCanvasMode
-                    Label { anchors.horizontalCenter: parent.horizontalCenter; text: "组件面板"; font.pixelSize: 13; font.bold: true; color: dtText }
-                    Rectangle { width: parent.width; height: 1; color: dtBorder }
-                    Label { width: parent.width; wrapMode: Text.WordWrap; horizontalAlignment: Text.AlignHCenter
-                        text: "选择「画布」类型的\n卡片后可拖放组件"; font.pixelSize: 10; color: dtTextSec; lineHeight: 1.4 }
-                }
-            }
-
-            // Binding Status Panel (lower part, fills remaining space)
-            Rectangle {
-                Layout.fillWidth: true; Layout.fillHeight: true
-                color: "white"; radius: 8; border.width: 1; border.color: dtBorder
-                visible: !!currentConfig.components
-
-                ColumnLayout {
-                    anchors.fill: parent; anchors.margins: 8; spacing: 4
-
-                    Label { text: "绑定状态"; font.pixelSize: 11; font.bold: true; color: dtText }
-                    Rectangle { Layout.fillWidth: true; height: 1; color: dtBorder }
-
-                    ListView {
-                        Layout.fillWidth: true; Layout.fillHeight: true
-                        clip: true; spacing: 2
-                        model: bindingStatusModel
-
-                        delegate: Row {
-                            width: parent ? parent.width : 0; spacing: 4; height: 18
-
-                            // Status dot: green=bound, red=unbound
-                            Rectangle {
-                                width: 8; height: 8; radius: 4; anchors.verticalCenter: parent.verticalCenter
-                                color: model.bound ? dtSuccess : "#ff3b30"
-                            }
-                            Text {
-                                text: model.compId; font.pixelSize: 9; font.bold: true
-                                color: model.bound ? dtText : dtTextMuted
-                                anchors.verticalCenter: parent.verticalCenter; width: 70; elide: Text.ElideRight
-                            }
-                            Text {
-                                text: model.bound ? model.boundTo : "未绑定"
-                                font.pixelSize: 8; color: model.bound ? dtAccent : "#ff3b30"
-                                anchors.verticalCenter: parent.verticalCenter; elide: Text.ElideRight
-                                width: parent.width - 86
-                            }
+                    MouseArea {
+                        id: typeChoiceMouse
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: {
+                            root.setCellType(cellTypePopup.targetCell, modelData.value)
+                            cellTypePopup.close()
                         }
                     }
                 }
             }
+        }
+
+        function openFor(cell, anchorItem) {
+            targetCell = cell
+            var pos = anchorItem.mapToItem(root, 0, anchorItem.height + 4)
+            x = Math.max(8, Math.min(pos.x, root.width - width - 8))
+            y = Math.max(8, Math.min(pos.y, root.height - height - 8))
+            open()
         }
     }
 
     // Drag proxy
-    Rectangle { id: dp; visible: false; z: 9999; opacity: 0.85; width: 56; height: 56; radius: 6
-        color: "#f0f0f2"; border.width: 1; border.color: dtAccent; property string componentType: ""
-        Text { anchors.centerIn: parent; text: dp.componentType; font.pixelSize: 7; color: dtText; wrapMode: Text.Wrap; width: 50; horizontalAlignment: Text.AlignHCenter } }
+    Item {
+        id: dp
+        visible: false
+        z: 9999
+        opacity: 0.88
+
+        property string componentType: ""
+        property real thumbScale: 0.55
+
+        width: dpThumbLoader.item ? dpThumbLoader.item.width * thumbScale + 12 : 60
+        height: dpThumbLoader.item ? dpThumbLoader.item.height * thumbScale + 12 : 60
+
+        Rectangle {
+            anchors.fill: parent
+            radius: 8
+            color: "#f8f8fa"
+            border.width: 1
+            border.color: dtAccent
+
+            layer.enabled: true
+            layer.effect: MultiEffect {
+                shadowEnabled: true
+                shadowColor: "#26000000"
+                shadowBlur: 0.35
+                shadowVerticalOffset: 4
+            }
+        }
+
+        Item {
+            anchors.centerIn: parent
+            width: dpThumbLoader.item ? dpThumbLoader.item.width : 0
+            height: dpThumbLoader.item ? dpThumbLoader.item.height : 0
+            scale: dp.thumbScale
+            enabled: false
+
+            Loader {
+                id: dpThumbLoader
+                active: dp.visible
+                sourceComponent: {
+                    var t = dp.componentType
+                    if (t.indexOf("Button") === 0) return dpButtonComp
+                    if (t === "FNRSwitch") return dpFNRComp
+                    if (t === "VerticalRoller") return dpVRollerComp
+                    if (t === "HorizontalRoller") return dpHRollerComp
+                    if (t === "HorizontalFNR") return dpHFNRComp
+                    if (t === "HorizontalFNRRight") return dpHFNRRightComp
+                    return null
+                }
+                onLoaded: root.applyDragThumbConfig(item, dp.componentType)
+            }
+        }
+    }
+
+    Component { id: dpButtonComp; IndustrialButton {} }
+    Component { id: dpFNRComp; FNRSwitchUnit {} }
+    Component { id: dpVRollerComp; VerticalRollerUnit {} }
+    Component { id: dpHRollerComp; HorizontalRollerUnit {} }
+    Component { id: dpHFNRComp; HorizontalFNRUnit {} }
+    Component { id: dpHFNRRightComp; HorizontalFNRRightUnit {} }
+
+    function applyDragThumbConfig(item, type) {
+        if (!item)
+            return
+        var defaultConfig = ComponentRegistry.getDefaultConfig(type)
+        for (var key in defaultConfig) {
+            if (item.hasOwnProperty(key))
+                item[key] = defaultConfig[key]
+        }
+
+        var defaultSize = ComponentRegistry.getDefaultSize(type)
+        if (defaultSize.width > 0)
+            item.width = defaultSize.width
+        if (defaultSize.height > 0)
+            item.height = defaultSize.height
+    }
 
     Shortcut { sequence: "Ctrl+S"; onActivated: saveProduct() }
 }

@@ -3,17 +3,20 @@ import QtQuick.Controls 6.5
 import QtQuick.Effects
 import CANJoystickTool
 
-// 设计画布 - 480x480 AluminumPanel，自由拖放组件（无吸附）
+// 设计画布 - 尺寸由编辑器预设或 JSON 画布元数据控制，自由拖放组件（无吸附）
 AluminumPanel {
     id: root
 
-    panelWidth: 480
-    panelHeight: 480
+    panelWidth: Constants.homeCardDesignSize
+    panelHeight: Constants.homeCardDesignSize
     contentMargins: 0
 
-    property int canvasWidth: 480
-    property int canvasHeight: 480
+    property int canvasWidth: Constants.homeCardDesignSize
+    property int canvasHeight: Constants.homeCardDesignSize
     property string scaleMode: "uniform"
+    readonly property real canvasScale: canvasWidth > 0 && canvasHeight > 0
+                                        ? Math.min(width / canvasWidth, height / canvasHeight)
+                                        : 1
 
     // 组件列表
     property var components: []
@@ -24,6 +27,7 @@ AluminumPanel {
     signal componentRemoved(var component)
     signal selectionChanged(var selected)
     signal layoutModified()
+    signal canvasPressed()
 
     // 唯一ID
     property int nextComponentId: 1
@@ -34,8 +38,12 @@ AluminumPanel {
     // 组件容器 — 直接绑定 root 尺寸，确保不受 contentArea margins 影响
     Item {
         id: componentContainer
-        width: root.width
-        height: root.height
+        x: (root.width - width * scale) / 2
+        y: (root.height - height * scale) / 2
+        width: root.canvasWidth
+        height: root.canvasHeight
+        scale: root.canvasScale
+        transformOrigin: Item.TopLeft
         z: 1
         clip: true
     }
@@ -43,6 +51,7 @@ AluminumPanel {
     // 框选矩形
     Rectangle {
         id: selectionRect
+        parent: componentContainer
         visible: false
         color: Qt.rgba(Constants.accentColor.r, Constants.accentColor.g, Constants.accentColor.b, 0.1)
         border.width: 1
@@ -55,22 +64,24 @@ AluminumPanel {
         id: canvasMouseArea
         anchors.fill: parent
         acceptedButtons: Qt.LeftButton | Qt.RightButton
-        z: -1
+        z: 0
 
         property real selectionStartX: 0
         property real selectionStartY: 0
         property bool isSelecting: false
 
         onPressed: function(mouse) {
+            root.canvasPressed()
             if (mouse.button === Qt.LeftButton) {
                 if (!(mouse.modifiers & Qt.ControlModifier)) {
                     clearSelection()
                 }
+                var pos = displayToCanvasPoint(mouse.x, mouse.y)
                 isSelecting = true
-                selectionStartX = mouse.x
-                selectionStartY = mouse.y
-                selectionRect.x = mouse.x
-                selectionRect.y = mouse.y
+                selectionStartX = pos.x
+                selectionStartY = pos.y
+                selectionRect.x = pos.x
+                selectionRect.y = pos.y
                 selectionRect.width = 0
                 selectionRect.height = 0
             }
@@ -79,10 +90,11 @@ AluminumPanel {
 
         onPositionChanged: function(mouse) {
             if (!isSelecting) return
-            var x = Math.min(selectionStartX, mouse.x)
-            var y = Math.min(selectionStartY, mouse.y)
-            var w = Math.abs(mouse.x - selectionStartX)
-            var h = Math.abs(mouse.y - selectionStartY)
+            var pos = displayToCanvasPoint(mouse.x, mouse.y)
+            var x = Math.min(selectionStartX, pos.x)
+            var y = Math.min(selectionStartY, pos.y)
+            var w = Math.abs(pos.x - selectionStartX)
+            var h = Math.abs(pos.y - selectionStartY)
             selectionRect.x = x
             selectionRect.y = y
             selectionRect.width = w
@@ -103,91 +115,102 @@ AluminumPanel {
     }
 
     // ========== 右键上下文菜单 ==========
-    Rectangle {
+    Popup {
         id: contextMenu
-        visible: false
-        z: 200
+        parent: Overlay.overlay ? Overlay.overlay : root
         width: 180
         height: menuColumn.height + 12
-        radius: 12
-        color: "#f0f0f4"
-        border.width: 1
-        border.color: "#18000000"
+        padding: 0
+        modal: false
+        dim: false
+        focus: true
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
 
         property var targetComponent: null
 
-        Column {
-            id: menuColumn
-            anchors.left: parent.left
-            anchors.right: parent.right
-            anchors.top: parent.top
-            anchors.margins: 6
+        background: Rectangle {
+            radius: 12
+            color: "#f0f0f4"
+            border.width: 1
+            border.color: "#18000000"
+        }
 
-            ContextMenuItem {
-                text: "Edit Label"
-                visible: contextMenu.targetComponent &&
-                         ComponentRegistry.hasEditableLabel(contextMenu.targetComponent.componentType)
-                height: visible ? 30 : 0
-                onTriggered: {
-                    contextMenu.visible = false
-                    showLabelEditor(contextMenu.targetComponent)
-                }
-            }
+        contentItem: Item {
+            implicitWidth: contextMenu.width
+            implicitHeight: menuColumn.height + 12
 
-            ContextMenuItem {
-                text: contextMenu.targetComponent && contextMenu.targetComponent.bindingId
-                      ? ("Binding: " + contextMenu.targetComponent.bindingId) : "Set Binding..."
-                height: 30
-                onTriggered: {
-                    contextMenu.visible = false
-                    showBindingEditor(contextMenu.targetComponent)
-                }
-            }
-
-            Rectangle {
+            Column {
+                id: menuColumn
+                x: 6
+                y: 6
                 width: parent.width - 12
-                anchors.horizontalCenter: parent.horizontalCenter
-                height: 1
-                color: "#15000000"
-            }
 
-            ContextMenuItem {
-                text: "Copy"
-                shortcut: "Ctrl+C"
-                onTriggered: { contextMenu.visible = false; copySelected() }
-            }
+                ContextMenuItem {
+                    text: "Edit Label"
+                    visible: contextMenu.targetComponent &&
+                             ComponentRegistry.hasEditableLabel(contextMenu.targetComponent.componentType)
+                    height: visible ? 30 : 0
+                    onTriggered: {
+                        contextMenu.close()
+                        showLabelEditor(contextMenu.targetComponent)
+                    }
+                }
 
-            ContextMenuItem {
-                text: "Delete"
-                shortcut: "Del"
-                isDestructive: true
-                onTriggered: { contextMenu.visible = false; deleteSelected() }
-            }
+                ContextMenuItem {
+                    text: contextMenu.targetComponent && contextMenu.targetComponent.bindingId
+                          ? ("Binding: " + contextMenu.targetComponent.bindingId) : "Set Binding..."
+                    height: 30
+                    onTriggered: {
+                        contextMenu.close()
+                        showBindingEditor(contextMenu.targetComponent)
+                    }
+                }
 
-            Rectangle {
-                width: parent.width - 12
-                anchors.horizontalCenter: parent.horizontalCenter
-                height: 1
-                color: "#15000000"
-            }
+                Rectangle {
+                    width: parent.width - 12
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    height: 1
+                    color: "#15000000"
+                }
 
-            ContextMenuItem {
-                text: "Bring to Front"
-                onTriggered: { contextMenu.visible = false; bringToFront(contextMenu.targetComponent) }
-            }
+                ContextMenuItem {
+                    text: "Copy"
+                    shortcut: "Ctrl+C"
+                    onTriggered: { contextMenu.close(); copySelected() }
+                }
 
-            ContextMenuItem {
-                text: "Send to Back"
-                onTriggered: { contextMenu.visible = false; sendToBack(contextMenu.targetComponent) }
+                ContextMenuItem {
+                    text: "Delete"
+                    shortcut: "Del"
+                    isDestructive: true
+                    onTriggered: { contextMenu.close(); deleteSelected() }
+                }
+
+                Rectangle {
+                    width: parent.width - 12
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    height: 1
+                    color: "#15000000"
+                }
+
+                ContextMenuItem {
+                    text: "Bring to Front"
+                    onTriggered: { contextMenu.close(); bringToFront(contextMenu.targetComponent) }
+                }
+
+                ContextMenuItem {
+                    text: "Send to Back"
+                    onTriggered: { contextMenu.close(); sendToBack(contextMenu.targetComponent) }
+                }
             }
         }
     }
 
-    // 点击空白处关闭菜单 — 在菜单内部处理，不用 overlay
+    // 点击空白处关闭菜单
     Connections {
         target: canvasMouseArea
         function onPressed(mouse) {
-            if (contextMenu.visible) contextMenu.visible = false
+            if (contextMenu.visible) contextMenu.close()
             if (bindingEditor.visible) bindingEditor.visible = false
         }
     }
@@ -427,9 +450,11 @@ AluminumPanel {
     function showBindingEditor(wrapper) {
         bindingEditor.targetComponent = wrapper
         bindingEditor.filteredBindings = getFilteredBindings(wrapper.componentType)
-        var cx = wrapper.x + wrapper.width / 2
-        var cy = wrapper.y + wrapper.height + 10
-        if (cy + 200 > root.height) cy = wrapper.y - 200
+        var displayPos = wrapper.mapToItem(root, wrapper.width / 2, wrapper.height)
+        var cx = displayPos.x
+        var cy = displayPos.y + 10
+        if (cy + 200 > root.height)
+            cy = wrapper.mapToItem(root, wrapper.width / 2, 0).y - 200
         bindingEditor.x = Math.max(10, Math.min(cx - 90, root.width - 200))
         bindingEditor.y = Math.max(10, Math.min(cy, root.height - 100))
         bindingEditor.visible = true
@@ -437,15 +462,109 @@ AluminumPanel {
 
     // ========== 功能函数 ==========
 
+    function boundedCanvasWidth() {
+        return canvasWidth
+    }
+
+    function boundedCanvasHeight() {
+        return canvasHeight
+    }
+
+    function roundedCanvasRadius() {
+        return Math.max(0, Math.min(borderRadius, boundedCanvasWidth() / 2, boundedCanvasHeight() / 2))
+    }
+
+    function clampRectToCanvas(x, y, width, height) {
+        return {
+            x: Math.max(0, Math.min(x || 0, Math.max(0, boundedCanvasWidth() - width))),
+            y: Math.max(0, Math.min(y || 0, Math.max(0, boundedCanvasHeight() - height)))
+        }
+    }
+
+    function pushPointInsideCorner(pointX, pointY, centerX, centerY, radius) {
+        var dx = pointX - centerX
+        var dy = pointY - centerY
+        var dist = Math.sqrt(dx * dx + dy * dy)
+        if (dist <= radius || dist <= 0)
+            return { x: pointX, y: pointY, changed: false }
+        var factor = radius / dist
+        return {
+            x: centerX + dx * factor,
+            y: centerY + dy * factor,
+            changed: true
+        }
+    }
+
+    function clampComponentToCanvas(x, y, width, height) {
+        var pos = clampRectToCanvas(x, y, width, height)
+        var r = roundedCanvasRadius()
+        if (r <= 0)
+            return pos
+
+        var cw = boundedCanvasWidth()
+        var ch = boundedCanvasHeight()
+        for (var i = 0; i < 4; i++) {
+            pos = clampRectToCanvas(pos.x, pos.y, width, height)
+
+            if (pos.x < r && pos.y < r) {
+                var tl = pushPointInsideCorner(pos.x, pos.y, r, r, r)
+                if (tl.changed) {
+                    pos.x = Math.max(pos.x, tl.x)
+                    pos.y = Math.max(pos.y, tl.y)
+                }
+            }
+
+            if (pos.x + width > cw - r && pos.y < r) {
+                var tr = pushPointInsideCorner(pos.x + width, pos.y, cw - r, r, r)
+                if (tr.changed) {
+                    pos.x = Math.min(pos.x, tr.x - width)
+                    pos.y = Math.max(pos.y, tr.y)
+                }
+            }
+
+            if (pos.x < r && pos.y + height > ch - r) {
+                var bl = pushPointInsideCorner(pos.x, pos.y + height, r, ch - r, r)
+                if (bl.changed) {
+                    pos.x = Math.max(pos.x, bl.x)
+                    pos.y = Math.min(pos.y, bl.y - height)
+                }
+            }
+
+            if (pos.x + width > cw - r && pos.y + height > ch - r) {
+                var br = pushPointInsideCorner(pos.x + width, pos.y + height, cw - r, ch - r, r)
+                if (br.changed) {
+                    pos.x = Math.min(pos.x, br.x - width)
+                    pos.y = Math.min(pos.y, br.y - height)
+                }
+            }
+        }
+
+        return clampRectToCanvas(pos.x, pos.y, width, height)
+    }
+
+    function displayToCanvasPoint(x, y) {
+        var scale = canvasScale > 0 ? canvasScale : 1
+        return {
+            x: (x - componentContainer.x) / scale,
+            y: (y - componentContainer.y) / scale
+        }
+    }
+
+    function clampedDropPosition(type, x, y) {
+        var size = ComponentRegistry.getDefaultSize(type)
+        return clampComponentToCanvas(x, y, size.width, size.height)
+    }
+
     function addComponent(type, x, y, config) {
         var component = Qt.createComponent("DraggableWrapper.qml")
         if (component.status === Component.Ready) {
+            var pos = clampedDropPosition(type, x, y)
             var wrapper = component.createObject(componentContainer, {
                 componentId: generateId(),
                 componentType: type,
                 componentConfig: config || {},
-                x: x,
-                y: y,
+                x: pos.x,
+                y: pos.y,
                 canvas: root,
                 isEditing: true
             })
@@ -485,17 +604,25 @@ AluminumPanel {
 
     function showContextMenu(wrapper, mx, my) {
         contextMenu.targetComponent = wrapper
-        contextMenu.x = Math.min(mx, root.width - contextMenu.width - 8)
-        contextMenu.y = Math.min(my, root.height - contextMenu.height - 8)
-        contextMenu.visible = true
+        var menuParent = contextMenu.parent || root
+        var pos = root.mapToItem(menuParent, mx, my)
+        var maxX = menuParent && menuParent.width > 0 ? menuParent.width - contextMenu.width - 8
+                                                      : root.width - contextMenu.width - 8
+        var maxY = menuParent && menuParent.height > 0 ? menuParent.height - contextMenu.height - 8
+                                                       : root.height - contextMenu.height - 8
+        contextMenu.x = Math.max(8, Math.min(pos.x, maxX))
+        contextMenu.y = Math.max(8, Math.min(pos.y, maxY))
+        contextMenu.open()
     }
 
     function showLabelEditor(wrapper) {
         labelEditor.targetComponent = wrapper
         labelField.text = wrapper.getLabel()
-        var cx = wrapper.x + wrapper.width / 2
-        var cy = wrapper.y - 50
-        if (cy < 10) cy = wrapper.y + wrapper.height + 10
+        var topPos = wrapper.mapToItem(root, wrapper.width / 2, 0)
+        var bottomPos = wrapper.mapToItem(root, wrapper.width / 2, wrapper.height)
+        var cx = topPos.x
+        var cy = topPos.y - 50
+        if (cy < 10) cy = bottomPos.y + 10
         labelEditor.x = Math.max(10, Math.min(cx - labelEditor.width / 2, root.width - labelEditor.width - 10))
         labelEditor.y = Math.max(10, Math.min(cy, root.height - labelEditor.height - 10))
         labelEditor.visible = true
@@ -640,18 +767,27 @@ AluminumPanel {
     }
 
     function applyCanvasMetadata(canvas) {
-        canvasWidth = canvas && canvas.width ? canvas.width : panelWidth
-        canvasHeight = canvas && canvas.height ? canvas.height : panelHeight
+        canvasWidth = canvas && canvas.width ? canvas.width : Constants.homeCardDesignSize
+        canvasHeight = canvas && canvas.height ? canvas.height : Constants.homeCardDesignSize
         scaleMode = canvas && canvas.scaleMode ? canvas.scaleMode : "uniform"
     }
 
     function fromJSON(data) {
         while (components.length > 0) removeComponent(components[0])
-        applyCanvasMetadata(data.canvas)
+        data = data || {}
+        var targetWidth = canvasWidth > 0 ? canvasWidth : Constants.homeCardDesignSize
+        var targetHeight = canvasHeight > 0 ? canvasHeight : Constants.homeCardDesignSize
+        var sourceWidth = data.canvas && data.canvas.width ? data.canvas.width : targetWidth
+        var sourceHeight = data.canvas && data.canvas.height ? data.canvas.height : targetHeight
+        var sx = sourceWidth > 0 ? targetWidth / sourceWidth : 1
+        var sy = sourceHeight > 0 ? targetHeight / sourceHeight : 1
+        canvasWidth = targetWidth
+        canvasHeight = targetHeight
+        scaleMode = data.canvas && data.canvas.scaleMode ? data.canvas.scaleMode : "uniform"
         var comps = data.components || []
         for (var i = 0; i < comps.length; i++) {
             var compData = comps[i]
-            var wrapper = addComponent(compData.type, compData.x, compData.y, compData.config)
+            var wrapper = addComponent(compData.type, (compData.x || 0) * sx, (compData.y || 0) * sy, compData.config)
             if (wrapper && compData.id) wrapper.componentId = compData.id
             if (wrapper && compData.bindingId) wrapper.bindingId = compData.bindingId
         }
@@ -679,7 +815,7 @@ AluminumPanel {
         } else if (event.key === Qt.Key_Delete || event.key === Qt.Key_Backspace) {
             deleteSelected(); event.accepted = true
         } else if (event.key === Qt.Key_Escape) {
-            contextMenu.visible = false; labelEditor.visible = false
+            contextMenu.close(); labelEditor.visible = false
             clearSelection(); event.accepted = true
         } else if (event.key === Qt.Key_C && (event.modifiers & Qt.ControlModifier)) {
             copySelected(); event.accepted = true

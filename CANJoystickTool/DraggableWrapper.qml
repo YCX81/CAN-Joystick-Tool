@@ -32,8 +32,8 @@ Item {
     signal labelEditRequested()
     signal contextMenuRequested(real mx, real my)
 
-    width: componentLoader.item ? componentLoader.item.width : 100
-    height: componentLoader.item ? componentLoader.item.height : 100
+    width: resolvedComponentWidth()
+    height: resolvedComponentHeight()
 
     // 拖拽偏移量（在父坐标系下）
     property real dragOffsetX: 0
@@ -91,14 +91,10 @@ Item {
             var newX = parentPos.x - dragOffsetX
             var newY = parentPos.y - dragOffsetY
 
-            // 限制在画布边界内
-            var boundW = canvas ? canvas.width : (root.parent ? root.parent.width : 9999)
-            var boundH = canvas ? canvas.height : (root.parent ? root.parent.height : 9999)
-            newX = Math.max(0, Math.min(newX, boundW - root.width))
-            newY = Math.max(0, Math.min(newY, boundH - root.height))
+            var clamped = clampToDragBounds(newX, newY)
 
-            root.x = newX
-            root.y = newY
+            root.x = clamped.x
+            root.y = clamped.y
             componentMoved(root.x, root.y)
         }
 
@@ -129,17 +125,25 @@ Item {
 
         var step = event.modifiers & Qt.ShiftModifier ? 10 : 1
 
+        var newX = root.x
+        var newY = root.y
+
         if (event.key === Qt.Key_Left) {
-            root.x -= step; event.accepted = true
+            newX -= step; event.accepted = true
         } else if (event.key === Qt.Key_Right) {
-            root.x += step; event.accepted = true
+            newX += step; event.accepted = true
         } else if (event.key === Qt.Key_Up) {
-            root.y -= step; event.accepted = true
+            newY -= step; event.accepted = true
         } else if (event.key === Qt.Key_Down) {
-            root.y += step; event.accepted = true
+            newY += step; event.accepted = true
         }
 
-        if (event.accepted) componentMoved(root.x, root.y)
+        if (event.accepted) {
+            var clamped = clampToDragBounds(newX, newY)
+            root.x = clamped.x
+            root.y = clamped.y
+            componentMoved(root.x, root.y)
+        }
     }
 
     focus: selected
@@ -182,12 +186,83 @@ Item {
         return mapping[type] || ""
     }
 
+    function hasPositiveSize(value) {
+        return value !== undefined && value !== null && value > 0
+    }
+
+    function registryDefaultSize() {
+        return ComponentRegistry.getDefaultSize(componentType)
+    }
+
+    function mergedDefaultConfig() {
+        var merged = ComponentRegistry.getDefaultConfig(componentType)
+        var current = componentConfig || {}
+        for (var key in current)
+            merged[key] = current[key]
+        return merged
+    }
+
+    function resolveSize(explicitSize, implicitSize, defaultSize) {
+        if (hasPositiveSize(explicitSize))
+            return explicitSize
+        if (hasPositiveSize(implicitSize))
+            return implicitSize
+        return defaultSize
+    }
+
+    function resolvedComponentWidth() {
+        var item = componentLoader.item
+        var defaultSize = registryDefaultSize()
+        return item ? resolveSize(item.width, item.implicitWidth, defaultSize.width) : defaultSize.width
+    }
+
+    function resolvedComponentHeight() {
+        var item = componentLoader.item
+        var defaultSize = registryDefaultSize()
+        return item ? resolveSize(item.height, item.implicitHeight, defaultSize.height) : defaultSize.height
+    }
+
+    function dragBoundWidth() {
+        var item = root.parent || canvas
+        return item && item.width > 0 ? item.width : 9999
+    }
+
+    function dragBoundHeight() {
+        var item = root.parent || canvas
+        return item && item.height > 0 ? item.height : 9999
+    }
+
+    function clampToDragBounds(x, y) {
+        if (canvas && canvas.clampComponentToCanvas)
+            return canvas.clampComponentToCanvas(x, y, root.width, root.height)
+
+        var maxX = Math.max(0, dragBoundWidth() - root.width)
+        var maxY = Math.max(0, dragBoundHeight() - root.height)
+        return {
+            x: Math.max(0, Math.min(x, maxX)),
+            y: Math.max(0, Math.min(y, maxY))
+        }
+    }
+
+    function ensureWrappedComponentSize() {
+        if (!wrappedComponent)
+            return
+
+        var defaultSize = registryDefaultSize()
+        wrappedComponent.width = defaultSize.width
+        wrappedComponent.height = defaultSize.height
+        root.width = defaultSize.width
+        root.height = defaultSize.height
+    }
+
     function applyConfig() {
         if (!wrappedComponent) return
+        componentConfig = mergedDefaultConfig()
         for (var key in componentConfig) {
             if (wrappedComponent.hasOwnProperty(key))
                 wrappedComponent[key] = componentConfig[key]
         }
+        ensureWrappedComponentSize()
     }
 
     function updateConfig(newConfig) {

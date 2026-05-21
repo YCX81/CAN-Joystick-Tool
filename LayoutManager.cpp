@@ -159,6 +159,16 @@ QJsonArray LayoutManager::getLayoutFiles()
         fileObj["path"] = fileInfo.absoluteFilePath();
         fileObj["modified"] = fileInfo.lastModified().toString(Qt::ISODate);
         fileObj["size"] = fileInfo.size();
+
+        QJsonDocument productDoc = readJsonFile(fileInfo.absoluteFilePath());
+        if (productDoc.isObject()) {
+            QJsonObject product = productDoc.object().value("product").toObject();
+            fileObj["displayName"] = product.value("name").toString(fileInfo.baseName());
+            fileObj["protocol"] = product.value("protocol").toString("j1939");
+            fileObj["description"] = product.value("description").toString();
+            fileObj["model"] = product.value("model").toString(fileInfo.baseName());
+        }
+
         files.append(fileObj);
     }
 

@@ -48,6 +48,10 @@ qt_add_qml_module(CANJoystickTool
         CANJoystickTool/DigitalDisplay.qml
         CANJoystickTool/RockerSwitch.qml
         CANJoystickTool/IndustrialButton.qml
+        CANJoystickTool/ToolCard.qml
+        CANJoystickTool/SectionHeader.qml
+        CANJoystickTool/StatusDot.qml
+        CANJoystickTool/CompactButton.qml
         # 复合单元组件
         CANJoystickTool/FNRSwitchUnit.qml
         CANJoystickTool/VerticalRollerUnit.qml

@@ -21,43 +21,29 @@ Window {
 
     property string currentView: "main" // "main", "designer", "products"
 
-    // 根据窗口实际大小计算缩放比例
-    property real scaleFactor: Math.min(window.width / Constants.width,
-                                        window.height / Constants.height)
-
     // 主界面
     Screen01 {
         id: mainScreen
         visible: currentView === "main"
-        transformOrigin: Item.Center
-        scale: window.scaleFactor
-        anchors.centerIn: parent
+        anchors.fill: parent
     }
 
-    // 布局设计器 — 与主页相同的全局等比缩放
+    // 布局设计器
     LayoutDesigner {
         id: layoutDesigner
         visible: currentView === "designer"
-        width: Constants.width
-        height: Constants.height
-        transformOrigin: Item.Center
-        scale: window.scaleFactor
-        anchors.centerIn: parent
+        anchors.fill: parent
 
         onExitRequested: {
             currentView = "main"
         }
     }
 
-    // 产品配置编辑器 — 与主页相同的全局等比缩放
+    // 产品配置编辑器
     ProductEditor {
         id: productEditor
         visible: currentView === "products"
-        width: Constants.width
-        height: Constants.height
-        transformOrigin: Item.Center
-        scale: window.scaleFactor
-        anchors.centerIn: parent
+        anchors.fill: parent
 
         onExitRequested: {
             currentView = "main"

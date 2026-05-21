@@ -16,6 +16,7 @@ Item {
     property color darkColor: "#dcdcdc"
     property color shadowColor: "#b0b0b0"
     property color highlightColor: "#ffffff"
+    property bool panelChromeVisible: true
 
     width: panelWidth
     height: panelHeight
@@ -31,6 +32,7 @@ Item {
         radius: borderRadius + 10
         color: highlightColor
         opacity: 0.5
+        visible: root.panelChromeVisible
 
         layer.enabled: true
         layer.effect: MultiEffect {
@@ -51,6 +53,7 @@ Item {
         radius: borderRadius + 10
         color: shadowColor
         opacity: 0.6
+        visible: root.panelChromeVisible
 
         layer.enabled: true
         layer.effect: MultiEffect {
@@ -64,6 +67,7 @@ Item {
     Canvas {
         id: mainPanelCanvas
         anchors.fill: parent
+        visible: root.panelChromeVisible
 
         onPaint: {
             var ctx = getContext("2d")
@@ -112,6 +116,7 @@ Item {
         color: "transparent"
         border.width: 1
         border.color: "#80FFFFFF"  // 50%白
+        visible: root.panelChromeVisible
     }
 
     // 噪点纹理层 (disabled for performance — too slow on large panels)

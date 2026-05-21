@@ -2,12 +2,40 @@ pragma Singleton
 import QtQuick 6.5
 
 QtObject {
-    readonly property int width: 1920
-    readonly property int height: 1080
+    readonly property int width: 1280
+    readonly property int height: 800
 
-    property string relativeFontDirectory: "fonts"
+    // ===== Light theme =====
+    readonly property color bgPrimary: "#f5f5f7"
+    readonly property color bgSecondary: "#ebedef"
+    readonly property color bgCard: "#ffffff"
+    readonly property color bgInput: "#f0f0f2"
 
-    /* Edit this comment to add your custom font */
+    // ===== Text =====
+    readonly property color textPrimary: "#1d1d1f"
+    readonly property color textSecondary: "#86868b"
+    readonly property color textMuted: "#a1a1a6"
+
+    // ===== Status / Accent =====
+    readonly property color accent: "#007aff"
+    readonly property color accentDim: "#5ac8fa"
+    readonly property color success: "#34c759"
+    readonly property color warning: "#ff9500"
+    readonly property color error: "#ff3b30"
+
+    // Aliases used by hardware-oriented CANJoystickTool components.
+    readonly property color accentColor: "#00e0ff"
+    readonly property color successColor: success
+    readonly property color warningColor: warning
+    readonly property color errorColor: error
+
+    // ===== Border =====
+    readonly property color border: "#d2d2d7"
+    readonly property color borderLight: "#e5e5ea"
+
+    // ===== Fonts =====
+    readonly property string relativeFontDirectory: "fonts"
+
     readonly property font font: Qt.font({
                                              family: Qt.application.font.family,
                                              pixelSize: Qt.application.font.pixelSize
@@ -21,77 +49,80 @@ QtObject {
                                                  pixelSize: 12
                                              })
 
-    // 主题颜色 - 浅色Ive风格
-    readonly property color backgroundColor: "#f5f5f7"
-    readonly property color panelColor: "transparent"  // 使用渐变面板
+    // ===== Compatibility aliases =====
+    readonly property color backgroundColor: bgPrimary
+    readonly property color panelColor: bgCard
 
-    // 文字颜色
-    readonly property color textPrimary: "#1d1d1f"
-    readonly property color textSecondary: "#86868b"
-    readonly property color textMuted: "#a1a1a6"
-
-    // 状态颜色
-    readonly property color accentColor: "#00e0ff"      // 青色
-    readonly property color successColor: "#34c759"     // 绿色
-    readonly property color warningColor: "#ff9500"
-    readonly property color errorColor: "#ff3b30"
-
-    // 边缘发光色
-    readonly property color limitGlow: "#9934c759"  // 绿色边缘光 60%透明度
-
-    // 轴值颜色 - 统一使用深灰
-    readonly property color axisFillColor: "#4b5563"    // gray-600
-    readonly property color axisThumbColor: "#374151"   // gray-700
-
-    // 铝合金面板颜色
+    // ===== Aluminum panel =====
     readonly property color aluminumLight: "#f2f2f2"
     readonly property color aluminumDark: "#dcdcdc"
     readonly property color aluminumShadow: "#b0b0b0"
     readonly property color aluminumHighlight: "#ffffff"
 
-    // 凹槽色
+    // ===== Groove / Grid =====
     readonly property color grooveColor: "#e6e6e6"
+    readonly property color gridColor: "#08000000"
+    readonly property color axisLineColor: "#0F000000"
 
-    // 手柄色
+    // ===== Axis =====
+    readonly property color axisFillColor: "#4b5563"
+    readonly property color axisThumbColor: "#374151"
+
+    // ===== Knob =====
     readonly property color knobLight: "#ffffff"
     readonly property color knobDark: "#e0e0e0"
+    readonly property color limitGlow: "#9934c759"
 
-    // 网格色
-    readonly property color gridColor: "#08000000"  // 3%透明度黑色
-    readonly property color axisLineColor: "#0F000000"  // 6%黑轴线
+    // ===== Corner radii =====
+    readonly property int radiusPanel: 44
+    readonly property int radiusRecessed: 36
+    readonly property int radiusCard: 12
+    readonly property int radiusButton: 8
 
-    // ========== 统一圆角值 ==========
-    readonly property int radiusPanel: 44       // 主面板
-    readonly property int radiusRecessed: 36    // 凹槽区域
-    readonly property int radiusCard: 12        // 轴卡片
-    readonly property int radiusButton: 8       // 按钮
+    // ===== Home card reference =====
+    readonly property int homeCardDesignSize: 480
 
-    // ========== 阴影参数 ==========
-    readonly property int panelShadowOffset: 30   // 面板阴影偏移
-    readonly property int panelShadowBlur: 60     // 面板阴影模糊
-    readonly property int insetShadowOffset: 8    // 内凹阴影偏移
-    readonly property int insetShadowBlur: 20     // 内凹阴影模糊
+    // ===== DownloadTool card reference =====
+    // Reference geometry is taken from the DownloadTool product page at the
+    // wide testing layout. All editor previews scale from these proportions.
+    readonly property int downloadToolStageWidth: 1683
+    readonly property int downloadToolStageHeight: 888
+    readonly property int downloadToolLeftCardWidth: 875
+    readonly property int downloadToolRightCardWidth: 396
+    readonly property int downloadToolRightCardHeight: 440
+    readonly property int downloadToolCardGap: 8
+    readonly property int downloadToolCardMargin: 16
+    readonly property int downloadToolCardHeaderHeight: 20
+    readonly property int downloadToolCardHeaderGap: 6
+    readonly property int downloadToolCardBodyWidth: 364
+    readonly property int downloadToolCardBodyHeight: 382
 
-    // ========== 阴影颜色 ==========
-    readonly property color shadowDark12: "#1F000000"    // 12%黑 - 内凹主阴影
-    readonly property color shadowDark05: "#0D000000"    // 5%黑 - 细微阴影
-    readonly property color shadowDark15: "#26000000"    // 15%黑 - 手柄阴影
-    readonly property color shadowDark30: "#4D000000"    // 30%黑 - 中灯内阴影
+    // ===== Shadow parameters =====
+    readonly property int panelShadowOffset: 30
+    readonly property int panelShadowBlur: 60
+    readonly property int insetShadowOffset: 8
+    readonly property int insetShadowBlur: 20
 
-    // ========== 高光颜色 ==========
-    readonly property color highlightWhite100: "#FFFFFFFF"  // 100%白
-    readonly property color highlightWhite80: "#CCFFFFFF"   // 80%白 - 手柄高光
-    readonly property color highlightWhite50: "#80FFFFFF"   // 50%白 - 面板内边框
-    readonly property color highlightWhite40: "#66FFFFFF"   // 40%白 - 手柄内边框
-    readonly property color borderWhite30: "#4DFFFFFF"      // 30%白 - 卡片背景
-    readonly property color borderWhite20: "#33FFFFFF"      // 20%白 - 手柄边框
+    // ===== Shadow colors =====
+    readonly property color shadowDark12: "#1F000000"
+    readonly property color shadowDark05: "#0D000000"
+    readonly property color shadowDark15: "#26000000"
+    readonly property color shadowDark30: "#4D000000"
 
-    // ========== 滚轮组件颜色 ==========
+    // ===== Highlight colors =====
+    readonly property color highlightWhite100: "#FFFFFFFF"
+    readonly property color highlightWhite80: "#CCFFFFFF"
+    readonly property color highlightWhite50: "#80FFFFFF"
+    readonly property color highlightWhite40: "#66FFFFFF"
+    readonly property color borderWhite30: "#4DFFFFFF"
+    readonly property color borderWhite20: "#33FFFFFF"
+
+    // ===== Roller / Wheel =====
     readonly property color rollerHousingColor: "#d4d4d4"
     readonly property color rollerWheelColor: "#222222"
     readonly property color rollerIndicatorColor: "#ff9500"
 
-    // ========== 翘板开关颜色 ==========
+    // ===== Rocker switch =====
     readonly property color rockerHousingColor: "#111111"
     readonly property color rockerGradientStart: "#f59e0b"
     readonly property color rockerGradientEnd: "#fbbf24"
@@ -99,7 +130,7 @@ QtObject {
     readonly property color fnrNeutralColor: "#10b981"
     readonly property color fnrReverseColor: "#ef4444"
 
-    // ========== 工业按钮颜色 ==========
+    // ===== Industrial button =====
     readonly property color buttonBezelColor: "#1a1a1a"
     readonly property color buttonRedColor: "#ef4444"
     readonly property color buttonGreyColor: "#9ca3af"

@@ -1,16 +1,15 @@
 import QtQuick 6.5
 import QtQuick.Controls 6.5
 import QtQuick.Layouts
-import QtQuick.Effects
 import CANJoystickTool
 
-// 右侧组件面板 - Light Neumorphism 风格
+// 右侧组件面板 - compact DownloadTool card style
 Item {
     id: root
 
     property int panelWidth: 210
 
-    // Neumorphism 配色 (从父级传入)
+    // Public style API kept for existing callers.
     property color neuBg: "#e0e0e5"
     property color neuLightShadow: "#ffffff"
     property color neuDarkShadow: "#bebec3"
@@ -26,320 +25,405 @@ Item {
 
     width: panelWidth
 
-    // ========== 面板背景 ==========
-    Rectangle {
-        anchors.fill: parent
-        color: neuBg
+    readonly property color bgPrimary: "#f5f5f7"
+    readonly property color bgCard: "#ffffff"
+    readonly property color bgInput: "#f0f0f2"
+    readonly property color border: "#d2d2d7"
+    readonly property color borderLight: "#e5e5ea"
+    readonly property color textMuted: "#a1a1a6"
+    readonly property color hoverFill: "#f7fbff"
+    readonly property color pressedFill: "#eef5ff"
+    readonly property color selectedFill: "#e8f0fe"
+    property string activeComponentType: ""
+    readonly property bool horizontalMode: width > height * 1.35
+
+    function accentAlpha(alpha) {
+        return Qt.rgba(neuAccent.r, neuAccent.g, neuAccent.b, alpha)
     }
 
-    // 左侧边缘凹槽分隔线
     Rectangle {
-        anchors.left: parent.left
-        anchors.top: parent.top
-        anchors.bottom: parent.bottom
-        width: 1
-        color: neuDarkShadow
-    }
-    Rectangle {
-        anchors.left: parent.left
-        anchors.leftMargin: 1
-        anchors.top: parent.top
-        anchors.bottom: parent.bottom
-        width: 1
-        color: neuLightShadow
+        anchors.fill: parent
+        color: bgCard
+        radius: 8
+        border.width: 1
+        border.color: border
     }
 
     // ========== 面板内容 ==========
     ColumnLayout {
         anchors.fill: parent
-        anchors.margins: 16
-        anchors.topMargin: 28
-        spacing: 20
+        anchors.margins: 10
+        spacing: 10
 
-        // 标题
-        Text {
-            text: "COMPONENTS"
-            color: neuTextSecondary
-            font.pixelSize: 10
-            font.weight: Font.Bold
-            font.letterSpacing: 3
-            Layout.alignment: Qt.AlignHCenter
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: 8
+
+            Text {
+                text: "COMPONENTS"
+                color: neuTextPrimary
+                font.pixelSize: 12
+                font.weight: Font.DemiBold
+                Layout.alignment: Qt.AlignVCenter
+            }
+
+            Item { Layout.fillWidth: true }
+
+            Rectangle {
+                width: 6
+                height: 6
+                radius: 3
+                color: neuAccent
+                Layout.alignment: Qt.AlignVCenter
+            }
         }
 
-        // 滚动区域
-        Flickable {
+        Item {
+            id: libraryArea
             Layout.fillWidth: true
             Layout.fillHeight: true
-            contentHeight: contentCol.height
-            clip: true
-            boundsBehavior: Flickable.StopAtBounds
 
-            ColumnLayout {
-                id: contentCol
-                width: parent.width
-                spacing: 24
+            Flickable {
+                id: horizontalScroll
+                anchors.fill: parent
+                visible: root.horizontalMode
+                contentWidth: horizontalContent.implicitWidth
+                contentHeight: height
+                flickableDirection: Flickable.HorizontalFlick
+                clip: true
+                boundsBehavior: Flickable.StopAtBounds
 
-                // ========== Buttons ==========
-                NeuSection {
-                    sectionName: "BUTTONS"
-                    Layout.fillWidth: true
-                }
-
-                // 按钮网格 - 3x2
-                Grid {
-                    Layout.alignment: Qt.AlignHCenter
-                    columns: 3
-                    rowSpacing: 10
-                    columnSpacing: 10
-
-                    Repeater {
-                        model: ComponentRegistry.getComponentsInCategory("buttons")
-
-                        NeuComponentTile {
-                            componentType: modelData
-                            componentDef: ComponentRegistry.getDefinition(modelData)
-                            neuBg: root.neuBg
-                            neuLight: root.neuLightShadow
-                            neuDark: root.neuDarkShadow
-                            onClicked: root.componentRequested(modelData)
-                        }
-                    }
-                }
-
-                // ========== FNR ==========
-                NeuSection {
-                    sectionName: "FNR"
-                    Layout.fillWidth: true
-                }
-
-                Flow {
-                    Layout.alignment: Qt.AlignHCenter
-                    Layout.fillWidth: true
-                    Layout.leftMargin: 10; Layout.rightMargin: 10
-                    spacing: 10
-
-                    Repeater {
-                        model: ComponentRegistry.getComponentsInCategory("fnr")
-
-                        NeuComponentTile {
-                            componentType: modelData
-                            componentDef: ComponentRegistry.getDefinition(modelData)
-                            tileWidth: modelData === "FNRSwitch" ? 60 : 72
-                            tileHeight: modelData === "FNRSwitch" ? 72 : 60
-                            neuBg: root.neuBg
-                            neuLight: root.neuLightShadow
-                            neuDark: root.neuDarkShadow
-                            onClicked: root.componentRequested(modelData)
-                        }
-                    }
-                }
-
-                // ========== Rollers ==========
-                NeuSection {
-                    sectionName: "ROLLERS"
-                    Layout.fillWidth: true
+                ScrollBar.horizontal: ScrollBar {
+                    policy: ScrollBar.AsNeeded
                 }
 
                 Row {
-                    Layout.alignment: Qt.AlignHCenter
-                    spacing: 10
+                    id: horizontalContent
+                    height: horizontalScroll.height
+                    spacing: 16
 
-                    Repeater {
-                        model: ComponentRegistry.getComponentsInCategory("rollers")
+                    Column {
+                        width: buttonRow.implicitWidth
+                        height: parent.height
+                        spacing: 6
 
-                        NeuComponentTile {
-                            componentType: modelData
-                            componentDef: ComponentRegistry.getDefinition(modelData)
-                            tileWidth: 60
-                            tileHeight: 72
-                            neuBg: root.neuBg
-                            neuLight: root.neuLightShadow
-                            neuDark: root.neuDarkShadow
-                            onClicked: root.componentRequested(modelData)
+                        PanelSection {
+                            sectionName: "BUTTONS"
+                            width: buttonRow.implicitWidth
+                        }
+
+                        Row {
+                            id: buttonRow
+                            spacing: 8
+
+                            Repeater {
+                                model: ComponentRegistry.getComponentsInCategory("buttons")
+
+                                ComponentTile {
+                                    componentType: modelData
+                                    componentDef: ComponentRegistry.getDefinition(modelData)
+                                    tileWidth: 58
+                                    tileHeight: 72
+                                    onClicked: {
+                                        root.activeComponentType = modelData
+                                        root.componentRequested(modelData)
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    Column {
+                        width: fnrRow.implicitWidth
+                        height: parent.height
+                        spacing: 6
+
+                        PanelSection {
+                            sectionName: "FNR"
+                            width: fnrRow.implicitWidth
+                        }
+
+                        Row {
+                            id: fnrRow
+                            spacing: 8
+
+                            Repeater {
+                                model: ComponentRegistry.getComponentsInCategory("fnr")
+
+                                ComponentTile {
+                                    componentType: modelData
+                                    componentDef: ComponentRegistry.getDefinition(modelData)
+                                    tileWidth: modelData === "FNRSwitch" ? 66 : 96
+                                    tileHeight: 72
+                                    onClicked: {
+                                        root.activeComponentType = modelData
+                                        root.componentRequested(modelData)
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    Column {
+                        width: rollerRow.implicitWidth
+                        height: parent.height
+                        spacing: 6
+
+                        PanelSection {
+                            sectionName: "ROLLERS"
+                            width: rollerRow.implicitWidth
+                        }
+
+                        Row {
+                            id: rollerRow
+                            spacing: 8
+
+                            Repeater {
+                                model: ComponentRegistry.getComponentsInCategory("rollers")
+
+                                ComponentTile {
+                                    componentType: modelData
+                                    componentDef: ComponentRegistry.getDefinition(modelData)
+                                    tileWidth: modelData === "HorizontalRoller" ? 112 : 66
+                                    tileHeight: 72
+                                    onClicked: {
+                                        root.activeComponentType = modelData
+                                        root.componentRequested(modelData)
+                                    }
+                                }
+                            }
                         }
                     }
                 }
+            }
 
-                // 弹簧
-                Item { Layout.fillHeight: true }
+            Flickable {
+                id: scrollArea
+                anchors.fill: parent
+                visible: !root.horizontalMode
+                contentHeight: contentCol.height
+                clip: true
+                boundsBehavior: Flickable.StopAtBounds
+
+                ScrollBar.vertical: ScrollBar {
+                    policy: ScrollBar.AsNeeded
+                }
+
+                ColumnLayout {
+                    id: contentCol
+                    width: scrollArea.width
+                    spacing: 10
+
+                    // ========== Buttons ==========
+                    PanelSection {
+                        sectionName: "BUTTONS"
+                        Layout.fillWidth: true
+                    }
+
+                    Grid {
+                        Layout.alignment: Qt.AlignHCenter
+                        columns: 3
+                        rowSpacing: 8
+                        columnSpacing: 8
+
+                        Repeater {
+                            model: ComponentRegistry.getComponentsInCategory("buttons")
+
+                            ComponentTile {
+                                componentType: modelData
+                                componentDef: ComponentRegistry.getDefinition(modelData)
+                                onClicked: {
+                                    root.activeComponentType = modelData
+                                    root.componentRequested(modelData)
+                                }
+                            }
+                        }
+                    }
+
+                    // ========== FNR ==========
+                    PanelSection {
+                        sectionName: "FNR"
+                        Layout.fillWidth: true
+                    }
+
+                    Flow {
+                        Layout.alignment: Qt.AlignHCenter
+                        Layout.fillWidth: true
+                        spacing: 8
+
+                        Repeater {
+                            model: ComponentRegistry.getComponentsInCategory("fnr")
+
+                            ComponentTile {
+                                componentType: modelData
+                                componentDef: ComponentRegistry.getDefinition(modelData)
+                                tileWidth: modelData === "FNRSwitch" ? 62 : 88
+                                tileHeight: modelData === "FNRSwitch" ? 76 : 64
+                                onClicked: {
+                                    root.activeComponentType = modelData
+                                    root.componentRequested(modelData)
+                                }
+                            }
+                        }
+                    }
+
+                    // ========== Rollers ==========
+                    PanelSection {
+                        sectionName: "ROLLERS"
+                        Layout.fillWidth: true
+                    }
+
+                    Row {
+                        Layout.alignment: Qt.AlignHCenter
+                        spacing: 8
+
+                        Repeater {
+                            model: ComponentRegistry.getComponentsInCategory("rollers")
+
+                            ComponentTile {
+                                componentType: modelData
+                                componentDef: ComponentRegistry.getDefinition(modelData)
+                                tileWidth: modelData === "HorizontalRoller" ? 104 : 62
+                                tileHeight: modelData === "HorizontalRoller" ? 64 : 76
+                                onClicked: {
+                                    root.activeComponentType = modelData
+                                    root.componentRequested(modelData)
+                                }
+                            }
+                        }
+                    }
+
+                    // 弹簧
+                    Item { Layout.fillHeight: true }
+                }
             }
         }
     }
 
-    // ========== Neumorphic 分组标题 ==========
-    component NeuSection: Item {
+    // ========== Compact section header ==========
+    component PanelSection: Item {
         property string sectionName: ""
-        height: 16
+        height: 18
 
-        Row {
-            anchors.centerIn: parent
-            spacing: 10
+        RowLayout {
+            anchors.fill: parent
+            spacing: 8
 
-            // 左线
-            Rectangle {
-                width: 24
-                height: 1
-                anchors.verticalCenter: parent.verticalCenter
-                gradient: Gradient {
-                    orientation: Gradient.Horizontal
-                    GradientStop { position: 0.0; color: "transparent" }
-                    GradientStop { position: 1.0; color: neuTextSecondary }
-                }
-            }
-
-            Text {
+            Label {
                 text: sectionName
                 color: neuTextSecondary
-                font.pixelSize: 9
-                font.weight: Font.Medium
-                font.letterSpacing: 2
+                font.pixelSize: 10
+                font.weight: Font.DemiBold
+                Layout.alignment: Qt.AlignVCenter
             }
 
-            // 右线
             Rectangle {
-                width: 24
+                Layout.fillWidth: true
                 height: 1
-                anchors.verticalCenter: parent.verticalCenter
-                gradient: Gradient {
-                    orientation: Gradient.Horizontal
-                    GradientStop { position: 0.0; color: neuTextSecondary }
-                    GradientStop { position: 1.0; color: "transparent" }
-                }
+                color: borderLight
+                Layout.alignment: Qt.AlignVCenter
             }
         }
     }
 
-    // ========== Neumorphic 组件缩略图 ==========
-    component NeuComponentTile: Item {
+    // ========== Component thumbnail tile ==========
+    component ComponentTile: Item {
         id: tile
         property string componentType: ""
         property var componentDef: null
-        property int tileWidth: 50
-        property int tileHeight: 60
-        property color neuBg: "#e0e0e5"
-        property color neuLight: "#ffffff"
-        property color neuDark: "#bebec3"
+        property int tileWidth: 52
+        property int tileHeight: 58
+        property bool selected: root.activeComponentType === componentType
+        readonly property var registryDefaultSize: ComponentRegistry.getDefaultSize(componentType)
+        readonly property real registryDefaultWidth: registryDefaultSize && registryDefaultSize.width > 0 ? registryDefaultSize.width : 0
+        readonly property real registryDefaultHeight: registryDefaultSize && registryDefaultSize.height > 0 ? registryDefaultSize.height : 0
+        readonly property real fallbackThumbnailScale: componentDef ? (componentDef.thumbnailScale || 0.4) : 0.4
+        readonly property real thumbnailFitScale: registryDefaultWidth > 0
+                                                  && registryDefaultHeight > 0
+                                                  && previewSlot.width > 0
+                                                  && previewSlot.height > 0
+                                                  ? Math.min(previewSlot.width / registryDefaultWidth,
+                                                             previewSlot.height / registryDefaultHeight)
+                                                  : fallbackThumbnailScale
 
         signal clicked()
 
         width: tileWidth
         height: tileHeight
+        scale: tileMouse.pressed ? 0.985 : 1.0
 
-        // ---- 凸起状态 (未按下) ----
-
-        // 亮阴影 (左上)
-        Rectangle {
-            visible: !tileMouse.pressed
-            anchors.fill: tileMain
-            anchors.margins: -1
-            anchors.leftMargin: -4
-            anchors.topMargin: -4
-            anchors.rightMargin: 4
-            anchors.bottomMargin: 4
-            radius: tileMain.radius + 1
-            color: tile.neuLight
-            layer.enabled: true
-            layer.effect: MultiEffect {
-                blurEnabled: true
-                blur: 0.5
-                blurMax: 10
-            }
-        }
-
-        // 暗阴影 (右下)
-        Rectangle {
-            visible: !tileMouse.pressed
-            anchors.fill: tileMain
-            anchors.margins: -1
-            anchors.leftMargin: 4
-            anchors.topMargin: 4
-            anchors.rightMargin: -4
-            anchors.bottomMargin: -4
-            radius: tileMain.radius + 1
-            color: tile.neuDark
-            layer.enabled: true
-            layer.effect: MultiEffect {
-                blurEnabled: true
-                blur: 0.5
-                blurMax: 10
-            }
+        Behavior on scale {
+            NumberAnimation { duration: 80; easing.type: Easing.OutCubic }
         }
 
         // 主体
         Rectangle {
             id: tileMain
             anchors.fill: parent
-            radius: 10
-            color: tile.neuBg
+            radius: 8
+            color: tileMouse.dragging ? selectedFill
+                  : tileMouse.pressed ? pressedFill
+                  : tile.selected ? selectedFill
+                  : tileMouse.containsMouse ? hoverFill
+                  : bgCard
+            border.width: 1
+            border.color: tileMouse.dragging || tileMouse.pressed || tile.selected
+                          ? root.neuAccent
+                          : tileMouse.containsMouse ? root.accentAlpha(0.38) : borderLight
 
-            // 按下时凹陷效果 - 顶部暗
             Rectangle {
-                visible: tileMouse.pressed
-                anchors.fill: parent
-                radius: parent.radius
-                gradient: Gradient {
-                    GradientStop { position: 0.0; color: "#35000000" }
-                    GradientStop { position: 0.35; color: "transparent" }
-                    GradientStop { position: 1.0; color: "transparent" }
-                }
+                anchors.left: parent.left
+                anchors.top: parent.top
+                anchors.bottom: parent.bottom
+                width: 3
+                radius: 8
+                visible: tileMouse.dragging || tile.selected
+                color: root.neuAccent
             }
 
-            // 按下时凹陷效果 - 底部亮
             Rectangle {
-                visible: tileMouse.pressed
-                anchors.fill: parent
-                radius: parent.radius
-                gradient: Gradient {
-                    GradientStop { position: 0.0; color: "transparent" }
-                    GradientStop { position: 0.65; color: "transparent" }
-                    GradientStop { position: 1.0; color: "#15FFFFFF" }
-                }
-            }
-
-            // 未按下 - 微妙顶部高光
-            Rectangle {
-                visible: !tileMouse.pressed
-                anchors.fill: parent
-                radius: parent.radius
-                gradient: Gradient {
-                    GradientStop { position: 0.0; color: "#30FFFFFF" }
-                    GradientStop { position: 0.25; color: "transparent" }
-                    GradientStop { position: 1.0; color: "transparent" }
-                }
-            }
-
-            // Hover 高亮边框
-            Rectangle {
-                visible: tileMouse.containsMouse && !tileMouse.pressed
-                anchors.fill: parent
-                radius: parent.radius
-                color: "transparent"
-                border.width: 1
-                border.color: "#20" + neuAccent.toString().substring(1)
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.top: parent.top
+                height: 1
+                color: "#ffffff"
+                opacity: tileMouse.pressed ? 0.0 : 0.75
             }
         }
 
         // 缩略图内容
-        Loader {
-            id: thumbLoader
-            anchors.horizontalCenter: parent.horizontalCenter
+        Item {
+            id: previewSlot
             anchors.top: parent.top
-            anchors.topMargin: 4
-            scale: componentDef ? (componentDef.thumbnailScale || 0.4) : 0.4
-            transformOrigin: Item.Top
-            source: getThumbSource(componentType)
-            onLoaded: applyThumbConfig(item, componentType)
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.bottom: nameText.top
+            anchors.margins: 4
+            enabled: false
+            clip: true
+
+            Loader {
+                id: thumbLoader
+                anchors.centerIn: parent
+                width: tile.registryDefaultWidth > 0 ? tile.registryDefaultWidth : 1
+                height: tile.registryDefaultHeight > 0 ? tile.registryDefaultHeight : 1
+                scale: tile.thumbnailFitScale
+                transformOrigin: Item.Center
+                source: getThumbSource(componentType)
+                onLoaded: applyThumbConfig(item, componentType)
+            }
         }
 
         // 名称
         Text {
+            id: nameText
             anchors.bottom: parent.bottom
             anchors.bottomMargin: 3
             anchors.horizontalCenter: parent.horizontalCenter
             text: componentDef ? componentDef.name : ""
-            color: neuTextSecondary
+            color: tile.selected || tileMouse.dragging ? neuTextPrimary : neuTextSecondary
             font.pixelSize: 8
-            font.weight: Font.Medium
+            font.weight: tile.selected || tileMouse.dragging ? Font.DemiBold : Font.Medium
             elide: Text.ElideRight
             width: parent.width - 6
             horizontalAlignment: Text.AlignHCenter
@@ -349,6 +433,7 @@ Item {
             id: tileMouse
             anchors.fill: parent
             hoverEnabled: true
+            preventStealing: true
             cursorShape: Qt.PointingHandCursor
 
             property bool dragging: false
@@ -367,6 +452,7 @@ Item {
                 var dy = mouse.y - pressY
                 if (!dragging && (dx * dx + dy * dy) > 100) {
                     dragging = true
+                    root.activeComponentType = tile.componentType
                     var gp = tile.mapToGlobal(mouse.x, mouse.y)
                     root.componentDragStarted(tile.componentType, gp.x, gp.y)
                 }
@@ -385,27 +471,34 @@ Item {
                     tile.clicked()
                 }
             }
+
+            onCanceled: {
+                dragging = false
+            }
         }
 
         function getThumbSource(type) {
             if (type.indexOf("Button") === 0) return "IndustrialButton.qml"
-            if (type === "FNRSwitch") return "RockerSwitch.qml"
+            if (type === "FNRSwitch") return "FNRSwitchUnit.qml"
             if (type === "HorizontalFNR") return "HorizontalFNRUnit.qml"
             if (type === "HorizontalFNRRight") return "HorizontalFNRRightUnit.qml"
-            if (type === "VerticalRoller") return "RollerWheel.qml"
-            if (type === "HorizontalRoller") return "RollerWheel.qml"
+            if (type === "VerticalRoller") return "VerticalRollerUnit.qml"
+            if (type === "HorizontalRoller") return "HorizontalRollerUnit.qml"
             return ""
         }
 
         function applyThumbConfig(item, type) {
             if (!item) return
-            if (type === "ButtonRed" && item.hasOwnProperty("variant")) item.variant = "red"
-            else if (type === "ButtonGreen" && item.hasOwnProperty("variant")) item.variant = "green"
-            else if (type === "ButtonOrange" && item.hasOwnProperty("variant")) item.variant = "orange"
-            else if (type === "ButtonBlue" && item.hasOwnProperty("variant")) item.variant = "blue"
-            else if (type === "ButtonBlack" && item.hasOwnProperty("variant")) item.variant = "black"
-            else if (type === "ButtonGrey" && item.hasOwnProperty("variant")) item.variant = "grey"
-            else if (type === "HorizontalRoller" && item.hasOwnProperty("orientation")) item.orientation = "horizontal"
+            var defaultConfig = ComponentRegistry.getDefaultConfig(type)
+            for (var key in defaultConfig) {
+                if (item.hasOwnProperty(key)) {
+                    item[key] = defaultConfig[key]
+                }
+            }
+
+            var defaultSize = ComponentRegistry.getDefaultSize(type)
+            if (defaultSize.width > 0) item.width = defaultSize.width
+            if (defaultSize.height > 0) item.height = defaultSize.height
         }
     }
 }

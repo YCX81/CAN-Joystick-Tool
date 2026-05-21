@@ -29,13 +29,13 @@ QtObject {
         "ButtonRed": {
             name: "Red",
             description: "红色工业按钮",
-            defaultWidth: 44,
-            defaultHeight: 62,
+            defaultWidth: 56,
+            defaultHeight: 80,
             thumbnailScale: 0.55,
             defaultConfig: {
                 variant: "red",
-                bezelSize: 44,
-                capSize: 32,
+                bezelSize: 56,
+                capSize: 40,
                 label: "BTN"
             },
             hasLabel: true
@@ -44,13 +44,13 @@ QtObject {
         "ButtonGreen": {
             name: "Green",
             description: "绿色工业按钮",
-            defaultWidth: 44,
-            defaultHeight: 62,
+            defaultWidth: 56,
+            defaultHeight: 80,
             thumbnailScale: 0.55,
             defaultConfig: {
                 variant: "green",
-                bezelSize: 44,
-                capSize: 32,
+                bezelSize: 56,
+                capSize: 40,
                 label: "BTN"
             },
             hasLabel: true
@@ -59,13 +59,13 @@ QtObject {
         "ButtonOrange": {
             name: "Orange",
             description: "橙色工业按钮",
-            defaultWidth: 44,
-            defaultHeight: 62,
+            defaultWidth: 56,
+            defaultHeight: 80,
             thumbnailScale: 0.55,
             defaultConfig: {
                 variant: "orange",
-                bezelSize: 44,
-                capSize: 32,
+                bezelSize: 56,
+                capSize: 40,
                 label: "BTN"
             },
             hasLabel: true
@@ -74,13 +74,13 @@ QtObject {
         "ButtonBlue": {
             name: "Blue",
             description: "蓝色工业按钮",
-            defaultWidth: 44,
-            defaultHeight: 62,
+            defaultWidth: 56,
+            defaultHeight: 80,
             thumbnailScale: 0.55,
             defaultConfig: {
                 variant: "blue",
-                bezelSize: 44,
-                capSize: 32,
+                bezelSize: 56,
+                capSize: 40,
                 label: "BTN"
             },
             hasLabel: true
@@ -89,13 +89,13 @@ QtObject {
         "ButtonBlack": {
             name: "Black",
             description: "黑色工业按钮",
-            defaultWidth: 44,
-            defaultHeight: 62,
+            defaultWidth: 56,
+            defaultHeight: 80,
             thumbnailScale: 0.55,
             defaultConfig: {
                 variant: "black",
-                bezelSize: 44,
-                capSize: 32,
+                bezelSize: 56,
+                capSize: 40,
                 label: "BTN"
             },
             hasLabel: true
@@ -104,13 +104,13 @@ QtObject {
         "ButtonGrey": {
             name: "Grey",
             description: "灰色工业按钮",
-            defaultWidth: 44,
-            defaultHeight: 62,
+            defaultWidth: 56,
+            defaultHeight: 80,
             thumbnailScale: 0.55,
             defaultConfig: {
                 variant: "grey",
-                bezelSize: 44,
-                capSize: 32,
+                bezelSize: 56,
+                capSize: 40,
                 label: "BTN"
             },
             hasLabel: true
@@ -119,8 +119,8 @@ QtObject {
         "FNRSwitch": {
             name: "FNR Switch",
             description: "FNR翘板开关 + 状态指示",
-            defaultWidth: 64,
-            defaultHeight: 147,
+            defaultWidth: 86,
+            defaultHeight: 196,
             thumbnailScale: 0.35,
             defaultConfig: {
                 switchState: "N",
@@ -132,8 +132,8 @@ QtObject {
         "VerticalRoller": {
             name: "Vertical",
             description: "垂直滚轮 + 数字显示",
-            defaultWidth: 68,
-            defaultHeight: 180,
+            defaultWidth: 90,
+            defaultHeight: 240,
             thumbnailScale: 0.30,
             defaultConfig: {
                 value: 0,
@@ -145,8 +145,8 @@ QtObject {
         "HorizontalFNR": {
             name: "H-FNR (F←)",
             description: "水平FNR开关 F在左",
-            defaultWidth: 147,
-            defaultHeight: 98,
+            defaultWidth: 196,
+            defaultHeight: 130,
             thumbnailScale: 0.30,
             defaultConfig: {
                 switchState: "N",
@@ -158,8 +158,8 @@ QtObject {
         "HorizontalFNRRight": {
             name: "H-FNR (→F)",
             description: "水平FNR开关 F在右",
-            defaultWidth: 147,
-            defaultHeight: 98,
+            defaultWidth: 196,
+            defaultHeight: 130,
             thumbnailScale: 0.30,
             defaultConfig: {
                 switchState: "N",
@@ -171,8 +171,8 @@ QtObject {
         "HorizontalRoller": {
             name: "Horizontal",
             description: "水平滚轮 + 数字显示",
-            defaultWidth: 150,
-            defaultHeight: 81,
+            defaultWidth: 200,
+            defaultHeight: 108,
             thumbnailScale: 0.35,
             defaultConfig: {
                 value: 0,
