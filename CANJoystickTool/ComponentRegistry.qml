@@ -30,7 +30,7 @@ QtObject {
             name: "Red",
             description: "红色工业按钮",
             defaultWidth: 56,
-            defaultHeight: 80,
+            defaultHeight: 88,
             thumbnailScale: 0.55,
             defaultConfig: {
                 variant: "red",
@@ -45,7 +45,7 @@ QtObject {
             name: "Green",
             description: "绿色工业按钮",
             defaultWidth: 56,
-            defaultHeight: 80,
+            defaultHeight: 88,
             thumbnailScale: 0.55,
             defaultConfig: {
                 variant: "green",
@@ -60,7 +60,7 @@ QtObject {
             name: "Orange",
             description: "橙色工业按钮",
             defaultWidth: 56,
-            defaultHeight: 80,
+            defaultHeight: 88,
             thumbnailScale: 0.55,
             defaultConfig: {
                 variant: "orange",
@@ -75,7 +75,7 @@ QtObject {
             name: "Blue",
             description: "蓝色工业按钮",
             defaultWidth: 56,
-            defaultHeight: 80,
+            defaultHeight: 88,
             thumbnailScale: 0.55,
             defaultConfig: {
                 variant: "blue",
@@ -90,7 +90,7 @@ QtObject {
             name: "Black",
             description: "黑色工业按钮",
             defaultWidth: 56,
-            defaultHeight: 80,
+            defaultHeight: 88,
             thumbnailScale: 0.55,
             defaultConfig: {
                 variant: "black",
@@ -105,7 +105,7 @@ QtObject {
             name: "Grey",
             description: "灰色工业按钮",
             defaultWidth: 56,
-            defaultHeight: 80,
+            defaultHeight: 88,
             thumbnailScale: 0.55,
             defaultConfig: {
                 variant: "grey",

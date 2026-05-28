@@ -6,7 +6,6 @@ import CANJoystickTool
 
 Item {
     id: root
-    signal exitRequested()
 
     property var layoutManager: typeof LayoutManager !== 'undefined' ? LayoutManager : null
     property var currentConfig: ({})
@@ -346,6 +345,7 @@ Item {
                 if (x + w > canvasW) { x = 10; y += maxRowH + 8; maxRowH = 0 }
                 var config = ComponentRegistry.getDefaultConfig(mapping.type)
                 if (mapping.label) config.label = mapping.label
+                if (mapping.lampCount) config.lampCount = mapping.lampCount
                 var wrapper = canvas.addComponent(mapping.type, x, y, config)
                 if (wrapper)
                     wrapper.bindingId = resolved[i].id
@@ -589,8 +589,6 @@ Item {
         Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: dtBorder }
         RowLayout {
             anchors.fill: parent; anchors.leftMargin: 12; anchors.rightMargin: 12; spacing: 10
-            Button { text: "← 返回"; flat: true; font.pixelSize: 11; onClicked: root.exitRequested() }
-            Rectangle { width: 1; height: 20; color: dtBorder }
             Label { text: "产品配置编辑器"; font.pixelSize: 14; font.bold: true; color: dtText }
             Rectangle {
                 visible: !!currentConfig.product; width: pL.width+10; height: 18; radius: 3
@@ -766,11 +764,16 @@ Item {
                 readonly property real gridOffsetY: Math.max(0, (dashboardHeight - gridContentH) / 2)
                 readonly property real cardScale: cellSize / Constants.homeCardDesignSize
                 readonly property real joyCardScale: joyCardSize / Constants.homeCardDesignSize
-                readonly property real cardMargin: Constants.downloadToolCardMargin * cardScale
-                readonly property real joyCardMargin: Constants.downloadToolCardMargin * joyCardScale
-                readonly property real cardHeaderHeight: Constants.downloadToolCardHeaderHeight * cardScale
-                readonly property real joyCardHeaderHeight: Constants.downloadToolCardHeaderHeight * joyCardScale
-                readonly property real cardHeaderGap: Constants.downloadToolCardHeaderGap * cardScale
+                readonly property real cardMargin: Math.max(12, Constants.downloadToolCardMargin * cardScale)
+                readonly property real joyCardMargin: Math.max(12, Constants.downloadToolCardMargin * joyCardScale)
+                readonly property real cardHeaderHeight: Math.max(24, Constants.downloadToolCardHeaderHeight * cardScale)
+                readonly property real joyCardHeaderHeight: Math.max(18, Constants.downloadToolCardHeaderHeight * joyCardScale)
+                readonly property real cardHeaderGap: Math.max(4, Constants.downloadToolCardHeaderGap * cardScale)
+                readonly property real cardTitleFont: Math.max(13, 15 * cardScale)
+                readonly property real cardControlFont: Math.max(12, 13 * cardScale)
+                readonly property real cardBodyFont: Math.max(13, 15 * cardScale)
+                readonly property real cardValueFont: Math.max(14, 16 * cardScale)
+                readonly property real cardMetaFont: Math.max(11, 12 * cardScale)
 
                 Rectangle {
                     id: joyPrev
@@ -789,18 +792,15 @@ Item {
                             id: joyHeader
                             anchors.top: parent.top
                             anchors.left: parent.left
+                            anchors.right: parent.right
+                            height: dtViewport.joyCardHeaderHeight
                             text: "XY 轴 (BJM)"
                             color: dtTextSec
-                            font.pixelSize: Math.max(8, 11 * dtViewport.joyCardScale)
+                            font.pixelSize: Math.max(12, 14 * dtViewport.joyCardScale)
                             font.weight: Font.Bold
-                            font.letterSpacing: 0.8
-                        }
-
-                        StatusIndicator {
-                            anchors.top: parent.top
-                            anchors.right: parent.right
-                            indicatorSize: 8 * dtViewport.joyCardScale
-                            active: false
+                            font.letterSpacing: 0
+                            elide: Text.ElideRight
+                            verticalAlignment: Text.AlignVCenter
                         }
 
                         Item {
@@ -921,7 +921,7 @@ Item {
 
                                     Text {
                                         text: cellCard.cellTitle; color: dtTextSec
-                                        font.pixelSize: Math.max(8, 11 * dtViewport.cardScale); font.weight: Font.Bold; font.letterSpacing: 0.8
+                                        font.pixelSize: dtViewport.cardTitleFont; font.weight: Font.Bold; font.letterSpacing: 0
                                         width: Math.max(1, parent.width - typeSelector.width - 6)
                                         elide: Text.ElideRight
                                         anchors.verticalCenter: parent.verticalCenter
@@ -929,8 +929,8 @@ Item {
 
                                     Rectangle {
                                         id: typeSelector
-                                        width: Math.max(72, 80 * dtViewport.cardScale)
-                                        height: Math.max(24, 28 * dtViewport.cardScale)
+                                        width: Math.max(88, 96 * dtViewport.cardScale)
+                                        height: Math.max(30, 32 * dtViewport.cardScale)
                                         radius: 4
                                         color: "#f5f5f7"
                                         border.width: 1
@@ -943,8 +943,10 @@ Item {
                                             anchors.verticalCenter: parent.verticalCenter
                                             text: root.labelForCellType(cellCard.cellType)
                                             color: dtText
-                                            font.pixelSize: Math.max(8, 10 * dtViewport.cardScale)
+                                            font.pixelSize: dtViewport.cardControlFont
                                             font.bold: true
+                                            width: parent.width - 34
+                                            elide: Text.ElideRight
                                         }
 
                                         Canvas {
@@ -993,10 +995,10 @@ Item {
                                         spacing: Math.max(5, 6 * dtViewport.cardScale)
                                         clip: true
 
-                                        readonly property real labelFont: Math.max(10, 12 * dtViewport.cardScale)
-                                        readonly property real idFont: Math.max(9, 10 * dtViewport.cardScale)
-                                        readonly property real dataFont: Math.max(11, 13 * dtViewport.cardScale)
-                                        readonly property real metaFont: Math.max(8, 9 * dtViewport.cardScale)
+                                        readonly property real labelFont: dtViewport.cardTitleFont
+                                        readonly property real idFont: dtViewport.cardBodyFont
+                                        readonly property real dataFont: dtViewport.cardValueFont
+                                        readonly property real metaFont: dtViewport.cardMetaFont
                                         readonly property string protocolText: currentConfig.product && currentConfig.product.protocol
                                                                            ? currentConfig.product.protocol.toUpperCase()
                                                                            : "J1939"
@@ -1018,8 +1020,8 @@ Item {
                                                 ]
 
                                                 Rectangle {
-                                                    height: Math.max(18, 20 * dtViewport.cardScale)
-                                                    width: Math.min(rawInfoText.implicitWidth + 14, body.width)
+                                                    height: Math.max(24, 26 * dtViewport.cardScale)
+                                                    width: Math.min(rawInfoText.implicitWidth + 16, body.width)
                                                     radius: height / 2
                                                     color: "#f5f5f7"
                                                     border.width: 1
@@ -1051,7 +1053,7 @@ Item {
                                             Row {
                                                 width: parent ? parent.width : 0
                                                 spacing: Math.max(6, 8 * dtViewport.cardScale)
-                                                height: Math.max(36, 42 * dtViewport.cardScale)
+                                                height: Math.max(46, 50 * dtViewport.cardScale)
 
                                                 Text {
                                                     id: frameLabel
@@ -1059,7 +1061,7 @@ Item {
                                                     color: modelData.warn !== "" ? dtWarning : dtAccent
                                                     font.pixelSize: rawFramesPanel.labelFont
                                                     font.bold: true
-                                                    width: Math.max(36, 42 * dtViewport.cardScale)
+                                                    width: Math.max(52, 56 * dtViewport.cardScale)
                                                     anchors.top: parent.top
                                                     anchors.topMargin: 2
                                                 }
@@ -1129,7 +1131,7 @@ Item {
 
                                     Column {
                                         visible: cellCard.cellType === "deviceInfo"
-                                        anchors.fill: parent; spacing: 6
+                                        anchors.fill: parent; spacing: Math.max(10, 12 * dtViewport.cardScale)
                                         Repeater {
                                             model: [
                                                 { label: "烧录时间", val: "2026-03-31 10:00" },
@@ -1139,9 +1141,27 @@ Item {
                                                 { label: "序列号",  val: "SN001" }
                                             ]
                                             Row {
-                                                spacing: 8
-                                                Text { text: modelData.label+"："; color: dtTextSec; font.pixelSize: 9; width: 50; horizontalAlignment: Text.AlignRight }
-                                                Text { text: modelData.val; color: dtAccent; font.pixelSize: 10; font.bold: true; elide: Text.ElideRight; width: Math.max(80, body.width - 62) }
+                                                width: parent ? parent.width : 0
+                                                height: Math.max(24, 26 * dtViewport.cardScale)
+                                                spacing: Math.max(8, 10 * dtViewport.cardScale)
+                                                Text {
+                                                    id: deviceInfoLabel
+                                                    text: modelData.label + "："
+                                                    color: dtTextSec
+                                                    font.pixelSize: dtViewport.cardBodyFont
+                                                    width: Math.max(76, 82 * dtViewport.cardScale)
+                                                    horizontalAlignment: Text.AlignRight
+                                                    anchors.verticalCenter: parent.verticalCenter
+                                                }
+                                                Text {
+                                                    text: modelData.val
+                                                    color: dtAccent
+                                                    font.pixelSize: dtViewport.cardValueFont
+                                                    font.bold: true
+                                                    elide: Text.ElideRight
+                                                    width: Math.max(80, parent.width - deviceInfoLabel.width - parent.spacing)
+                                                    anchors.verticalCenter: parent.verticalCenter
+                                                }
                                             }
                                         }
                                     }
@@ -1297,7 +1317,7 @@ Item {
     Popup {
         id: cellTypePopup
         parent: root
-        width: 108
+        width: 124
         height: typePopupContent.implicitHeight + 8
         padding: 4
         modal: false
@@ -1321,7 +1341,7 @@ Item {
                 model: cellTypeOptions
                 delegate: Rectangle {
                     width: cellTypePopup.width - 8
-                    height: 28
+                    height: 32
                     radius: 4
                     color: typeChoiceMouse.containsMouse ? "#e8f0fe" : "transparent"
 
@@ -1331,7 +1351,7 @@ Item {
                         anchors.verticalCenter: parent.verticalCenter
                         text: modelData.label
                         color: dtText
-                        font.pixelSize: 10
+                        font.pixelSize: dtViewport.cardControlFont
                         font.bold: cellTypePopup.targetCell && cellTypePopup.targetCell.cellType === modelData.value
                     }
 

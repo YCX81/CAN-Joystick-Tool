@@ -55,23 +55,12 @@ AluminumPanel {
                 color: "#4b5563"
                 font.pixelSize: 11
                 font.weight: Font.Bold
-                font.letterSpacing: 0.8
+                font.letterSpacing: 0
                 anchors.verticalCenter: parent.verticalCenter
             }
 
             // 弹簧占位
             Item { Layout.fillWidth: true; width: 10; height: 1 }
-        }
-
-        // 状态指示灯 - 右上角
-        StatusIndicator {
-            anchors.top: parent.top
-            anchors.right: parent.right
-            anchors.topMargin: 4
-            anchors.rightMargin: 4
-            indicatorSize: 8
-            active: root.isActive
-            activeColor: Constants.successColor
         }
 
         // ========== 主体区域 ==========

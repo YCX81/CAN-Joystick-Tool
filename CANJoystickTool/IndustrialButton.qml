@@ -58,7 +58,7 @@ Item {
 
     // 设计基线 (跟随 bezelSize/capSize 配置), 外层 width/height 自由缩放
     readonly property int designWidth: bezelSize
-    readonly property int designHeight: bezelSize + (label !== "" ? 24 : 0)
+    readonly property int designHeight: bezelSize + (label !== "" ? 32 : 0)
     readonly property real contentScale: Math.min(width / designWidth, height / designHeight)
 
     implicitWidth: designWidth
@@ -361,12 +361,12 @@ Item {
     // 标签
     Text {
         anchors.top: buttonArea.bottom
-        anchors.topMargin: 6
+        anchors.topMargin: 7
         anchors.horizontalCenter: parent.horizontalCenter
         visible: label !== ""
         text: root.label
         color: Constants.textSecondary
-        font.pixelSize: 8
+        font.pixelSize: 14
         font.weight: Font.Bold
         font.letterSpacing: 0.05
         textFormat: Text.PlainText

@@ -48,9 +48,9 @@ Item {
         Text {
             visible: root.label !== ""
             text: root.label
-            color: Constants.textMuted
-            font.pixelSize: 10
-            font.weight: Font.Medium
+            color: Constants.textSecondary
+            font.pixelSize: 18
+            font.weight: Font.DemiBold
             anchors.horizontalCenter: parent.horizontalCenter
         }
     }

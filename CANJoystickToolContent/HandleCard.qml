@@ -52,7 +52,7 @@ AluminumPanel {
                 color: "#4b5563"
                 font.pixelSize: 11
                 font.weight: Font.Bold
-                font.letterSpacing: 0.8
+                font.letterSpacing: 0
                 anchors.verticalCenter: parent.verticalCenter
             }
         }

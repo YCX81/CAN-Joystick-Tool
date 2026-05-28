@@ -47,35 +47,11 @@ AluminumPanel {
                 color: Constants.textPrimary
                 font.pixelSize: 14
                 font.bold: true
-                font.letterSpacing: 1.2
+                font.letterSpacing: 0
                 Layout.alignment: Qt.AlignVCenter | Qt.AlignLeft
             }
-
             // 弹簧，占位用
             Item { Layout.fillWidth: true }
-
-            // 右侧状态指示灯
-            RowLayout {
-                Layout.alignment: Qt.AlignVCenter | Qt.AlignRight
-                spacing: 12
-
-                // 拖动状态
-                StatusIndicator {
-                    id: mainStatus
-                    indicatorSize: 10
-                    active: joystick.isDragging
-                    activeColor: Constants.accentColor
-                }
-
-                // 边缘状态
-                StatusIndicator {
-                    id: edgeStatus
-                    indicatorSize: 10
-                    active: joystick.isAtEdge
-                    activeColor: Constants.successColor
-                    blinking: joystick.isAtEdge
-                }
-            }
         }
 
         // ========== 主要Grid布局 ==========

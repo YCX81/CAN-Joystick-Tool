@@ -4,6 +4,10 @@ import QtQuick 6.5
 QtObject {
     readonly property int width: 1280
     readonly property int height: 800
+    readonly property int minInteractiveWidth: 1440
+    readonly property int minInteractiveHeight: 860
+    readonly property real minWindowScreenWidthRatio: 0.78
+    readonly property real minWindowScreenHeightRatio: 0.78
 
     // ===== Light theme =====
     readonly property color bgPrimary: "#f5f5f7"

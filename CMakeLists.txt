@@ -58,17 +58,15 @@ qt_add_qml_module(CANJoystickTool
         CANJoystickTool/HorizontalRollerUnit.qml
         CANJoystickTool/HorizontalFNRUnit.qml
         CANJoystickTool/HorizontalFNRRightUnit.qml
-        # 布局设计器组件
+        # 可视化编辑组件
         CANJoystickTool/DraggableWrapper.qml
         CANJoystickTool/DesignCanvas.qml
         CANJoystickTool/ComponentPanel.qml
         # 内容页面
         CANJoystickToolContent/App.qml
-        CANJoystickToolContent/Screen01.qml
         CANJoystickToolContent/XYAxisCard.qml
         CANJoystickToolContent/RollersCard.qml
         CANJoystickToolContent/HandleCard.qml
-        CANJoystickToolContent/LayoutDesigner.qml
         CANJoystickToolContent/CustomCard.qml
         CANJoystickToolContent/ProductEditor.qml
     RESOURCES
