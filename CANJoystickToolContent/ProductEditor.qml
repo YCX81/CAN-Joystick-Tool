@@ -13,6 +13,7 @@ Item {
     property bool hasUnsavedChanges: false
     property bool loadingCells: false
     property int activeCellIndex: 0
+    property int productMetadataRevision: 0
     readonly property int defaultCanvasWidth: Constants.homeCardDesignSize
     readonly property int defaultCanvasHeight: Constants.homeCardDesignSize
     readonly property real panelWidth: 320
@@ -57,6 +58,55 @@ Item {
         isCanvasMode = activeCanvasCell() !== null
     }
     onActiveCellIndexChanged: refreshCanvasMode()
+
+    function productDescriptionText() {
+        productMetadataRevision
+        var product = currentConfig && currentConfig.product ? currentConfig.product : {}
+        return product.description === undefined || product.description === null
+                ? ""
+                : String(product.description)
+    }
+
+    function setProductDescription(description) {
+        if (!currentConfig)
+            return
+        var value = description === undefined || description === null ? "" : String(description)
+        var product = currentConfig.product || {}
+        var oldValue = product.description === undefined || product.description === null
+                ? ""
+                : String(product.description)
+        if (oldValue === value)
+            return
+        product.description = value
+        currentConfig.product = product
+        productMetadataRevision++
+        hasUnsavedChanges = true
+    }
+
+    function commitTitleEdits(exceptIndex) {
+        for (var i = 0; i < cellRepeater.count; i++) {
+            if (i === exceptIndex)
+                continue
+            var cell = cellRepeater.itemAt(i)
+            if (cell && cell.titleEditing && cell.commitTitleEdit)
+                cell.commitTitleEdit()
+        }
+    }
+
+    function commitDeviceDescriptionEdits(exceptIndex) {
+        for (var i = 0; i < cellRepeater.count; i++) {
+            if (i === exceptIndex)
+                continue
+            var cell = cellRepeater.itemAt(i)
+            if (cell && cell.deviceDescriptionEditing && cell.commitDeviceDescriptionEdit)
+                cell.commitDeviceDescriptionEdit()
+        }
+    }
+
+    function commitCellEdits(exceptIndex) {
+        commitTitleEdits(exceptIndex)
+        commitDeviceDescriptionEdits(exceptIndex)
+    }
 
     function parseConfigNumber(value) {
         if (value === undefined || value === null || value === "")
@@ -423,10 +473,48 @@ Item {
         return "空白"
     }
 
+    function canvasDefaultTitle(index) {
+        return Math.floor(index / 2) === 0 ? "正面" : "背面"
+    }
+
+    function defaultCellTitle(index, cellType) {
+        return cellType === "canvas" ? canvasDefaultTitle(index) : ""
+    }
+
+    function isLegacyCanvasTitle(title) {
+        var value = title === undefined || title === null ? "" : String(title).trim()
+        return value === "" || value === "按钮" || value === "EJM 轴" || value === "EJM轴"
+                || value === "扩展轴" || value === "EJM 轴 / FNR"
+    }
+
+    function normalizedCellTitle(index, cellType, title) {
+        var value = title === undefined || title === null ? "" : String(title).trim()
+        return value.length > 0 ? value : defaultCellTitle(index, cellType)
+    }
+
+    function loadedCellTitle(index, cellType, title) {
+        return cellType === "canvas" && isLegacyCanvasTitle(title)
+                ? defaultCellTitle(index, cellType)
+                : normalizedCellTitle(index, cellType, title)
+    }
+
+    function setCellTitle(cell, title) {
+        if (!cell)
+            return
+        var value = title === undefined || title === null ? "" : String(title)
+        if (cell.cellTitle === value)
+            return
+        cell.cellTitle = value
+        if (!loadingCells)
+            hasUnsavedChanges = true
+    }
+
     function setCellType(cell, value) {
         if (!cell || cell.cellType === value)
             return
         cell.cellType = value
+        if (value === "canvas" && cell.cellTitle.trim().length === 0)
+            cell.cellTitle = defaultCellTitle(cell.cellIndex, value)
         hasUnsavedChanges = true
         refreshCanvasMode()
     }
@@ -471,10 +559,10 @@ Item {
             var cell = cellRepeater.itemAt(i)
             if (!cell) continue
             var c = cells[i]
-            cell.cellTitle = c.title || ""
             // Map old types to new unified types
             var oldType = c.cellType || detectCellType(c.components)
             if (oldType === "buttons" || oldType === "ejm") oldType = "canvas"
+            cell.cellTitle = loadedCellTitle(i, oldType, c.title)
             cell.cellType = oldType
             cell.cellCompIds = c.components || []
             var canvasMeta = normalizedCanvasMeta(c.canvas)
@@ -510,13 +598,20 @@ Item {
 
     function saveProduct() {
         if (!currentFilePath || !currentConfig) return
+        commitCellEdits(-1)
         var layout = currentConfig.layout || {}
         var grid = layout.grid || {}
         var cells = []
         for (var i = 0; i < cellRepeater.count; i++) {
             var cell = cellRepeater.itemAt(i)
             if (!cell) continue
-            var cd = { row: Math.floor(i/2), col: i%2, title: cell.cellTitle, cellType: cell.cellType, components: cell.cellCompIds }
+            var cd = {
+                row: Math.floor(i/2),
+                col: i%2,
+                title: normalizedCellTitle(i, cell.cellType, cell.cellTitle),
+                cellType: cell.cellType,
+                components: cell.cellCompIds
+            }
             if (cell.cellType === "canvas" && cell.canvasItem) {
                 var canvasData = cell.canvasItem.toJSON()
                 cd.canvas = {
@@ -595,7 +690,7 @@ Item {
                 color: currentConfig.product && currentConfig.product.protocol==="canopen" ? dtWarning : dtSuccess
                 Label { id: pL; anchors.centerIn: parent; text: currentConfig.product ? currentConfig.product.name||"" : ""; font.pixelSize: 8; font.bold: true; color: "white" }
             }
-            Label { visible: !!currentConfig.product; text: currentConfig.product ? currentConfig.product.description||"" : ""; font.pixelSize: 10; color: dtTextSec; elide: Text.ElideRight; Layout.fillWidth: true }
+            Label { visible: !!currentConfig.product; text: root.productDescriptionText(); font.pixelSize: 10; color: dtTextSec; elide: Text.ElideRight; Layout.fillWidth: true }
             Item { Layout.fillWidth: true }
             Button {
                 text: hasUnsavedChanges ? "保存 *" : "已保存"; enabled: hasUnsavedChanges && currentFilePath !== ""
@@ -677,7 +772,11 @@ Item {
                                 anchors.fill: parent
                                 hoverEnabled: true
                                 cursorShape: Qt.PointingHandCursor
-                                onClicked: { productList.currentIndex = index; loadProduct(index) }
+                                onClicked: {
+                                    root.commitCellEdits(-1)
+                                    productList.currentIndex = index
+                                    loadProduct(index)
+                                }
                             }
                         }
                     }
@@ -899,9 +998,76 @@ Item {
                             property int canvasDesignWidth: root.defaultCanvasWidth
                             property int canvasDesignHeight: root.defaultCanvasHeight
                             property string canvasScaleMode: "uniform"
+                            property int cellIndex: index
+                            property bool titleEditing: false
+                            property bool deviceDescriptionEditing: false
+                            property string deviceDescriptionDraft: ""
+                            property string deviceDescriptionOriginal: ""
                             property alias canvasItem: cvLoader.item
 
-                            MouseArea { anchors.fill: parent; z: -1; onClicked: { activeCellIndex = index } }
+                            onCellTitleChanged: {
+                                if (!titleEditing)
+                                    syncTitleEditor()
+                            }
+                            onCellTypeChanged: {
+                                if (!titleEditing)
+                                    syncTitleEditor()
+                            }
+
+                            function syncTitleEditor() {
+                                titleEditor.text = root.normalizedCellTitle(cellIndex, cellType, cellTitle)
+                            }
+
+                            function beginTitleEdit() {
+                                root.commitCellEdits(cellIndex)
+                                commitDeviceDescriptionEdit()
+                                activeCellIndex = cellIndex
+                                syncTitleEditor()
+                                titleEditing = true
+                                titleEditor.forceActiveFocus()
+                                titleEditor.selectAll()
+                            }
+
+                            function commitTitleEdit() {
+                                if (titleEditing)
+                                    titleEditor.commitTitle()
+                            }
+
+                            function cancelTitleEdit() {
+                                titleEditing = false
+                                syncTitleEditor()
+                                titleEditor.focus = false
+                            }
+
+                            function beginDeviceDescriptionEdit() {
+                                root.commitCellEdits(cellIndex)
+                                commitTitleEdit()
+                                activeCellIndex = cellIndex
+                                deviceDescriptionOriginal = root.productDescriptionText()
+                                deviceDescriptionDraft = deviceDescriptionOriginal
+                                deviceDescriptionEditing = true
+                            }
+
+                            function commitDeviceDescriptionEdit() {
+                                if (!deviceDescriptionEditing)
+                                    return
+                                root.setProductDescription(deviceDescriptionDraft)
+                                deviceDescriptionEditing = false
+                            }
+
+                            function cancelDeviceDescriptionEdit() {
+                                deviceDescriptionDraft = deviceDescriptionOriginal
+                                deviceDescriptionEditing = false
+                            }
+
+                            MouseArea {
+                                anchors.fill: parent
+                                z: -1
+                                onClicked: {
+                                    root.commitCellEdits(-1)
+                                    activeCellIndex = index
+                                }
+                            }
 
                             Item {
                                 id: cellContent
@@ -919,12 +1085,109 @@ Item {
                                     height: dtViewport.cardHeaderHeight; spacing: 4 * dtViewport.cardScale
                                     z: 20
 
-                                    Text {
-                                        text: cellCard.cellTitle; color: dtTextSec
-                                        font.pixelSize: dtViewport.cardTitleFont; font.weight: Font.Bold; font.letterSpacing: 0
+                                    Item {
+                                        id: titleSlot
                                         width: Math.max(1, parent.width - typeSelector.width - 6)
-                                        elide: Text.ElideRight
+                                        height: parent.height
+                                        clip: true
                                         anchors.verticalCenter: parent.verticalCenter
+
+                                        Item {
+                                            id: titleLabelGroup
+                                            visible: !cellCard.titleEditing
+                                            anchors.left: parent.left
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            width: Math.min(parent.width, titleLabel.implicitWidth + 10)
+                                            height: parent.height
+                                            clip: true
+
+                                            Rectangle {
+                                                anchors.fill: parent
+                                                radius: 4
+                                                visible: cellCard.cellType === "canvas"
+                                                color: "#eaeaec"
+                                                opacity: 0.95
+                                            }
+
+                                            Text {
+                                                id: titleLabel
+                                                anchors.left: parent.left
+                                                anchors.leftMargin: cellCard.cellType === "canvas" ? 5 : 0
+                                                anchors.right: parent.right
+                                                anchors.rightMargin: cellCard.cellType === "canvas" ? 5 : 0
+                                                anchors.verticalCenter: parent.verticalCenter
+                                                height: parent.height
+                                                text: root.normalizedCellTitle(cellCard.cellIndex, cellCard.cellType, cellCard.cellTitle)
+                                                color: dtTextSec
+                                                font.pixelSize: dtViewport.cardTitleFont
+                                                font.weight: Font.Bold
+                                                font.letterSpacing: 0
+                                                elide: Text.ElideRight
+                                                verticalAlignment: Text.AlignVCenter
+                                                clip: true
+                                            }
+
+                                            MouseArea {
+                                                anchors.fill: parent
+                                                hoverEnabled: true
+                                                cursorShape: Qt.IBeamCursor
+                                                onClicked: cellCard.beginTitleEdit()
+                                            }
+                                        }
+
+                                        Rectangle {
+                                            anchors.fill: titleEditor
+                                            visible: cellCard.titleEditing
+                                            color: "#eaeaec"
+                                            radius: 5
+                                        }
+
+                                        TextField {
+                                            id: titleEditor
+                                            anchors.fill: parent
+                                            visible: cellCard.titleEditing
+                                            clip: true
+                                            color: dtTextSec
+                                            placeholderText: root.defaultCellTitle(cellCard.cellIndex, cellCard.cellType)
+                                            font.pixelSize: dtViewport.cardTitleFont
+                                            font.weight: Font.Bold
+                                            font.letterSpacing: 0
+                                            horizontalAlignment: TextInput.AlignLeft
+                                            verticalAlignment: TextInput.AlignVCenter
+                                            selectByMouse: true
+                                            leftPadding: 4
+                                            rightPadding: 4
+                                            topPadding: 0
+                                            bottomPadding: 0
+                                            background: Rectangle {
+                                                radius: 4
+                                                color: "white"
+                                                border.width: titleEditor.activeFocus ? 1 : 0
+                                                border.color: dtAccent
+                                            }
+
+                                            function commitTitle() {
+                                                root.setCellTitle(cellCard, root.normalizedCellTitle(cellCard.cellIndex, cellCard.cellType, text))
+                                                cellCard.titleEditing = false
+                                                cellCard.syncTitleEditor()
+                                                focus = false
+                                            }
+
+                                            onAccepted: commitTitle()
+                                            onEditingFinished: {
+                                                if (cellCard.titleEditing)
+                                                    commitTitle()
+                                            }
+                                            onActiveFocusChanged: {
+                                                if (!activeFocus && cellCard.titleEditing)
+                                                    commitTitle()
+                                            }
+                                            Keys.onEscapePressed: function(event) {
+                                                cellCard.cancelTitleEdit()
+                                                event.accepted = true
+                                            }
+                                            Component.onCompleted: cellCard.syncTitleEditor()
+                                        }
                                     }
 
                                     Rectangle {
@@ -973,6 +1236,9 @@ Item {
                                             hoverEnabled: true
                                             cursorShape: Qt.PointingHandCursor
                                             onClicked: {
+                                                root.commitCellEdits(index)
+                                                cellCard.commitTitleEdit()
+                                                cellCard.commitDeviceDescriptionEdit()
                                                 activeCellIndex = index
                                                 cellTypePopup.openFor(cellCard, typeSelector)
                                             }
@@ -1130,40 +1396,177 @@ Item {
                                     }
 
                                     Column {
+                                        id: deviceInfoPanel
                                         visible: cellCard.cellType === "deviceInfo"
-                                        anchors.fill: parent; spacing: Math.max(10, 12 * dtViewport.cardScale)
+                                        anchors.fill: parent
+                                        z: cellCard.deviceDescriptionEditing ? 30 : 0
+                                        spacing: Math.max(6, 8 * dtViewport.cardScale)
+                                        clip: true
+
+                                        readonly property var rows: [
+                                            { label: "烧录时间", val: "2026-03-31 10:00" },
+                                            { label: "客户名称", val: "示例客户" },
+                                            { label: "设备型号", val: currentConfig.product ? currentConfig.product.model||"---" : "---" },
+                                            { label: "设备描述", val: "", multiline: true, editableDescription: true },
+                                            { label: "设备ID",  val: "0x00001234" },
+                                            { label: "序列号",  val: "SN001" }
+                                        ]
+                                        readonly property real gapHeight: spacing * Math.max(0, rows.length - 1)
+                                        readonly property real rowUnitHeight: Math.max(12, (height - gapHeight) / rowUnits())
+
+                                        function rowUnits() {
+                                            var total = 0
+                                            for (var i = 0; i < rows.length; i++)
+                                                total += rows[i].multiline ? 2 : 1
+                                            return Math.max(1, total)
+                                        }
+
                                         Repeater {
-                                            model: [
-                                                { label: "烧录时间", val: "2026-03-31 10:00" },
-                                                { label: "客户名称", val: currentConfig.product ? currentConfig.product.description||"示例客户" : "示例客户" },
-                                                { label: "设备型号", val: currentConfig.product ? currentConfig.product.model||"---" : "---" },
-                                                { label: "设备ID",  val: "0x00001234" },
-                                                { label: "序列号",  val: "SN001" }
-                                            ]
+                                            model: deviceInfoPanel.rows
                                             Row {
                                                 width: parent ? parent.width : 0
-                                                height: Math.max(24, 26 * dtViewport.cardScale)
+                                                height: deviceInfoPanel.rowUnitHeight * (modelData.multiline ? 2 : 1)
                                                 spacing: Math.max(8, 10 * dtViewport.cardScale)
                                                 Text {
                                                     id: deviceInfoLabel
                                                     text: modelData.label + "："
                                                     color: dtTextSec
                                                     font.pixelSize: dtViewport.cardBodyFont
+                                                    fontSizeMode: Text.HorizontalFit
+                                                    minimumPixelSize: Math.max(8, dtViewport.cardMetaFont)
                                                     width: Math.max(76, 82 * dtViewport.cardScale)
                                                     horizontalAlignment: Text.AlignRight
-                                                    anchors.verticalCenter: parent.verticalCenter
+                                                    height: parent.height
+                                                    verticalAlignment: Text.AlignVCenter
                                                 }
-                                                Text {
-                                                    text: modelData.val
-                                                    color: dtAccent
-                                                    font.pixelSize: dtViewport.cardValueFont
-                                                    font.bold: true
-                                                    elide: Text.ElideRight
-                                                    width: Math.max(80, parent.width - deviceInfoLabel.width - parent.spacing)
-                                                    anchors.verticalCenter: parent.verticalCenter
+                                                Item {
+                                                    id: deviceInfoValueSlot
+                                                    width: Math.max(1, parent.width - deviceInfoLabel.width - parent.spacing)
+                                                    height: parent.height
+                                                    clip: true
+
+                                                    Text {
+                                                        id: deviceInfoValue
+                                                        anchors.fill: parent
+                                                        visible: !modelData.editableDescription
+                                                        text: modelData.val
+                                                        color: dtAccent
+                                                        font.pixelSize: dtViewport.cardValueFont
+                                                        fontSizeMode: Text.Fit
+                                                        minimumPixelSize: Math.max(8, dtViewport.cardMetaFont)
+                                                        font.bold: true
+                                                        elide: Text.ElideNone
+                                                        wrapMode: Text.WrapAnywhere
+                                                        verticalAlignment: Text.AlignVCenter
+                                                    }
+
+                                                    Text {
+                                                        id: deviceDescriptionText
+                                                        anchors.fill: parent
+                                                        visible: modelData.editableDescription === true && !cellCard.deviceDescriptionEditing
+                                                        text: root.productDescriptionText() !== "" ? root.productDescriptionText() : "---"
+                                                        color: dtAccent
+                                                        font.pixelSize: dtViewport.cardValueFont
+                                                        fontSizeMode: Text.Fit
+                                                        minimumPixelSize: Math.max(8, dtViewport.cardMetaFont)
+                                                        font.bold: true
+                                                        elide: Text.ElideNone
+                                                        wrapMode: Text.WrapAnywhere
+                                                        verticalAlignment: Text.AlignVCenter
+
+                                                        MouseArea {
+                                                            anchors.fill: parent
+                                                            hoverEnabled: true
+                                                            cursorShape: Qt.IBeamCursor
+                                                            onClicked: {
+                                                                cellCard.beginDeviceDescriptionEdit()
+                                                            }
+                                                        }
+                                                    }
+
+                                                    Rectangle {
+                                                        id: descriptionEditFrame
+                                                        anchors.fill: parent
+                                                        visible: modelData.editableDescription === true && cellCard.deviceDescriptionEditing
+                                                        z: 10
+                                                        radius: 4
+                                                        color: "white"
+                                                        border.width: descriptionEdit.activeFocus ? 1 : 0
+                                                        border.color: dtAccent
+                                                        clip: true
+
+                                                        TextEdit {
+                                                            id: descriptionEdit
+                                                            anchors.fill: parent
+                                                            anchors.margins: 5
+                                                            clip: true
+                                                            wrapMode: TextEdit.WrapAnywhere
+                                                            selectByMouse: true
+                                                            color: dtAccent
+                                                            font.pixelSize: Math.max(10, dtViewport.cardValueFont - 1)
+                                                            font.bold: true
+                                                            textFormat: TextEdit.PlainText
+                                                            text: cellCard.deviceDescriptionDraft
+
+                                                            onVisibleChanged: {
+                                                                if (visible) {
+                                                                    forceActiveFocus()
+                                                                    selectAll()
+                                                                } else {
+                                                                    focus = false
+                                                                }
+                                                            }
+                                                            onTextChanged: {
+                                                                if (descriptionEditFrame.visible)
+                                                                    cellCard.deviceDescriptionDraft = text
+                                                            }
+                                                            onActiveFocusChanged: {
+                                                                if (!activeFocus && cellCard.deviceDescriptionEditing)
+                                                                    cellCard.commitDeviceDescriptionEdit()
+                                                            }
+                                                            Keys.onEscapePressed: function(event) {
+                                                                cellCard.cancelDeviceDescriptionEdit()
+                                                                event.accepted = true
+                                                            }
+                                                            Keys.onPressed: function(event) {
+                                                                if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+                                                                    cellCard.commitDeviceDescriptionEdit()
+                                                                    event.accepted = true
+                                                                }
+                                                            }
+                                                        }
+
+                                                        Text {
+                                                            anchors.left: descriptionEdit.left
+                                                            anchors.right: descriptionEdit.right
+                                                            anchors.top: descriptionEdit.top
+                                                            visible: descriptionEdit.text.length === 0
+                                                            text: "请输入设备描述"
+                                                            color: dtTextMuted
+                                                            font.pixelSize: descriptionEdit.font.pixelSize
+                                                            font.bold: true
+                                                            elide: Text.ElideRight
+                                                        }
+                                                    }
                                                 }
                                             }
                                         }
+                                    }
+
+                                    MouseArea {
+                                        anchors.fill: parent
+                                        z: 20
+                                        visible: cellCard.deviceDescriptionEditing
+                                        enabled: visible
+                                        onClicked: cellCard.commitDeviceDescriptionEdit()
+                                    }
+
+                                    MouseArea {
+                                        anchors.fill: parent
+                                        z: 50
+                                        visible: cellCard.titleEditing
+                                        enabled: visible
+                                        onClicked: cellCard.commitTitleEdit()
                                     }
 
                                     Item {
@@ -1361,6 +1764,7 @@ Item {
                         hoverEnabled: true
                         cursorShape: Qt.PointingHandCursor
                         onClicked: {
+                            root.commitCellEdits(-1)
                             root.setCellType(cellTypePopup.targetCell, modelData.value)
                             cellTypePopup.close()
                         }
