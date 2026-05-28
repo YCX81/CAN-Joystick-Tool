@@ -14,9 +14,15 @@ Item {
     property bool loadingCells: false
     property int activeCellIndex: 0
     property int productMetadataRevision: 0
+    property string cloneProductError: ""
     readonly property int defaultCanvasWidth: Constants.homeCardDesignSize
     readonly property int defaultCanvasHeight: Constants.homeCardDesignSize
     readonly property real panelWidth: 320
+    readonly property var cloneProtocolOptions: [ "j1939", "canopen" ]
+    readonly property var cloneCalibrationModeOptions: [
+        { label: "中心点", value: "centerOnly" },
+        { label: "五点行程", value: "fivePointTravel" }
+    ]
 
     // DownloadTool colors
     readonly property color dtBg: "#f5f5f7"
@@ -318,6 +324,222 @@ Item {
         loadCells()
     }
 
+    function findProductIndexByName(name) {
+        var target = String(name || "").toLowerCase()
+        for (var i = 0; i < productModel.count; i++) {
+            if (String(productModel.get(i).name || "").toLowerCase() === target)
+                return i
+        }
+        return -1
+    }
+
+    function deepCopyConfig(config) {
+        return JSON.parse(JSON.stringify(config || {}))
+    }
+
+    function normalizedProtocol(protocol) {
+        var value = String(protocol || "j1939").toLowerCase()
+        return value === "canopen" ? "canopen" : "j1939"
+    }
+
+    function calibrationModeIndex(mode) {
+        var value = String(mode || "centerOnly")
+        for (var i = 0; i < cloneCalibrationModeOptions.length; i++) {
+            if (cloneCalibrationModeOptions[i].value === value)
+                return i
+        }
+        return 0
+    }
+
+    function currentCloneCalibrationMode() {
+        var item = cloneCalibrationModeOptions[cloneCalibrationModeBox.currentIndex]
+        return item ? item.value : "centerOnly"
+    }
+
+    function firstConfiguredCustomerName() {
+        if (!currentConfig)
+            return ""
+
+        var product = currentConfig.product || {}
+        var sources = [
+            product.customerBindings,
+            product.customers,
+            currentConfig.customerBindings,
+            currentConfig.customers
+        ]
+        for (var i = 0; i < sources.length; i++) {
+            var source = sources[i]
+            if (!source)
+                continue
+            var entries = Array.isArray(source) ? source : [ source ]
+            for (var j = 0; j < entries.length; j++) {
+                var entry = entries[j]
+                if (typeof entry === "string" && entry.trim().length > 0)
+                    return entry.trim()
+                if (entry && typeof entry === "object") {
+                    var name = String(entry.customerName || entry.name || "").trim()
+                    if (name.length > 0)
+                        return name
+                }
+            }
+        }
+        return ""
+    }
+
+    function sanitizeProductModelFallback(model) {
+        var text = String(model || "").trim()
+        if (text.length >= 5 && text.toLowerCase().lastIndexOf(".json") === text.length - 5)
+            text = text.substring(0, text.length - 5)
+        return text.replace(/[<>:"\/\\|?*\x00-\x1f]/g, "_").replace(/[. ]+$/g, "").trim()
+    }
+
+    function sanitizeProductModel(model) {
+        if (layoutManager && layoutManager.sanitizeProductModel)
+            return layoutManager.sanitizeProductModel(model)
+        return sanitizeProductModelFallback(model)
+    }
+
+    function openCloneProductPopup() {
+        if (!currentConfig || !currentConfig.product) {
+            cloneProductError = "请先选择一个模板产品"
+            return
+        }
+
+        var product = currentConfig.product || {}
+        var device = currentConfig.device || {}
+        var legacy = device.legacySensorProfile || {}
+        var calibration = currentConfig.calibration || {}
+        var can = currentConfig.can || {}
+        var canopen = can.canopen || {}
+        var protocol = normalizedProtocol(product.protocol || device.expectedProtocol)
+        var model = product.model || product.name || ""
+
+        cloneModelField.text = model ? (model + "-NEW") : ""
+        cloneNameField.text = product.name || model
+        cloneDescriptionArea.text = product.description || ""
+        cloneCustomerField.text = firstConfiguredCustomerName()
+        cloneProtocolBox.currentIndex = protocol === "canopen" ? 1 : 0
+        cloneAddressField.text = protocol === "canopen"
+                ? String(device.expectedNodeId !== undefined ? device.expectedNodeId : (canopen.nodeId !== undefined ? canopen.nodeId : ""))
+                : String(device.expectedSourceAddress || product.sourceAddress || "")
+        cloneSensorKindField.text = device.expectedSensorKind || legacy.sensorKind || ""
+        cloneCalibrationModeBox.currentIndex = calibrationModeIndex(calibration.mode)
+        cloneFirmwareField.text = device.recommendedFirmware || ""
+        cloneRequiresDeviceInfo.checked = calibration.requiresDeviceInfo === true
+        cloneRequiresSensorProfile.checked = calibration.requiresSensorProfile !== false
+        cloneAllowedReadOnly.checked = calibration.allowedInNormalModeReadOnly !== false
+        cloneProductError = ""
+        cloneProductPopup.open()
+        cloneModelField.forceActiveFocus()
+        cloneModelField.selectAll()
+    }
+
+    function validateCloneProductForm() {
+        var model = sanitizeProductModel(cloneModelField.text)
+        var protocol = String(cloneProtocolBox.currentText || "").toLowerCase()
+        var addressValue = parseConfigNumber(cloneAddressField.text)
+        var sensorKind = String(cloneSensorKindField.text || "").trim()
+
+        if (model.length === 0)
+            return "型号不能为空"
+        if (protocol !== "j1939" && protocol !== "canopen")
+            return "协议只能是 j1939 或 canopen"
+        if (layoutManager && layoutManager.productConfigExists && layoutManager.productConfigExists(model))
+            return "型号文件已存在：" + model + ".json"
+        if (isNaN(addressValue))
+            return protocol === "canopen" ? "Node ID 不能为空" : "源地址不能为空"
+        if (sensorKind.length === 0)
+            return "传感器类型不能为空"
+        return ""
+    }
+
+    function buildClonedProductConfig() {
+        var config = deepCopyConfig(currentConfig)
+        var model = sanitizeProductModel(cloneModelField.text)
+        var protocol = normalizedProtocol(cloneProtocolBox.currentText)
+        var addressValue = parseConfigNumber(cloneAddressField.text)
+        var addressText = hexText(addressValue, 2)
+        var sensorKind = String(cloneSensorKindField.text || "").trim()
+        var calibrationMode = currentCloneCalibrationMode()
+
+        var product = config.product || {}
+        product.name = String(cloneNameField.text || "").trim() || model
+        product.model = model
+        product.description = String(cloneDescriptionArea.text || "").trim()
+        product.protocol = protocol
+        var customerName = String(cloneCustomerField.text || "").trim()
+        if (customerName.length > 0) {
+            product.customerBindings = [
+                { name: customerName, isDefault: true, note: "SOP configured customer" }
+            ]
+        } else {
+            delete product.customerBindings
+        }
+        if (protocol === "j1939") {
+            product.sourceAddress = addressText
+            delete product.nodeId
+        } else {
+            delete product.sourceAddress
+        }
+        config.product = product
+
+        var device = config.device || {}
+        device.expectedProtocol = protocol
+        device.expectedProductCode = model
+        device.expectedSensorKind = sensorKind
+        device.recommendedFirmware = String(cloneFirmwareField.text || "").trim()
+        if (protocol === "j1939") {
+            device.expectedSourceAddress = addressText
+            delete device.expectedNodeId
+        } else {
+            device.expectedNodeId = addressValue
+            delete device.expectedSourceAddress
+        }
+        var legacy = device.legacySensorProfile || {}
+        legacy.sensorKind = sensorKind
+        legacy.calibrationModel = calibrationMode
+        device.legacySensorProfile = legacy
+        config.device = device
+
+        var calibration = config.calibration || {}
+        calibration.mode = calibrationMode
+        calibration.transport = protocol === "canopen" ? "canopenSdo" : "j1939VendorPgn"
+        calibration.requiresDeviceInfo = cloneRequiresDeviceInfo.checked
+        calibration.requiresSensorProfile = cloneRequiresSensorProfile.checked
+        calibration.allowedInNormalModeReadOnly = cloneAllowedReadOnly.checked
+        config.calibration = calibration
+
+        if (protocol === "canopen") {
+            var can = config.can || {}
+            var canopen = can.canopen || {}
+            canopen.nodeId = addressValue
+            can.canopen = canopen
+            config.can = can
+        }
+
+        return config
+    }
+
+    function saveCloneProduct() {
+        cloneProductError = validateCloneProductForm()
+        if (cloneProductError.length > 0)
+            return
+
+        syncCurrentLayoutFromCells()
+        var model = sanitizeProductModel(cloneModelField.text)
+        var config = buildClonedProductConfig()
+        if (!layoutManager.saveProductConfigAs(config, model))
+            return
+
+        cloneProductPopup.close()
+        loadProductList()
+        var idx = findProductIndexByName(model)
+        if (idx >= 0) {
+            productList.currentIndex = idx
+            loadProduct(idx)
+        }
+    }
+
     // Resolve component IDs to their definitions
     function resolveComponents(compIds) {
         var result = []
@@ -596,8 +818,8 @@ Item {
         loadingCells = false
     }
 
-    function saveProduct() {
-        if (!currentFilePath || !currentConfig) return
+    function syncCurrentLayoutFromCells() {
+        if (!currentConfig) return
         commitCellEdits(-1)
         var layout = currentConfig.layout || {}
         var grid = layout.grid || {}
@@ -627,12 +849,25 @@ Item {
             cells.push(cd)
         }
         grid.cells = cells; layout.grid = grid; currentConfig.layout = layout
-        layoutManager.saveProductConfig(currentConfig, currentFilePath)
-        hasUnsavedChanges = false
+    }
+
+    function saveProduct() {
+        if (!currentFilePath || !currentConfig) return
+        syncCurrentLayoutFromCells()
+        if (layoutManager.saveProductConfig(currentConfig, currentFilePath))
+            hasUnsavedChanges = false
     }
 
     ListModel { id: productModel }
     ListModel { id: bindingStatusModel }
+
+    Connections {
+        target: layoutManager
+        function onErrorOccurred(error) {
+            if (cloneProductPopup.opened)
+                cloneProductError = error
+        }
+    }
 
     // Collect all bindings from all canvas cells and compare with product components
     function refreshBindingStatus() {
@@ -692,6 +927,12 @@ Item {
             }
             Label { visible: !!currentConfig.product; text: root.productDescriptionText(); font.pixelSize: 10; color: dtTextSec; elide: Text.ElideRight; Layout.fillWidth: true }
             Item { Layout.fillWidth: true }
+            Button {
+                text: "复制为新产品"
+                enabled: currentConfig && currentConfig.product
+                font.pixelSize: 11
+                onClicked: openCloneProductPopup()
+            }
             Button {
                 text: hasUnsavedChanges ? "保存 *" : "已保存"; enabled: hasUnsavedChanges && currentFilePath !== ""
                 font.pixelSize: 11
@@ -1715,6 +1956,193 @@ Item {
             }
         }
 
+    }
+
+    Popup {
+        id: cloneProductPopup
+        parent: root
+        width: Math.min(520, root.width - 32)
+        height: Math.min(root.height - 32, cloneProductContent.implicitHeight + 32)
+        x: Math.max(16, (root.width - width) / 2)
+        y: Math.max(16, (root.height - height) / 2)
+        padding: 16
+        modal: true
+        focus: true
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        z: 10000
+
+        background: Rectangle {
+            radius: 8
+            color: "white"
+            border.width: 1
+            border.color: dtBorder
+        }
+
+        contentItem: ColumnLayout {
+            id: cloneProductContent
+            spacing: 10
+
+            Label {
+                text: "另存为新型号"
+                font.pixelSize: 15
+                font.bold: true
+                color: dtText
+            }
+
+            GridLayout {
+                Layout.fillWidth: true
+                columns: 2
+                columnSpacing: 10
+                rowSpacing: 8
+
+                Label { text: "型号"; color: dtText; font.pixelSize: 11 }
+                TextField {
+                    id: cloneModelField
+                    Layout.fillWidth: true
+                    selectByMouse: true
+                    font.pixelSize: 11
+                    placeholderText: "例如 JC6000-BGA-HM046"
+                    onTextChanged: cloneProductError = ""
+                }
+
+                Label { text: "名称"; color: dtText; font.pixelSize: 11 }
+                TextField {
+                    id: cloneNameField
+                    Layout.fillWidth: true
+                    selectByMouse: true
+                    font.pixelSize: 11
+                    placeholderText: "默认同型号"
+                }
+
+                Label { text: "描述"; color: dtText; font.pixelSize: 11 }
+                TextArea {
+                    id: cloneDescriptionArea
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 58
+                    selectByMouse: true
+                    wrapMode: TextEdit.Wrap
+                    font.pixelSize: 11
+                    placeholderText: "产品描述"
+                }
+
+                Label { text: "目标客户"; color: dtText; font.pixelSize: 11 }
+                TextField {
+                    id: cloneCustomerField
+                    Layout.fillWidth: true
+                    selectByMouse: true
+                    font.pixelSize: 11
+                    placeholderText: "例如 客户A"
+                    onTextChanged: cloneProductError = ""
+                }
+
+                Label { text: "协议"; color: dtText; font.pixelSize: 11 }
+                ComboBox {
+                    id: cloneProtocolBox
+                    Layout.fillWidth: true
+                    model: cloneProtocolOptions
+                    font.pixelSize: 11
+                    onCurrentTextChanged: cloneProductError = ""
+                }
+
+                Label {
+                    text: normalizedProtocol(cloneProtocolBox.currentText) === "canopen" ? "Node ID" : "源地址"
+                    color: dtText
+                    font.pixelSize: 11
+                }
+                TextField {
+                    id: cloneAddressField
+                    Layout.fillWidth: true
+                    selectByMouse: true
+                    font.pixelSize: 11
+                    placeholderText: normalizedProtocol(cloneProtocolBox.currentText) === "canopen" ? "72 或 0x48" : "0x33"
+                    onTextChanged: cloneProductError = ""
+                }
+
+                Label { text: "传感器"; color: dtText; font.pixelSize: 11 }
+                TextField {
+                    id: cloneSensorKindField
+                    Layout.fillWidth: true
+                    selectByMouse: true
+                    font.pixelSize: 11
+                    placeholderText: "MT6501 / MLX90316"
+                    onTextChanged: cloneProductError = ""
+                }
+
+                Label { text: "校准模式"; color: dtText; font.pixelSize: 11 }
+                ComboBox {
+                    id: cloneCalibrationModeBox
+                    Layout.fillWidth: true
+                    model: cloneCalibrationModeOptions
+                    textRole: "label"
+                    valueRole: "value"
+                    font.pixelSize: 11
+                }
+
+                Label { text: "推荐固件"; color: dtText; font.pixelSize: 11 }
+                TextField {
+                    id: cloneFirmwareField
+                    Layout.fillWidth: true
+                    selectByMouse: true
+                    font.pixelSize: 11
+                    placeholderText: "可留空"
+                }
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 8
+
+                CheckBox {
+                    id: cloneRequiresDeviceInfo
+                    text: "需设备信息"
+                    font.pixelSize: 10
+                }
+                CheckBox {
+                    id: cloneRequiresSensorProfile
+                    text: "需传感器档案"
+                    font.pixelSize: 10
+                }
+                CheckBox {
+                    id: cloneAllowedReadOnly
+                    text: "普通模式只读"
+                    font.pixelSize: 10
+                }
+            }
+
+            Label {
+                Layout.fillWidth: true
+                text: "保存文件：" + (sanitizeProductModel(cloneModelField.text) || "---") + ".json"
+                color: dtTextSec
+                font.pixelSize: 10
+                elide: Text.ElideMiddle
+            }
+
+            Label {
+                Layout.fillWidth: true
+                visible: cloneProductError.length > 0
+                text: cloneProductError
+                color: "#d70015"
+                font.pixelSize: 11
+                wrapMode: Text.WordWrap
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                Item { Layout.fillWidth: true }
+                Button {
+                    text: "取消"
+                    font.pixelSize: 11
+                    onClicked: cloneProductPopup.close()
+                }
+                Button {
+                    text: "保存新型号"
+                    font.pixelSize: 11
+                    palette.button: dtAccent
+                    palette.buttonText: "white"
+                    onClicked: saveCloneProduct()
+                }
+            }
+        }
     }
 
     Popup {

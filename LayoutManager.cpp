@@ -3,6 +3,7 @@
 #include <QFileInfo>
 #include <QDateTime>
 #include <QCoreApplication>
+#include <QRegularExpression>
 
 LayoutManager::LayoutManager(QObject *parent)
     : QObject(parent)
@@ -326,6 +327,62 @@ bool LayoutManager::saveProductConfig(const QJsonObject &configJson, const QStri
         emit productConfigSaved(filePath);
         return true;
     }
+    return false;
+}
+
+QString LayoutManager::sanitizeProductModel(const QString &model) const
+{
+    QString safeModel = model.trimmed();
+    if (safeModel.endsWith(".json", Qt::CaseInsensitive)) {
+        safeModel.chop(5);
+    }
+
+    safeModel.replace(QRegularExpression(QStringLiteral("[<>:\"/\\\\|?*\\x00-\\x1F]")), QStringLiteral("_"));
+
+    while (!safeModel.isEmpty() && (safeModel.endsWith('.') || safeModel.endsWith(' '))) {
+        safeModel.chop(1);
+    }
+
+    return safeModel.trimmed();
+}
+
+bool LayoutManager::productConfigExists(const QString &model) const
+{
+    const QString safeModel = sanitizeProductModel(model);
+    if (safeModel.isEmpty()) {
+        return false;
+    }
+
+    const QDir dir(m_productsDirectory);
+    return QFileInfo::exists(dir.filePath(safeModel + ".json"));
+}
+
+bool LayoutManager::saveProductConfigAs(const QJsonObject &configJson, const QString &model)
+{
+    const QString safeModel = sanitizeProductModel(model);
+    if (safeModel.isEmpty()) {
+        emit errorOccurred(tr("Product model cannot be empty"));
+        return false;
+    }
+
+    if (!ensureDirectoryExists(m_productsDirectory)) {
+        emit errorOccurred(tr("Failed to create products directory: %1").arg(m_productsDirectory));
+        return false;
+    }
+
+    const QDir dir(m_productsDirectory);
+    const QString filePath = dir.filePath(safeModel + ".json");
+    if (QFileInfo::exists(filePath)) {
+        emit errorOccurred(tr("Product config already exists: %1").arg(filePath));
+        return false;
+    }
+
+    const QJsonDocument doc(configJson);
+    if (writeJsonFile(filePath, doc)) {
+        emit productConfigSaved(filePath);
+        return true;
+    }
+
     return false;
 }
 
