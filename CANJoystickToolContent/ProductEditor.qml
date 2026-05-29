@@ -37,7 +37,7 @@ Item {
     readonly property var cellTypeOptions: [
         { value: "canvas",     label: "画布" },
         { value: "rawFrames",  label: "报文" },
-        { value: "deviceInfo", label: "信息" },
+        { value: "recordInfo", label: "记录" },
         { value: "empty",      label: "空白" }
     ]
 
@@ -99,19 +99,19 @@ Item {
         }
     }
 
-    function commitDeviceDescriptionEdits(exceptIndex) {
+    function commitProductDescriptionEdits(exceptIndex) {
         for (var i = 0; i < cellRepeater.count; i++) {
             if (i === exceptIndex)
                 continue
             var cell = cellRepeater.itemAt(i)
-            if (cell && cell.deviceDescriptionEditing && cell.commitDeviceDescriptionEdit)
-                cell.commitDeviceDescriptionEdit()
+            if (cell && cell.productDescriptionEditing && cell.commitProductDescriptionEdit)
+                cell.commitProductDescriptionEdit()
         }
     }
 
     function commitCellEdits(exceptIndex) {
         commitTitleEdits(exceptIndex)
-        commitDeviceDescriptionEdits(exceptIndex)
+        commitProductDescriptionEdits(exceptIndex)
     }
 
     function parseConfigNumber(value) {
@@ -181,6 +181,14 @@ Item {
         return parsed > 0x7F
                 ? hexText(parsed, 3)
                 : hexText(canopenDefaultCanAddress(parsed), 3)
+    }
+
+    function productAddressText() {
+        var product = currentConfig.product || {}
+        var protocol = String(product.protocol || "j1939").toLowerCase()
+        if (protocol === "canopen")
+            return canopenCanAddressText(product.canAddress || product.nodeId)
+        return j1939CanAddressText(product.canAddress || product.sourceAddress)
     }
 
     function cloneFrameFormat() {
@@ -608,7 +616,7 @@ Item {
         var allComps = currentConfig.components || []
         for (var i = 0; i < compIds.length; i++) {
             var id = compIds[i]
-            if (id === "rawFrames" || id === "deviceInfo") { result.push({ id: id, type: id }); continue }
+            if (id === "rawFrames" || id === "recordInfo") { result.push({ id: id, type: id }); continue }
             for (var j = 0; j < allComps.length; j++) {
                 if (allComps[j].id === id) { result.push(allComps[j]); break }
             }
@@ -620,7 +628,7 @@ Item {
     function detectCellType(compIds) {
         if (!compIds || compIds.length === 0) return "empty"
         if (compIds.indexOf("rawFrames") >= 0) return "rawFrames"
-        if (compIds.indexOf("deviceInfo") >= 0) return "deviceInfo"
+        if (compIds.indexOf("recordInfo") >= 0) return "recordInfo"
         return "canvas"  // buttons, EJM, FNR all go to canvas
     }
 
@@ -762,7 +770,10 @@ Item {
     }
 
     function defaultCellTitle(index, cellType) {
-        return cellType === "canvas" ? canvasDefaultTitle(index) : ""
+        if (cellType === "canvas") return canvasDefaultTitle(index)
+        if (cellType === "rawFrames") return "CAN 报文"
+        if (cellType === "recordInfo") return "记录信息"
+        return ""
     }
 
     function isLegacyCanvasTitle(title) {
@@ -1303,9 +1314,9 @@ Item {
                             property string canvasScaleMode: "uniform"
                             property int cellIndex: index
                             property bool titleEditing: false
-                            property bool deviceDescriptionEditing: false
-                            property string deviceDescriptionDraft: ""
-                            property string deviceDescriptionOriginal: ""
+                            property bool productDescriptionEditing: false
+                            property string productDescriptionDraft: ""
+                            property string productDescriptionOriginal: ""
                             property alias canvasItem: cvLoader.item
 
                             onCellTitleChanged: {
@@ -1323,7 +1334,7 @@ Item {
 
                             function beginTitleEdit() {
                                 root.commitCellEdits(cellIndex)
-                                commitDeviceDescriptionEdit()
+                                commitProductDescriptionEdit()
                                 activeCellIndex = cellIndex
                                 syncTitleEditor()
                                 titleEditing = true
@@ -1342,25 +1353,25 @@ Item {
                                 titleEditor.focus = false
                             }
 
-                            function beginDeviceDescriptionEdit() {
+                            function beginProductDescriptionEdit() {
                                 root.commitCellEdits(cellIndex)
                                 commitTitleEdit()
                                 activeCellIndex = cellIndex
-                                deviceDescriptionOriginal = root.productDescriptionText()
-                                deviceDescriptionDraft = deviceDescriptionOriginal
-                                deviceDescriptionEditing = true
+                                productDescriptionOriginal = root.productDescriptionText()
+                                productDescriptionDraft = productDescriptionOriginal
+                                productDescriptionEditing = true
                             }
 
-                            function commitDeviceDescriptionEdit() {
-                                if (!deviceDescriptionEditing)
+                            function commitProductDescriptionEdit() {
+                                if (!productDescriptionEditing)
                                     return
-                                root.setProductDescription(deviceDescriptionDraft)
-                                deviceDescriptionEditing = false
+                                root.setProductDescription(productDescriptionDraft)
+                                productDescriptionEditing = false
                             }
 
-                            function cancelDeviceDescriptionEdit() {
-                                deviceDescriptionDraft = deviceDescriptionOriginal
-                                deviceDescriptionEditing = false
+                            function cancelProductDescriptionEdit() {
+                                productDescriptionDraft = productDescriptionOriginal
+                                productDescriptionEditing = false
                             }
 
                             MouseArea {
@@ -1541,7 +1552,7 @@ Item {
                                             onClicked: {
                                                 root.commitCellEdits(index)
                                                 cellCard.commitTitleEdit()
-                                                cellCard.commitDeviceDescriptionEdit()
+                                                cellCard.commitProductDescriptionEdit()
                                                 activeCellIndex = index
                                                 cellTypePopup.openFor(cellCard, typeSelector)
                                             }
@@ -1699,20 +1710,18 @@ Item {
                                     }
 
                                     Column {
-                                        id: deviceInfoPanel
-                                        visible: cellCard.cellType === "deviceInfo"
+                                        id: recordInfoPanel
+                                        visible: cellCard.cellType === "recordInfo"
                                         anchors.fill: parent
-                                        z: cellCard.deviceDescriptionEditing ? 30 : 0
+                                        z: cellCard.productDescriptionEditing ? 30 : 0
                                         spacing: Math.max(6, 8 * dtViewport.cardScale)
                                         clip: true
 
                                         readonly property var rows: [
-                                            { label: "烧录时间", val: "2026-03-31 10:00" },
-                                            { label: "客户名称", val: "示例客户" },
-                                            { label: "设备型号", val: currentConfig.product ? currentConfig.product.model||"---" : "---" },
-                                            { label: "设备描述", val: "", multiline: true, editableDescription: true },
-                                            { label: "设备ID",  val: "0x00001234" },
-                                            { label: "序列号",  val: "SN001" }
+                                            { label: "产品型号", val: currentConfig.product ? currentConfig.product.model || "---" : "---" },
+                                            { label: "通信协议", val: currentConfig.product ? String(currentConfig.product.protocol || "j1939").toUpperCase() : "---" },
+                                            { label: "CAN地址", val: root.productAddressText() },
+                                            { label: "产品描述", val: "", multiline: true, editableDescription: true }
                                         ]
                                         readonly property real gapHeight: spacing * Math.max(0, rows.length - 1)
                                         readonly property real rowUnitHeight: Math.max(12, (height - gapHeight) / rowUnits())
@@ -1725,13 +1734,13 @@ Item {
                                         }
 
                                         Repeater {
-                                            model: deviceInfoPanel.rows
+                                            model: recordInfoPanel.rows
                                             Row {
                                                 width: parent ? parent.width : 0
-                                                height: deviceInfoPanel.rowUnitHeight * (modelData.multiline ? 2 : 1)
+                                                height: recordInfoPanel.rowUnitHeight * (modelData.multiline ? 2 : 1)
                                                 spacing: Math.max(8, 10 * dtViewport.cardScale)
                                                 Text {
-                                                    id: deviceInfoLabel
+                                                    id: recordInfoLabel
                                                     text: modelData.label + "："
                                                     color: dtTextSec
                                                     font.pixelSize: dtViewport.cardBodyFont
@@ -1743,13 +1752,13 @@ Item {
                                                     verticalAlignment: Text.AlignVCenter
                                                 }
                                                 Item {
-                                                    id: deviceInfoValueSlot
-                                                    width: Math.max(1, parent.width - deviceInfoLabel.width - parent.spacing)
+                                                    id: recordInfoValueSlot
+                                                    width: Math.max(1, parent.width - recordInfoLabel.width - parent.spacing)
                                                     height: parent.height
                                                     clip: true
 
                                                     Text {
-                                                        id: deviceInfoValue
+                                                        id: recordInfoValue
                                                         anchors.fill: parent
                                                         visible: !modelData.editableDescription
                                                         text: modelData.val
@@ -1764,9 +1773,9 @@ Item {
                                                     }
 
                                                     Text {
-                                                        id: deviceDescriptionText
+                                                        id: productDescriptionLabel
                                                         anchors.fill: parent
-                                                        visible: modelData.editableDescription === true && !cellCard.deviceDescriptionEditing
+                                                        visible: modelData.editableDescription === true && !cellCard.productDescriptionEditing
                                                         text: root.productDescriptionText() !== "" ? root.productDescriptionText() : "---"
                                                         color: dtAccent
                                                         font.pixelSize: dtViewport.cardValueFont
@@ -1782,7 +1791,7 @@ Item {
                                                             hoverEnabled: true
                                                             cursorShape: Qt.IBeamCursor
                                                             onClicked: {
-                                                                cellCard.beginDeviceDescriptionEdit()
+                                                                cellCard.beginProductDescriptionEdit()
                                                             }
                                                         }
                                                     }
@@ -1790,7 +1799,7 @@ Item {
                                                     Rectangle {
                                                         id: descriptionEditFrame
                                                         anchors.fill: parent
-                                                        visible: modelData.editableDescription === true && cellCard.deviceDescriptionEditing
+                                                        visible: modelData.editableDescription === true && cellCard.productDescriptionEditing
                                                         z: 10
                                                         radius: 4
                                                         color: "white"
@@ -1809,7 +1818,7 @@ Item {
                                                             font.pixelSize: Math.max(10, dtViewport.cardValueFont - 1)
                                                             font.bold: true
                                                             textFormat: TextEdit.PlainText
-                                                            text: cellCard.deviceDescriptionDraft
+                                                            text: cellCard.productDescriptionDraft
 
                                                             onVisibleChanged: {
                                                                 if (visible) {
@@ -1821,19 +1830,19 @@ Item {
                                                             }
                                                             onTextChanged: {
                                                                 if (descriptionEditFrame.visible)
-                                                                    cellCard.deviceDescriptionDraft = text
+                                                                    cellCard.productDescriptionDraft = text
                                                             }
                                                             onActiveFocusChanged: {
-                                                                if (!activeFocus && cellCard.deviceDescriptionEditing)
-                                                                    cellCard.commitDeviceDescriptionEdit()
+                                                                if (!activeFocus && cellCard.productDescriptionEditing)
+                                                                    cellCard.commitProductDescriptionEdit()
                                                             }
                                                             Keys.onEscapePressed: function(event) {
-                                                                cellCard.cancelDeviceDescriptionEdit()
+                                                                cellCard.cancelProductDescriptionEdit()
                                                                 event.accepted = true
                                                             }
                                                             Keys.onPressed: function(event) {
                                                                 if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
-                                                                    cellCard.commitDeviceDescriptionEdit()
+                                                                    cellCard.commitProductDescriptionEdit()
                                                                     event.accepted = true
                                                                 }
                                                             }
@@ -1844,7 +1853,7 @@ Item {
                                                             anchors.right: descriptionEdit.right
                                                             anchors.top: descriptionEdit.top
                                                             visible: descriptionEdit.text.length === 0
-                                                            text: "请输入设备描述"
+                                                            text: "请输入产品描述"
                                                             color: dtTextMuted
                                                             font.pixelSize: descriptionEdit.font.pixelSize
                                                             font.bold: true
@@ -1859,9 +1868,9 @@ Item {
                                     MouseArea {
                                         anchors.fill: parent
                                         z: 20
-                                        visible: cellCard.deviceDescriptionEditing
+                                        visible: cellCard.productDescriptionEditing
                                         enabled: visible
-                                        onClicked: cellCard.commitDeviceDescriptionEdit()
+                                        onClicked: cellCard.commitProductDescriptionEdit()
                                     }
 
                                     MouseArea {
