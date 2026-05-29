@@ -11,6 +11,8 @@
 #include <QStandardPaths>
 #include <QQmlEngine>
 
+class QSqlDatabase;
+
 /**
  * @brief 布局管理器 - 处理布局和卡片模板的JSON持久化
  *
@@ -171,6 +173,11 @@ private:
 
     // 初始化默认目录
     void initDefaultDirectories();
+
+    QString downloadRecordDirectory() const;
+    QString productConfigPathForDatabase(const QString &filePath) const;
+    bool ensureProductDatabaseSchema(QSqlDatabase &db);
+    bool syncProductConfigToDatabase(const QJsonObject &configJson, const QString &filePath);
 
     // 写入JSON文件
     bool writeJsonFile(const QString &path, const QJsonDocument &doc);

@@ -4,6 +4,44 @@
 #include <QDateTime>
 #include <QCoreApplication>
 #include <QRegularExpression>
+#include <QSqlDatabase>
+#include <QSqlError>
+#include <QSqlQuery>
+#include <QUuid>
+
+namespace {
+
+QString compactJsonForDatabase(const QJsonObject &object)
+{
+    return QString::fromUtf8(QJsonDocument(object).toJson(QJsonDocument::Compact));
+}
+
+QString normalizedProductEditorProtocol(const QString &protocol)
+{
+    const QString value = protocol.trimmed().toLower();
+    if (value == QStringLiteral("canopen")) {
+        return value;
+    }
+    return QStringLiteral("j1939");
+}
+
+bool databaseTableHasColumn(QSqlDatabase &db, const QString &tableName, const QString &columnName)
+{
+    QSqlQuery query(db);
+    if (!query.exec(QStringLiteral("PRAGMA table_info(%1)").arg(tableName))) {
+        return false;
+    }
+
+    while (query.next()) {
+        if (query.value(QStringLiteral("name")).toString().compare(columnName, Qt::CaseInsensitive) == 0) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+} // namespace
 
 LayoutManager::LayoutManager(QObject *parent)
     : QObject(parent)
@@ -322,12 +360,17 @@ bool LayoutManager::saveProductConfig(const QJsonObject &configJson, const QStri
         return false;
     }
 
-    QJsonDocument doc(configJson);
-    if (writeJsonFile(filePath, doc)) {
-        emit productConfigSaved(filePath);
-        return true;
+    const QJsonDocument doc(configJson);
+    if (!writeJsonFile(filePath, doc)) {
+        return false;
     }
-    return false;
+
+    if (!syncProductConfigToDatabase(configJson, filePath)) {
+        return false;
+    }
+
+    emit productConfigSaved(filePath);
+    return true;
 }
 
 QString LayoutManager::sanitizeProductModel(const QString &model) const
@@ -378,12 +421,16 @@ bool LayoutManager::saveProductConfigAs(const QJsonObject &configJson, const QSt
     }
 
     const QJsonDocument doc(configJson);
-    if (writeJsonFile(filePath, doc)) {
-        emit productConfigSaved(filePath);
-        return true;
+    if (!writeJsonFile(filePath, doc)) {
+        return false;
     }
 
-    return false;
+    if (!syncProductConfigToDatabase(configJson, filePath)) {
+        return false;
+    }
+
+    emit productConfigSaved(filePath);
+    return true;
 }
 
 // ========== 工具方法 ==========
@@ -419,6 +466,228 @@ bool LayoutManager::ensureDirectoryExists(const QString &path)
         return dir.mkpath(".");
     }
     return true;
+}
+
+QString LayoutManager::downloadRecordDirectory() const
+{
+    QDir projectDir(QDir(m_productsDirectory).absolutePath());
+    if (projectDir.cdUp()) {
+        return projectDir.filePath(QStringLiteral("downloadrecord"));
+    }
+
+    return QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("downloadrecord"));
+}
+
+QString LayoutManager::productConfigPathForDatabase(const QString &filePath) const
+{
+    const QFileInfo fileInfo(filePath);
+    const QDir productsDir(m_productsDirectory);
+    const QString relativePath = productsDir.relativeFilePath(fileInfo.absoluteFilePath());
+    const bool isInsideProductsDirectory = !relativePath.startsWith(QStringLiteral("../"))
+        && !relativePath.startsWith(QStringLiteral("..\\"))
+        && !QDir::isAbsolutePath(relativePath);
+
+    const QString databasePath = isInsideProductsDirectory
+        ? QDir(QStringLiteral("products")).filePath(relativePath)
+        : QDir(QStringLiteral("products")).filePath(fileInfo.fileName());
+    return QDir::fromNativeSeparators(QDir::cleanPath(databasePath));
+}
+
+bool LayoutManager::ensureProductDatabaseSchema(QSqlDatabase &db)
+{
+    const QStringList statements = {
+        QStringLiteral("PRAGMA foreign_keys = ON"),
+        QStringLiteral("PRAGMA busy_timeout = 3000"),
+        QStringLiteral(
+            "CREATE TABLE IF NOT EXISTS products ("
+            "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+            "name TEXT NOT NULL UNIQUE,"
+            "model TEXT NOT NULL DEFAULT '',"
+            "protocol TEXT NOT NULL DEFAULT 'j1939',"
+            "config_file TEXT NOT NULL DEFAULT '',"
+            "status TEXT NOT NULL DEFAULT 'active',"
+            "created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),"
+            "updated_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),"
+            "description TEXT,"
+            "calibration_mode TEXT,"
+            "calibration_transport TEXT,"
+            "allowed_in_normal_mode_read_only INTEGER,"
+            "config_json TEXT"
+            ")"),
+        QStringLiteral("CREATE INDEX IF NOT EXISTS idx_products_model ON products(model)"),
+        QStringLiteral("CREATE INDEX IF NOT EXISTS idx_products_protocol ON products(protocol)")
+    };
+
+    for (const QString &statement : statements) {
+        QSqlQuery query(db);
+        if (!query.exec(statement)) {
+            emit errorOccurred(tr("Failed to prepare product database: %1").arg(query.lastError().text()));
+            return false;
+        }
+    }
+
+    const QList<QPair<QString, QString>> columns = {
+        {QStringLiteral("model"), QStringLiteral("TEXT NOT NULL DEFAULT ''")},
+        {QStringLiteral("protocol"), QStringLiteral("TEXT NOT NULL DEFAULT 'j1939'")},
+        {QStringLiteral("config_file"), QStringLiteral("TEXT NOT NULL DEFAULT ''")},
+        {QStringLiteral("status"), QStringLiteral("TEXT NOT NULL DEFAULT 'active'")},
+        {QStringLiteral("created_at"), QStringLiteral("TEXT")},
+        {QStringLiteral("updated_at"), QStringLiteral("TEXT")},
+        {QStringLiteral("description"), QStringLiteral("TEXT")},
+        {QStringLiteral("calibration_mode"), QStringLiteral("TEXT")},
+        {QStringLiteral("calibration_transport"), QStringLiteral("TEXT")},
+        {QStringLiteral("allowed_in_normal_mode_read_only"), QStringLiteral("INTEGER")},
+        {QStringLiteral("config_json"), QStringLiteral("TEXT")}
+    };
+
+    for (const auto &column : columns) {
+        if (databaseTableHasColumn(db, QStringLiteral("products"), column.first)) {
+            continue;
+        }
+
+        QSqlQuery alter(db);
+        const QString statement = QStringLiteral("ALTER TABLE products ADD COLUMN %1 %2")
+            .arg(column.first, column.second);
+        if (!alter.exec(statement)) {
+            emit errorOccurred(tr("Failed to update product database schema: %1").arg(alter.lastError().text()));
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool LayoutManager::syncProductConfigToDatabase(const QJsonObject &configJson, const QString &filePath)
+{
+    const QFileInfo fileInfo(filePath);
+    const QJsonObject product = configJson.value(QStringLiteral("product")).toObject();
+    const QJsonObject calibration = configJson.value(QStringLiteral("calibration")).toObject();
+
+    QString model = product.value(QStringLiteral("model")).toString(fileInfo.completeBaseName()).trimmed();
+    if (model.isEmpty()) {
+        model = fileInfo.completeBaseName().trimmed();
+    }
+    if (model.isEmpty()) {
+        emit errorOccurred(tr("Product model cannot be empty"));
+        return false;
+    }
+
+    const QString protocol = normalizedProductEditorProtocol(product.value(QStringLiteral("protocol")).toString(QStringLiteral("j1939")));
+    const QString databaseConfigPath = productConfigPathForDatabase(filePath);
+    const QString databasePath = QDir(downloadRecordDirectory()).filePath(QStringLiteral("production_data.db"));
+
+    if (!ensureDirectoryExists(QFileInfo(databasePath).absolutePath())) {
+        emit errorOccurred(tr("Failed to create record database directory: %1").arg(QFileInfo(databasePath).absolutePath()));
+        return false;
+    }
+
+    const QString connectionName = QStringLiteral("product_editor_%1")
+        .arg(QUuid::createUuid().toString(QUuid::WithoutBraces));
+
+    const auto runSync = [&]() -> bool {
+        QSqlDatabase db = QSqlDatabase::addDatabase(QStringLiteral("QSQLITE"), connectionName);
+        db.setDatabaseName(databasePath);
+        if (!db.open()) {
+            emit errorOccurred(tr("Failed to open product database: %1").arg(db.lastError().text()));
+            return false;
+        }
+
+        if (!ensureProductDatabaseSchema(db)) {
+            db.close();
+            return false;
+        }
+
+        if (!db.transaction()) {
+            emit errorOccurred(tr("Failed to start product database transaction: %1").arg(db.lastError().text()));
+            db.close();
+            return false;
+        }
+
+        qint64 productId = 0;
+        {
+            QSqlQuery select(db);
+            select.prepare(QStringLiteral("SELECT id FROM products WHERE config_file = ? LIMIT 1"));
+            select.addBindValue(databaseConfigPath);
+            if (!select.exec()) {
+                db.rollback();
+                emit errorOccurred(tr("Failed to query product by config path: %1").arg(select.lastError().text()));
+                db.close();
+                return false;
+            }
+            if (select.next()) {
+                productId = select.value(0).toLongLong();
+            }
+        }
+
+        if (productId <= 0) {
+            QSqlQuery select(db);
+            select.prepare(QStringLiteral("SELECT id FROM products WHERE name = ? LIMIT 1"));
+            select.addBindValue(model);
+            if (!select.exec()) {
+                db.rollback();
+                emit errorOccurred(tr("Failed to query product by model: %1").arg(select.lastError().text()));
+                db.close();
+                return false;
+            }
+            if (select.next()) {
+                productId = select.value(0).toLongLong();
+            }
+        }
+
+        if (productId <= 0) {
+            QSqlQuery insert(db);
+            insert.prepare(QStringLiteral(
+                "INSERT INTO products (name, model, protocol, config_file, status) "
+                "VALUES (?, ?, ?, ?, 'active')"));
+            insert.addBindValue(model);
+            insert.addBindValue(model);
+            insert.addBindValue(protocol);
+            insert.addBindValue(databaseConfigPath);
+            if (!insert.exec()) {
+                db.rollback();
+                emit errorOccurred(tr("Failed to insert product: %1").arg(insert.lastError().text()));
+                db.close();
+                return false;
+            }
+            productId = insert.lastInsertId().toLongLong();
+        }
+
+        QSqlQuery update(db);
+        update.prepare(QStringLiteral(
+            "UPDATE products SET name = ?, model = ?, protocol = ?, config_file = ?, "
+            "status = 'active', description = ?, calibration_mode = ?, calibration_transport = ?, "
+            "allowed_in_normal_mode_read_only = ?, config_json = ?, "
+            "updated_at = datetime('now', 'localtime') WHERE id = ?"));
+        update.addBindValue(model);
+        update.addBindValue(model);
+        update.addBindValue(protocol);
+        update.addBindValue(databaseConfigPath);
+        update.addBindValue(product.value(QStringLiteral("description")).toString());
+        update.addBindValue(calibration.value(QStringLiteral("mode")).toString());
+        update.addBindValue(calibration.value(QStringLiteral("transport")).toString());
+        update.addBindValue(calibration.value(QStringLiteral("allowedInNormalModeReadOnly")).toBool(true) ? 1 : 0);
+        update.addBindValue(compactJsonForDatabase(configJson));
+        update.addBindValue(productId);
+        if (!update.exec()) {
+            db.rollback();
+            emit errorOccurred(tr("Failed to update product: %1").arg(update.lastError().text()));
+            db.close();
+            return false;
+        }
+
+        if (!db.commit()) {
+            emit errorOccurred(tr("Failed to commit product database update: %1").arg(db.lastError().text()));
+            db.close();
+            return false;
+        }
+
+        db.close();
+        return true;
+    };
+
+    const bool success = runSync();
+    QSqlDatabase::removeDatabase(connectionName);
+    return success;
 }
 
 // ========== 私有方法 ==========

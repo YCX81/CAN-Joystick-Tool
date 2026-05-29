@@ -6,7 +6,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
 
-find_package(Qt6 6.5 REQUIRED COMPONENTS Quick QuickControls2 Widgets)
+find_package(Qt6 6.5 REQUIRED COMPONENTS Quick QuickControls2 Widgets Sql)
 
 qt_standard_project_setup(REQUIRES 6.5)
 
@@ -77,7 +77,25 @@ target_link_libraries(CANJoystickTool PRIVATE
     Qt6::Quick
     Qt6::QuickControls2
     Qt6::Widgets
+    Qt6::Sql
 )
+
+if(WIN32)
+    get_target_property(QT_QMAKE_EXECUTABLE Qt6::qmake IMPORTED_LOCATION)
+    get_filename_component(QT_BIN_DIR "${QT_QMAKE_EXECUTABLE}" DIRECTORY)
+    get_filename_component(QT_PREFIX_DIR "${QT_BIN_DIR}" DIRECTORY)
+    set(QT_SQLITE_DRIVER "${QT_PREFIX_DIR}/plugins/sqldrivers/qsqlite.dll")
+endif()
+
+if(WIN32 AND EXISTS "${QT_SQLITE_DRIVER}")
+    add_custom_command(TARGET CANJoystickTool POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory
+            "$<TARGET_FILE_DIR:CANJoystickTool>/sqldrivers"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${QT_SQLITE_DRIVER}"
+            "$<TARGET_FILE_DIR:CANJoystickTool>/sqldrivers/qsqlite.dll"
+    )
+endif()
 
 if(WIN32)
     set_target_properties(CANJoystickTool PROPERTIES WIN32_EXECUTABLE TRUE)
