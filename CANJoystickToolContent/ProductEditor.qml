@@ -145,6 +145,56 @@ Item {
         return id
     }
 
+    function j1939SourceAddressFromCanAddress(canAddress) {
+        if (isNaN(canAddress))
+            return NaN
+        return canAddress > 0xFF ? (canAddress & 0xFF) : canAddress
+    }
+
+    function j1939DefaultCanAddress(sourceAddress) {
+        return composeJ1939Id(3, 0xFDD6, sourceAddress, 0xFF)
+    }
+
+    function j1939CanAddressText(value) {
+        var parsed = parseConfigNumber(value)
+        if (isNaN(parsed))
+            parsed = 0x0CFDD633
+        return parsed > 0xFF
+                ? hexText(parsed, 8)
+                : hexText(j1939DefaultCanAddress(parsed), 8)
+    }
+
+    function canopenNodeIdFromCanAddress(canAddress) {
+        if (isNaN(canAddress))
+            return NaN
+        return canAddress > 0x7F ? (canAddress & 0x7F) : canAddress
+    }
+
+    function canopenDefaultCanAddress(nodeId) {
+        return 0x700 + (nodeId & 0x7F)
+    }
+
+    function canopenCanAddressText(value) {
+        var parsed = parseConfigNumber(value)
+        if (isNaN(parsed))
+            parsed = 0x748
+        return parsed > 0x7F
+                ? hexText(parsed, 3)
+                : hexText(canopenDefaultCanAddress(parsed), 3)
+    }
+
+    function cloneFrameFormat() {
+        return normalizedProtocol(cloneProtocolBox.currentText) === "canopen" ? "standard" : "extended"
+    }
+
+    function cloneAddressLabel() {
+        return cloneFrameFormat() === "standard" ? "CAN地址（标准帧）" : "CAN地址（扩展帧）"
+    }
+
+    function resetCloneAddressForProtocol() {
+        cloneAddressField.text = cloneFrameFormat() === "standard" ? "0x748" : "0x0CFDD633"
+    }
+
     function previewFrameLabel(message) {
         var id = String(message.id || "").toLowerCase()
         if (id === "addressclaim" || id === "address_claim")
@@ -201,7 +251,10 @@ Item {
         if (isNaN(source))
             return "PGN " + hexText(pgn, 4) + " / SA未配置"
 
-        var id = composeJ1939Id(6, pgn, source, 0xFF)
+        var priority = parseConfigNumber(message.priority)
+        if (isNaN(priority))
+            priority = 3
+        var id = composeJ1939Id(priority, pgn, source, 0xFF)
         return hexText(id, 8)
     }
 
@@ -399,19 +452,48 @@ Item {
         return sanitizeProductModelFallback(model)
     }
 
-    function openCloneProductPopup() {
-        if (!currentConfig || !currentConfig.product) {
-            cloneProductError = "请先选择一个模板产品"
-            return
+    function defaultProductConfig() {
+        return {
+            product: {
+                name: "",
+                model: "",
+                description: "",
+                protocol: "j1939",
+                canFrameFormat: "extended",
+                canAddress: "0x0CFDD633",
+                sourceAddress: "0x33"
+            },
+            calibration: {
+                mode: "centerOnly",
+                transport: "j1939VendorPgn",
+                allowedInNormalModeReadOnly: true
+            },
+            can: {
+                defaultBaudRate: 250,
+                messages: []
+            },
+            components: [],
+            layout: {
+                grid: {
+                    rows: 2,
+                    columns: 2,
+                    cells: []
+                }
+            }
         }
+    }
 
-        var product = currentConfig.product || {}
-        var device = currentConfig.device || {}
-        var legacy = device.legacySensorProfile || {}
-        var calibration = currentConfig.calibration || {}
-        var can = currentConfig.can || {}
+    function productTemplateConfig() {
+        return currentConfig && currentConfig.product ? currentConfig : defaultProductConfig()
+    }
+
+    function openCloneProductPopup() {
+        var templateConfig = productTemplateConfig()
+        var product = templateConfig.product || {}
+        var calibration = templateConfig.calibration || {}
+        var can = templateConfig.can || {}
         var canopen = can.canopen || {}
-        var protocol = normalizedProtocol(product.protocol || device.expectedProtocol)
+        var protocol = normalizedProtocol(product.protocol)
         var model = product.model || product.name || ""
 
         cloneModelField.text = model ? (model + "-NEW") : ""
@@ -420,14 +502,9 @@ Item {
         cloneCustomerField.text = firstConfiguredCustomerName()
         cloneProtocolBox.currentIndex = protocol === "canopen" ? 1 : 0
         cloneAddressField.text = protocol === "canopen"
-                ? String(device.expectedNodeId !== undefined ? device.expectedNodeId : (canopen.nodeId !== undefined ? canopen.nodeId : ""))
-                : String(device.expectedSourceAddress || product.sourceAddress || "")
-        cloneSensorKindField.text = device.expectedSensorKind || legacy.sensorKind || ""
+                ? canopenCanAddressText(product.canAddress || product.nodeId || canopen.nodeId)
+                : j1939CanAddressText(product.canAddress || product.sourceAddress)
         cloneCalibrationModeBox.currentIndex = calibrationModeIndex(calibration.mode)
-        cloneFirmwareField.text = device.recommendedFirmware || ""
-        cloneRequiresDeviceInfo.checked = calibration.requiresDeviceInfo === true
-        cloneRequiresSensorProfile.checked = calibration.requiresSensorProfile !== false
-        cloneAllowedReadOnly.checked = calibration.allowedInNormalModeReadOnly !== false
         cloneProductError = ""
         cloneProductPopup.open()
         cloneModelField.forceActiveFocus()
@@ -438,7 +515,6 @@ Item {
         var model = sanitizeProductModel(cloneModelField.text)
         var protocol = String(cloneProtocolBox.currentText || "").toLowerCase()
         var addressValue = parseConfigNumber(cloneAddressField.text)
-        var sensorKind = String(cloneSensorKindField.text || "").trim()
 
         if (model.length === 0)
             return "型号不能为空"
@@ -447,19 +523,20 @@ Item {
         if (layoutManager && layoutManager.productConfigExists && layoutManager.productConfigExists(model))
             return "型号文件已存在：" + model + ".json"
         if (isNaN(addressValue))
-            return protocol === "canopen" ? "Node ID 不能为空" : "源地址不能为空"
-        if (sensorKind.length === 0)
-            return "传感器类型不能为空"
+            return "CAN地址不能为空"
         return ""
     }
 
     function buildClonedProductConfig() {
-        var config = deepCopyConfig(currentConfig)
+        var config = deepCopyConfig(productTemplateConfig())
         var model = sanitizeProductModel(cloneModelField.text)
         var protocol = normalizedProtocol(cloneProtocolBox.currentText)
         var addressValue = parseConfigNumber(cloneAddressField.text)
-        var addressText = hexText(addressValue, 2)
-        var sensorKind = String(cloneSensorKindField.text || "").trim()
+        var sourceAddress = j1939SourceAddressFromCanAddress(addressValue)
+        var sourceAddressText = hexText(sourceAddress, 2)
+        var canAddressText = j1939CanAddressText(addressValue)
+        var nodeId = canopenNodeIdFromCanAddress(addressValue)
+        var canopenAddressText = canopenCanAddressText(addressValue)
         var calibrationMode = currentCloneCalibrationMode()
 
         var product = config.product || {}
@@ -476,43 +553,27 @@ Item {
             delete product.customerBindings
         }
         if (protocol === "j1939") {
-            product.sourceAddress = addressText
+            product.canFrameFormat = "extended"
+            product.canAddress = canAddressText
+            product.sourceAddress = sourceAddressText
             delete product.nodeId
         } else {
+            product.canFrameFormat = "standard"
+            product.canAddress = canopenAddressText
+            product.nodeId = nodeId
             delete product.sourceAddress
         }
         config.product = product
 
-        var device = config.device || {}
-        device.expectedProtocol = protocol
-        device.expectedProductCode = model
-        device.expectedSensorKind = sensorKind
-        device.recommendedFirmware = String(cloneFirmwareField.text || "").trim()
-        if (protocol === "j1939") {
-            device.expectedSourceAddress = addressText
-            delete device.expectedNodeId
-        } else {
-            device.expectedNodeId = addressValue
-            delete device.expectedSourceAddress
-        }
-        var legacy = device.legacySensorProfile || {}
-        legacy.sensorKind = sensorKind
-        legacy.calibrationModel = calibrationMode
-        device.legacySensorProfile = legacy
-        config.device = device
-
         var calibration = config.calibration || {}
         calibration.mode = calibrationMode
         calibration.transport = protocol === "canopen" ? "canopenSdo" : "j1939VendorPgn"
-        calibration.requiresDeviceInfo = cloneRequiresDeviceInfo.checked
-        calibration.requiresSensorProfile = cloneRequiresSensorProfile.checked
-        calibration.allowedInNormalModeReadOnly = cloneAllowedReadOnly.checked
         config.calibration = calibration
 
         if (protocol === "canopen") {
             var can = config.can || {}
             var canopen = can.canopen || {}
-            canopen.nodeId = addressValue
+            canopen.nodeId = nodeId
             can.canopen = canopen
             config.can = can
         }
@@ -525,7 +586,8 @@ Item {
         if (cloneProductError.length > 0)
             return
 
-        syncCurrentLayoutFromCells()
+        if (currentConfig && currentConfig.product)
+            syncCurrentLayoutFromCells()
         var model = sanitizeProductModel(cloneModelField.text)
         var config = buildClonedProductConfig()
         if (!layoutManager.saveProductConfigAs(config, model))
@@ -928,8 +990,8 @@ Item {
             Label { visible: !!currentConfig.product; text: root.productDescriptionText(); font.pixelSize: 10; color: dtTextSec; elide: Text.ElideRight; Layout.fillWidth: true }
             Item { Layout.fillWidth: true }
             Button {
-                text: "复制为新产品"
-                enabled: currentConfig && currentConfig.product
+                text: "创建新产品"
+                enabled: true
                 font.pixelSize: 11
                 onClicked: openCloneProductPopup()
             }
@@ -1982,13 +2044,6 @@ Item {
             id: cloneProductContent
             spacing: 10
 
-            Label {
-                text: "另存为新型号"
-                font.pixelSize: 15
-                font.bold: true
-                color: dtText
-            }
-
             GridLayout {
                 Layout.fillWidth: true
                 columns: 2
@@ -2001,7 +2056,6 @@ Item {
                     Layout.fillWidth: true
                     selectByMouse: true
                     font.pixelSize: 11
-                    placeholderText: "例如 JC6000-BGA-HM046"
                     onTextChanged: cloneProductError = ""
                 }
 
@@ -2011,7 +2065,6 @@ Item {
                     Layout.fillWidth: true
                     selectByMouse: true
                     font.pixelSize: 11
-                    placeholderText: "默认同型号"
                 }
 
                 Label { text: "描述"; color: dtText; font.pixelSize: 11 }
@@ -2022,16 +2075,14 @@ Item {
                     selectByMouse: true
                     wrapMode: TextEdit.Wrap
                     font.pixelSize: 11
-                    placeholderText: "产品描述"
                 }
 
-                Label { text: "目标客户"; color: dtText; font.pixelSize: 11 }
+                Label { text: "客户"; color: dtText; font.pixelSize: 11 }
                 TextField {
                     id: cloneCustomerField
                     Layout.fillWidth: true
                     selectByMouse: true
                     font.pixelSize: 11
-                    placeholderText: "例如 客户A"
                     onTextChanged: cloneProductError = ""
                 }
 
@@ -2041,30 +2092,20 @@ Item {
                     Layout.fillWidth: true
                     model: cloneProtocolOptions
                     font.pixelSize: 11
-                    onCurrentTextChanged: cloneProductError = ""
+                    onCurrentTextChanged: {
+                        cloneProductError = ""
+                        if (cloneProductPopup.opened && activeFocus)
+                            resetCloneAddressForProtocol()
+                    }
+                    onActivated: resetCloneAddressForProtocol()
                 }
 
-                Label {
-                    text: normalizedProtocol(cloneProtocolBox.currentText) === "canopen" ? "Node ID" : "源地址"
-                    color: dtText
-                    font.pixelSize: 11
-                }
+                Label { text: cloneAddressLabel(); color: dtText; font.pixelSize: 11 }
                 TextField {
                     id: cloneAddressField
                     Layout.fillWidth: true
                     selectByMouse: true
                     font.pixelSize: 11
-                    placeholderText: normalizedProtocol(cloneProtocolBox.currentText) === "canopen" ? "72 或 0x48" : "0x33"
-                    onTextChanged: cloneProductError = ""
-                }
-
-                Label { text: "传感器"; color: dtText; font.pixelSize: 11 }
-                TextField {
-                    id: cloneSensorKindField
-                    Layout.fillWidth: true
-                    selectByMouse: true
-                    font.pixelSize: 11
-                    placeholderText: "MT6501 / MLX90316"
                     onTextChanged: cloneProductError = ""
                 }
 
@@ -2078,43 +2119,6 @@ Item {
                     font.pixelSize: 11
                 }
 
-                Label { text: "推荐固件"; color: dtText; font.pixelSize: 11 }
-                TextField {
-                    id: cloneFirmwareField
-                    Layout.fillWidth: true
-                    selectByMouse: true
-                    font.pixelSize: 11
-                    placeholderText: "可留空"
-                }
-            }
-
-            RowLayout {
-                Layout.fillWidth: true
-                spacing: 8
-
-                CheckBox {
-                    id: cloneRequiresDeviceInfo
-                    text: "需设备信息"
-                    font.pixelSize: 10
-                }
-                CheckBox {
-                    id: cloneRequiresSensorProfile
-                    text: "需传感器档案"
-                    font.pixelSize: 10
-                }
-                CheckBox {
-                    id: cloneAllowedReadOnly
-                    text: "普通模式只读"
-                    font.pixelSize: 10
-                }
-            }
-
-            Label {
-                Layout.fillWidth: true
-                text: "保存文件：" + (sanitizeProductModel(cloneModelField.text) || "---") + ".json"
-                color: dtTextSec
-                font.pixelSize: 10
-                elide: Text.ElideMiddle
             }
 
             Label {
@@ -2135,7 +2139,7 @@ Item {
                     onClicked: cloneProductPopup.close()
                 }
                 Button {
-                    text: "保存新型号"
+                    text: "保存新产品"
                     font.pixelSize: 11
                     palette.button: dtAccent
                     palette.buttonText: "white"

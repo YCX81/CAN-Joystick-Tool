@@ -421,16 +421,6 @@ bool LayoutManager::ensureDirectoryExists(const QString &path)
     return true;
 }
 
-QUrl LayoutManager::toFileUrl(const QString &path)
-{
-    return QUrl::fromLocalFile(path);
-}
-
-QString LayoutManager::fromFileUrl(const QUrl &url)
-{
-    return url.toLocalFile();
-}
-
 // ========== 私有方法 ==========
 
 bool LayoutManager::writeJsonFile(const QString &path, const QJsonDocument &doc)

@@ -9,7 +9,6 @@
 #include <QFile>
 #include <QDir>
 #include <QStandardPaths>
-#include <QUrl>
 #include <QQmlEngine>
 
 /**
@@ -147,16 +146,6 @@ public:
      * @brief 确保目录存在
      */
     Q_INVOKABLE bool ensureDirectoryExists(const QString &path);
-
-    /**
-     * @brief 获取文件的URL形式（用于QML FileDialog）
-     */
-    Q_INVOKABLE QUrl toFileUrl(const QString &path);
-
-    /**
-     * @brief 从URL获取本地路径
-     */
-    Q_INVOKABLE QString fromFileUrl(const QUrl &url);
 
 signals:
     void layoutsDirectoryChanged();
