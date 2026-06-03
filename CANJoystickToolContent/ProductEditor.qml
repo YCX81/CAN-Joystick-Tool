@@ -152,7 +152,7 @@ Item {
     }
 
     function j1939DefaultCanAddress(sourceAddress) {
-        return composeJ1939Id(3, 0xFDD6, sourceAddress, 0xFF)
+        return composeJ1939Id(6, 0xFDD6, sourceAddress, 0xFF)
     }
 
     function j1939CanAddressText(value) {
@@ -186,6 +186,8 @@ Item {
     function productAddressText() {
         var product = currentConfig.product || {}
         var protocol = String(product.protocol || "j1939").toLowerCase()
+        if (protocol === "can")
+            return product.canAddress || "---"
         if (protocol === "canopen")
             return canopenCanAddressText(product.canAddress || product.nodeId)
         return j1939CanAddressText(product.canAddress || product.sourceAddress)
@@ -244,10 +246,10 @@ Item {
         var product = currentConfig.product || {}
         var protocol = String(product.protocol || "j1939").toLowerCase()
 
-        if (protocol === "canopen") {
+        if (protocol === "can" || protocol === "canopen") {
             var canId = parseConfigNumber(message.canId)
             if (!isNaN(canId))
-                return hexText(canId, 3)
+                return hexText(canId, protocol === "can" && (message.frameFormat || product.canFrameFormat) === "extended" ? 8 : 3)
             return "CAN-ID 未配置"
         }
 
@@ -255,13 +257,15 @@ Item {
         if (isNaN(pgn))
             return "PGN 未配置"
 
-        var source = parseConfigNumber(product.sourceAddress)
+        var source = j1939SourceAddressFromCanAddress(parseConfigNumber(product.canAddress))
+        if (isNaN(source))
+            source = parseConfigNumber(product.sourceAddress)
         if (isNaN(source))
             return "PGN " + hexText(pgn, 4) + " / SA未配置"
 
         var priority = parseConfigNumber(message.priority)
         if (isNaN(priority))
-            priority = 3
+            priority = 6
         var id = composeJ1939Id(priority, pgn, source, 0xFF)
         return hexText(id, 8)
     }
@@ -272,7 +276,9 @@ Item {
         var parts = []
         parts.push("DLC " + (message.dlc !== undefined ? message.dlc : 8))
 
-        if (protocol === "canopen") {
+        if (protocol === "can") {
+            parts.push((message.frameFormat || product.canFrameFormat || "standard") === "extended" ? "扩展帧" : "标准帧")
+        } else if (protocol === "canopen") {
             var formula = message.cobIdFormula || ""
             if (formula !== "")
                 parts.push(formula)
@@ -326,7 +332,9 @@ Item {
             rows.push({
                 lbl: previewFrameLabel(message),
                 cid: previewFrameIdText(message),
-                period: previewPeriodText(message),
+                period: "--",
+                count: "0",
+                data: "--",
                 detail: previewFrameDetail(message),
                 warn: previewFrameWarning(message)
             })
@@ -337,19 +345,19 @@ Item {
     function previewFrameWarning(message) {
         var product = currentConfig.product || {}
         var protocol = String(product.protocol || "j1939").toLowerCase()
-        var id = String(message.id || "").toLowerCase()
 
         if (protocol === "j1939") {
             if (isNaN(parseConfigNumber(message.pgn)))
                 return "PGN缺失"
-            if (isNaN(parseConfigNumber(product.sourceAddress)))
+            var source = j1939SourceAddressFromCanAddress(parseConfigNumber(product.canAddress))
+            if (isNaN(source))
+                source = parseConfigNumber(product.sourceAddress)
+            if (isNaN(source))
                 return "SA缺失"
-        } else if (protocol === "canopen" && isNaN(parseConfigNumber(message.canId))) {
+        } else if ((protocol === "can" || protocol === "canopen") && isNaN(parseConfigNumber(message.canId))) {
             return "ID缺失"
         }
 
-        if (isNaN(previewFramePeriodMs(message)) && id !== "addressclaim" && id !== "address_claim")
-            return "周期未配置"
         return ""
     }
 
@@ -1593,10 +1601,10 @@ Item {
 
                                             Repeater {
                                                 model: [
-                                                    { label: "协议", value: rawFramesPanel.protocolText },
-                                                    { label: "产品", value: rawFramesPanel.productText },
-                                                    { label: "报文", value: rawFramesPanel.expectedRows.length + " 条" },
-                                                    { label: "异常", value: previewDiagnosticText() }
+                                                    { label: "总线负载", value: "--" },
+                                                    { label: "Count", value: "--" },
+                                                    { label: "平均间隔", value: "--" },
+                                                    { label: "最小/最大", value: "-- / --" }
                                                 ]
 
                                                 Rectangle {
@@ -1611,9 +1619,9 @@ Item {
                                                         id: rawInfoText
                                                         anchors.centerIn: parent
                                                         text: modelData.label + " " + modelData.value
-                                                        color: modelData.label === "异常" ? dtWarning : dtTextSec
+                                                        color: dtTextSec
                                                         font.pixelSize: rawFramesPanel.metaFont
-                                                        font.bold: modelData.label === "异常"
+                                                        font.bold: false
                                                         elide: Text.ElideRight
                                                         width: parent.width - 10
                                                     }
@@ -1671,11 +1679,19 @@ Item {
                                                             font.family: "Consolas"
                                                             font.bold: true
                                                             elide: Text.ElideRight
-                                                            width: Math.max(1, parent.width - frameIdText.width - parent.spacing)
+                                                            width: Math.max(70, parent.width * 0.24)
+                                                        }
+                                                        Text {
+                                                            text: "Count " + modelData.count
+                                                            color: dtTextSec
+                                                            font.pixelSize: rawFramesPanel.metaFont
+                                                            font.family: "Consolas"
+                                                            elide: Text.ElideRight
+                                                            width: Math.max(1, parent.width - frameIdText.width - Math.max(70, parent.width * 0.24) - parent.spacing * 2)
                                                         }
                                                     }
                                                     Text {
-                                                        text: modelData.warn !== "" ? (modelData.detail + " · " + modelData.warn) : modelData.detail
+                                                        text: "Data " + modelData.data + " · " + (modelData.warn !== "" ? (modelData.detail + " · " + modelData.warn) : modelData.detail)
                                                         color: modelData.warn !== "" ? dtWarning : dtText
                                                         font.pixelSize: rawFramesPanel.metaFont
                                                         font.family: "Consolas"
@@ -1689,6 +1705,7 @@ Item {
                                         Row {
                                             width: parent.width
                                             spacing: 5
+                                            visible: rawFramesPanel.expectedRows.length === 0
 
                                             Rectangle {
                                                 width: 8
@@ -1698,9 +1715,7 @@ Item {
                                                 anchors.verticalCenter: parent.verticalCenter
                                             }
                                             Text {
-                                                text: rawFramesPanel.expectedRows.length > 0
-                                                      ? "预览配置：周期来自产品JSON，错误帧/超时由下载工具运行态统计"
-                                                      : "未配置CAN报文"
+                                                text: "未配置CAN报文"
                                                 color: dtTextMuted
                                                 font.pixelSize: rawFramesPanel.metaFont
                                                 elide: Text.ElideRight
