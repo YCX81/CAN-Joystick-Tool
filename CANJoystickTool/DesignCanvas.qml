@@ -119,7 +119,7 @@ AluminumPanel {
         id: contextMenu
         parent: Overlay.overlay ? Overlay.overlay : root
         width: 180
-        height: menuColumn.height + 12
+        height: menuColumn.implicitHeight + 12
         padding: 0
         modal: false
         dim: false
@@ -210,8 +210,8 @@ AluminumPanel {
     Connections {
         target: canvasMouseArea
         function onPressed(mouse) {
-            if (contextMenu.visible) contextMenu.close()
-            if (bindingEditor.visible) bindingEditor.visible = false
+            if (contextMenu.opened) contextMenu.close()
+            if (bindingEditor.opened) bindingEditor.close()
         }
     }
 
@@ -331,74 +331,109 @@ AluminumPanel {
     }
 
     // ========== 绑定编辑器 ==========
-    Rectangle {
+    Popup {
         id: bindingEditor
-        visible: false; z: 202
-        width: 200; radius: 10
-        color: "#f0f0f4"; border.width: 1; border.color: "#18000000"
-        height: bindingCol.height + 16
+        parent: Overlay.overlay ? Overlay.overlay : root
+        width: 220
+        height: Math.min(bindingCol.implicitHeight + 16, maxPopupHeight)
+        padding: 0
+        modal: false
+        dim: false
+        focus: true
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
 
         property var targetComponent: null
         property var filteredBindings: []
+        readonly property real maxPopupHeight: Math.max(150, Math.min(360, popupHostHeight(bindingEditor) - 16))
 
-        Column {
-            id: bindingCol
-            anchors.left: parent.left; anchors.right: parent.right
-            anchors.top: parent.top; anchors.margins: 8
-            spacing: 4
+        background: Rectangle {
+            radius: 10
+            color: "#f0f0f4"
+            border.width: 1
+            border.color: "#18000000"
+        }
 
-            Text { text: "设置数据绑定"; font.pixelSize: 11; font.bold: true; color: "#2a2a2e" }
+        contentItem: Flickable {
+            id: bindingFlick
+            implicitWidth: bindingEditor.width
+            implicitHeight: bindingEditor.height
+            contentWidth: width
+            contentHeight: bindingCol.implicitHeight + 16
+            boundsBehavior: Flickable.StopAtBounds
+            clip: contentHeight > height
 
-            Text {
-                text: "当前: " + (bindingEditor.targetComponent ? (bindingEditor.targetComponent.bindingId || "无") : "无")
-                font.pixelSize: 9; color: "#76767e"
+            ScrollBar.vertical: ScrollBar {
+                policy: bindingFlick.contentHeight > bindingFlick.height
+                        ? ScrollBar.AsNeeded : ScrollBar.AlwaysOff
             }
 
-            Rectangle { width: parent.width; height: 1; color: "#15000000" }
+            Column {
+                id: bindingCol
+                x: 8
+                y: 8
+                width: bindingFlick.width - 16
+                spacing: 4
 
-            // Clear binding
-            Rectangle {
-                width: parent.width; height: 26; radius: 4
-                color: clearMA.containsMouse ? "#08000000" : "transparent"
-                Text { anchors.centerIn: parent; text: "清除绑定"; font.pixelSize: 10; color: "#ff453a" }
-                MouseArea { id: clearMA; anchors.fill: parent; hoverEnabled: true
-                    onClicked: { if (bindingEditor.targetComponent) bindingEditor.targetComponent.bindingId = ""; bindingEditor.visible = false; layoutModified() }
+                Text { text: "设置数据绑定"; font.pixelSize: 11; font.bold: true; color: "#2a2a2e" }
+
+                Text {
+                    text: "当前: " + (bindingEditor.targetComponent ? (bindingEditor.targetComponent.bindingId || "无") : "无")
+                    font.pixelSize: 9; color: "#76767e"
                 }
-            }
 
-            // Filtered binding options
-            Repeater {
-                model: bindingEditor.filteredBindings
+                Rectangle { width: parent.width; height: 1; color: "#15000000" }
+
+                // Clear binding
                 Rectangle {
-                    width: bindingCol.width; height: 26; radius: 4
-                    color: {
-                        var isCurrent = bindingEditor.targetComponent && bindingEditor.targetComponent.bindingId === modelData.bindId
-                        return isCurrent ? "#e8f0fe" : (bma.containsMouse ? "#08000000" : "transparent")
-                    }
-                    Row {
-                        anchors.fill: parent; anchors.leftMargin: 8; spacing: 6
-                        Rectangle { width: 6; height: 6; radius: 3; anchors.verticalCenter: parent.verticalCenter; color: modelData.color || "#007aff" }
-                        Text { text: modelData.bindId; font.pixelSize: 9; font.bold: true; color: "#2a2a2e"; anchors.verticalCenter: parent.verticalCenter }
-                        Text { text: modelData.desc || ""; font.pixelSize: 8; color: "#76767e"; anchors.verticalCenter: parent.verticalCenter }
-                    }
-                    MouseArea { id: bma; anchors.fill: parent; hoverEnabled: true
+                    width: parent.width; height: 26; radius: 4
+                    color: clearMA.containsMouse ? "#08000000" : "transparent"
+                    Text { anchors.centerIn: parent; text: "清除绑定"; font.pixelSize: 10; color: "#ff453a" }
+                    MouseArea { id: clearMA; anchors.fill: parent; hoverEnabled: true
                         onClicked: {
-                            if (bindingEditor.targetComponent) bindingEditor.targetComponent.bindingId = modelData.bindId
-                            bindingEditor.visible = false; layoutModified()
+                            if (bindingEditor.targetComponent)
+                                bindingEditor.targetComponent.bindingId = ""
+                            bindingEditor.close()
+                            root.layoutModified()
                         }
                     }
                 }
-            }
 
-            // Hint when no options
-            Text {
-                visible: bindingEditor.filteredBindings.length === 0
-                text: "无匹配的绑定项"; font.pixelSize: 9; color: "#a0a0a8"
+                // Filtered binding options
+                Repeater {
+                    model: bindingEditor.filteredBindings
+                    Rectangle {
+                        width: bindingCol.width; height: 26; radius: 4
+                        color: {
+                            var isCurrent = bindingEditor.targetComponent && bindingEditor.targetComponent.bindingId === modelData.bindId
+                            return isCurrent ? "#e8f0fe" : (bma.containsMouse ? "#08000000" : "transparent")
+                        }
+                        Row {
+                            anchors.fill: parent; anchors.leftMargin: 8; spacing: 6
+                            Rectangle { width: 6; height: 6; radius: 3; anchors.verticalCenter: parent.verticalCenter; color: modelData.color || "#007aff" }
+                            Text { text: modelData.bindId; font.pixelSize: 9; font.bold: true; color: "#2a2a2e"; anchors.verticalCenter: parent.verticalCenter }
+                            Text { text: modelData.desc || ""; font.pixelSize: 8; color: "#76767e"; anchors.verticalCenter: parent.verticalCenter }
+                        }
+                        MouseArea { id: bma; anchors.fill: parent; hoverEnabled: true
+                            onClicked: {
+                                if (bindingEditor.targetComponent)
+                                    bindingEditor.targetComponent.bindingId = modelData.bindId
+                                bindingEditor.close()
+                                root.layoutModified()
+                            }
+                        }
+                    }
+                }
+
+                // Hint when no options
+                Text {
+                    visible: bindingEditor.filteredBindings.length === 0
+                    text: "无匹配的绑定项"; font.pixelSize: 9; color: "#a0a0a8"
+                }
             }
         }
     }
 
-    // bindingEditor close is handled by canvasMouseArea Connections above
+    // bindingEditor also closes through Popup.CloseOnPressOutside.
 
     // Available bindings (set from ProductEditor via property)
     property var productBindings: []
@@ -447,17 +482,62 @@ AluminumPanel {
         return result
     }
 
+    function popupHost(popup) {
+        return popup.parent || root
+    }
+
+    function popupHostWidth(popup) {
+        var host = popupHost(popup)
+        return host && host.width > 0 ? host.width : root.width
+    }
+
+    function popupHostHeight(popup) {
+        var host = popupHost(popup)
+        return host && host.height > 0 ? host.height : root.height
+    }
+
+    function popupEffectiveHeight(popup, fallbackHeight) {
+        if (popup.height > 0) return popup.height
+        if (popup.implicitHeight > 0) return popup.implicitHeight
+        return fallbackHeight || 0
+    }
+
+    function clampPopupToHost(popup, hostX, hostY, fallbackHeight) {
+        var margin = 8
+        var maxX = Math.max(margin, popupHostWidth(popup) - popup.width - margin)
+        var maxY = Math.max(margin, popupHostHeight(popup) - popupEffectiveHeight(popup, fallbackHeight) - margin)
+        popup.x = Math.max(margin, Math.min(hostX, maxX))
+        popup.y = Math.max(margin, Math.min(hostY, maxY))
+    }
+
+    function placePopupFromRootPoint(popup, rootX, rootY, fallbackHeight) {
+        var host = popupHost(popup)
+        var pos = root.mapToItem(host, rootX, rootY)
+        clampPopupToHost(popup, pos.x, pos.y, fallbackHeight)
+    }
+
+    function placeBindingEditorForWrapper(wrapper) {
+        var host = popupHost(bindingEditor)
+        var bottomPos = wrapper.mapToItem(host, wrapper.width / 2, wrapper.height)
+        var topPos = wrapper.mapToItem(host, wrapper.width / 2, 0)
+        var popupHeight = popupEffectiveHeight(bindingEditor, 220)
+        var desiredX = bottomPos.x - bindingEditor.width / 2
+        var desiredY = bottomPos.y + 10
+        if (desiredY + popupHeight > popupHostHeight(bindingEditor) - 8)
+            desiredY = topPos.y - popupHeight - 10
+        clampPopupToHost(bindingEditor, desiredX, desiredY, 220)
+    }
+
     function showBindingEditor(wrapper) {
+        if (!wrapper) return
         bindingEditor.targetComponent = wrapper
         bindingEditor.filteredBindings = getFilteredBindings(wrapper.componentType)
-        var displayPos = wrapper.mapToItem(root, wrapper.width / 2, wrapper.height)
-        var cx = displayPos.x
-        var cy = displayPos.y + 10
-        if (cy + 200 > root.height)
-            cy = wrapper.mapToItem(root, wrapper.width / 2, 0).y - 200
-        bindingEditor.x = Math.max(10, Math.min(cx - 90, root.width - 200))
-        bindingEditor.y = Math.max(10, Math.min(cy, root.height - 100))
-        bindingEditor.visible = true
+        placeBindingEditorForWrapper(wrapper)
+        bindingEditor.open()
+        Qt.callLater(function() {
+            if (bindingEditor.opened && bindingEditor.targetComponent === wrapper)
+                placeBindingEditorForWrapper(wrapper)
+        })
     }
 
     // ========== 功能函数 ==========
@@ -604,14 +684,8 @@ AluminumPanel {
 
     function showContextMenu(wrapper, mx, my) {
         contextMenu.targetComponent = wrapper
-        var menuParent = contextMenu.parent || root
-        var pos = root.mapToItem(menuParent, mx, my)
-        var maxX = menuParent && menuParent.width > 0 ? menuParent.width - contextMenu.width - 8
-                                                      : root.width - contextMenu.width - 8
-        var maxY = menuParent && menuParent.height > 0 ? menuParent.height - contextMenu.height - 8
-                                                       : root.height - contextMenu.height - 8
-        contextMenu.x = Math.max(8, Math.min(pos.x, maxX))
-        contextMenu.y = Math.max(8, Math.min(pos.y, maxY))
+        if (bindingEditor.opened) bindingEditor.close()
+        placePopupFromRootPoint(contextMenu, mx, my, 180)
         contextMenu.open()
     }
 
