@@ -15,6 +15,9 @@
 #include <QSet>
 #include <QStringList>
 #include <QUuid>
+#include <QVector>
+
+#include <algorithm>
 
 namespace {
 
@@ -79,6 +82,127 @@ QString versionCodeFromProductConfig(const QJsonObject &configJson, const QFileI
     }
     return versionCode.isEmpty() ? QStringLiteral("V1") : versionCode.toUpper();
 }
+
+QString displayVersionFromProductConfig(const QJsonObject &configJson, const QFileInfo &fileInfo)
+{
+    const QJsonObject firmware = configJson.value(QStringLiteral("firmware")).toObject();
+    QString displayVersion = firmware.value(QStringLiteral("display_version")).toString().trimmed();
+    if (displayVersion.isEmpty()) {
+        displayVersion = firmware.value(QStringLiteral("displayVersion")).toString().trimmed();
+    }
+    return displayVersion.isEmpty() ? versionCodeFromProductConfig(configJson, fileInfo) : displayVersion;
+}
+
+QString normalizedProductVersionStatus(const QString &status)
+{
+    const QString value = status.trimmed().toLower();
+    if (value.isEmpty()
+        || value == QStringLiteral("active")
+        || value == QStringLiteral("current")
+        || value == QStringLiteral("released")
+        || value == QStringLiteral("stable")
+        || value == QStringLiteral("使用中")
+        || value == QStringLiteral("启用")) {
+        return QStringLiteral("active");
+    }
+
+    if (value == QStringLiteral("deprecated")
+        || value == QStringLiteral("obsolete")
+        || value == QStringLiteral("retired")
+        || value == QStringLiteral("inactive")
+        || value == QStringLiteral("disabled")
+        || value == QStringLiteral("弃用")
+        || value == QStringLiteral("废弃")
+        || value == QStringLiteral("停用")) {
+        return QStringLiteral("deprecated");
+    }
+
+    return value;
+}
+
+QString statusFromProductConfig(const QJsonObject &configJson)
+{
+    const QJsonObject firmware = configJson.value(QStringLiteral("firmware")).toObject();
+    QString status = firmware.value(QStringLiteral("status")).toString().trimmed();
+    if (status.isEmpty()) {
+        status = firmware.value(QStringLiteral("lifecycle")).toString().trimmed();
+    }
+    if (status.isEmpty()) {
+        status = configJson.value(QStringLiteral("status")).toString().trimmed();
+    }
+    if (status.isEmpty()) {
+        status = configJson.value(QStringLiteral("lifecycle")).toString().trimmed();
+    }
+    return normalizedProductVersionStatus(status);
+}
+
+QVector<int> numericVersionParts(const QString &versionCode)
+{
+    QString text = versionCode.trimmed();
+    if (text.startsWith(QLatin1Char('V'), Qt::CaseInsensitive)) {
+        text.remove(0, 1);
+    }
+
+    QVector<int> result;
+    for (const QString &part : text.split(QLatin1Char('.'), Qt::SkipEmptyParts)) {
+        bool ok = false;
+        const int value = part.toInt(&ok);
+        if (!ok) {
+            return {};
+        }
+        result.append(value);
+    }
+    return result;
+}
+
+int compareVersionCodes(const QString &left, const QString &right)
+{
+    const QVector<int> leftParts = numericVersionParts(left);
+    const QVector<int> rightParts = numericVersionParts(right);
+    if (!leftParts.isEmpty() && !rightParts.isEmpty()) {
+        const int partCount = std::max(leftParts.size(), rightParts.size());
+        for (int i = 0; i < partCount; ++i) {
+            const int leftPart = i < leftParts.size() ? leftParts.at(i) : 0;
+            const int rightPart = i < rightParts.size() ? rightParts.at(i) : 0;
+            if (leftPart != rightPart) {
+                return leftPart < rightPart ? -1 : 1;
+            }
+        }
+        return 0;
+    }
+
+    return QString::compare(left, right, Qt::CaseInsensitive);
+}
+
+bool productVersionLessThan(const QJsonObject &left, const QJsonObject &right)
+{
+    const int leftStatusRank = left.value(QStringLiteral("deprecated")).toBool() ? 1 : 0;
+    const int rightStatusRank = right.value(QStringLiteral("deprecated")).toBool() ? 1 : 0;
+    if (leftStatusRank != rightStatusRank) {
+        return leftStatusRank < rightStatusRank;
+    }
+
+    const int versionCompare = compareVersionCodes(
+        left.value(QStringLiteral("versionCode")).toString(),
+        right.value(QStringLiteral("versionCode")).toString());
+    if (versionCompare != 0) {
+        return versionCompare > 0;
+    }
+
+    return QString::compare(
+               left.value(QStringLiteral("name")).toString(),
+               right.value(QStringLiteral("name")).toString(),
+               Qt::CaseInsensitive) < 0;
+}
+
+struct ProductFileGroup
+{
+    QString displayName;
+    QString model;
+    QString protocol;
+    QString description;
+    QVector<QJsonObject> versions;
+};
 
 QString assetRootNameForDirectory(const QString &directory)
 {
@@ -767,6 +891,7 @@ QJsonArray LayoutManager::getProductFiles()
     }
     paths.sort(Qt::CaseInsensitive);
 
+    QMap<QString, ProductFileGroup> groupedFiles;
     for (const QString &path : paths) {
         const QFileInfo fileInfo(path);
         if (fileInfo.baseName() == QStringLiteral("card_templates")) {
@@ -783,15 +908,65 @@ QJsonArray LayoutManager::getProductFiles()
             continue;
         }
 
+        const QString baseProductName = productBaseNameFromVersionedName(productName);
+        if (baseProductName.isEmpty()) {
+            continue;
+        }
+
+        ProductFileGroup &group = groupedFiles[baseProductName.toCaseFolded()];
+        if (group.model.isEmpty()) {
+            group.displayName = baseProductName;
+            group.model = baseProductName;
+            group.protocol = product.value(QStringLiteral("protocol")).toString(QStringLiteral("j1939"));
+            group.description = product.value(QStringLiteral("description")).toString();
+        } else if (group.description.isEmpty()) {
+            group.description = product.value(QStringLiteral("description")).toString();
+        }
+
+        const QJsonObject firmware = root.value(QStringLiteral("firmware")).toObject();
+        const QString versionStatus = statusFromProductConfig(root);
+        QJsonObject versionObj;
+        versionObj["name"] = fileInfo.baseName();
+        versionObj["path"] = fileInfo.absoluteFilePath();
+        versionObj["modified"] = fileInfo.lastModified().toString(Qt::ISODate);
+        versionObj["size"] = fileInfo.size();
+        versionObj["versionCode"] = versionCodeFromProductConfig(root, fileInfo);
+        versionObj["displayVersion"] = displayVersionFromProductConfig(root, fileInfo);
+        versionObj["status"] = versionStatus;
+        versionObj["deprecated"] = versionStatus == QStringLiteral("deprecated");
+        versionObj["description"] = firmware.value(QStringLiteral("description"))
+            .toString(product.value(QStringLiteral("description")).toString());
+        group.versions.append(versionObj);
+    }
+
+    for (auto it = groupedFiles.cbegin(); it != groupedFiles.cend(); ++it) {
+        ProductFileGroup group = it.value();
+        if (group.versions.isEmpty()) {
+            continue;
+        }
+
+        std::sort(group.versions.begin(), group.versions.end(), productVersionLessThan);
+
+        QJsonArray versions;
+        for (const QJsonObject &version : group.versions) {
+            versions.append(version);
+        }
+
+        const QJsonObject defaultVersion = group.versions.constFirst();
         QJsonObject fileObj;
-        fileObj["name"] = fileInfo.baseName();
-        fileObj["path"] = fileInfo.absoluteFilePath();
-        fileObj["modified"] = fileInfo.lastModified().toString(Qt::ISODate);
-        fileObj["size"] = fileInfo.size();
-        fileObj["displayName"] = productBaseNameFromVersionedName(productName);
-        fileObj["protocol"] = product.value(QStringLiteral("protocol")).toString(QStringLiteral("j1939"));
-        fileObj["description"] = product.value(QStringLiteral("description")).toString();
-        fileObj["model"] = productBaseNameFromVersionedName(productName);
+        fileObj["name"] = group.model;
+        fileObj["path"] = defaultVersion.value(QStringLiteral("path")).toString();
+        fileObj["modified"] = defaultVersion.value(QStringLiteral("modified")).toString();
+        fileObj["size"] = defaultVersion.value(QStringLiteral("size")).toVariant().toLongLong();
+        fileObj["displayName"] = group.displayName;
+        fileObj["protocol"] = group.protocol;
+        fileObj["description"] = group.description;
+        fileObj["model"] = group.model;
+        fileObj["versionCode"] = defaultVersion.value(QStringLiteral("versionCode")).toString();
+        fileObj["displayVersion"] = defaultVersion.value(QStringLiteral("displayVersion")).toString();
+        fileObj["status"] = defaultVersion.value(QStringLiteral("status")).toString();
+        fileObj["deprecated"] = defaultVersion.value(QStringLiteral("deprecated")).toBool();
+        fileObj["versions"] = versions;
         files.append(fileObj);
     }
 

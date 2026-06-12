@@ -10,6 +10,8 @@ Item {
     property var layoutManager: typeof LayoutManager !== 'undefined' ? LayoutManager : null
     property var currentConfig: ({})
     property string currentFilePath: ""
+    property var productEntries: []
+    property int currentVersionIndex: -1
     property bool hasUnsavedChanges: false
     property bool loadingCells: false
     property int activeCellIndex: 0
@@ -196,38 +198,164 @@ Item {
 
     Component.onCompleted: loadProductList()
 
+    function normalizedProductVersion(version) {
+        var item = version || {}
+        var fallbackLabel = String(item["displayVersion"] || item["versionCode"] || item["name"] || "")
+        return {
+            name: String(item["name"] || fallbackLabel),
+            path: String(item["path"] || ""),
+            modified: String(item["modified"] || ""),
+            size: item["size"] || 0,
+            versionCode: String(item["versionCode"] || fallbackLabel),
+            displayVersion: fallbackLabel,
+            description: String(item["description"] || ""),
+            status: String(item["status"] || "active"),
+            deprecated: item["deprecated"] === true
+        }
+    }
+
+    function findVersionIndexByPath(versions, path) {
+        var target = String(path || "")
+        if (target.length === 0)
+            return -1
+        for (var i = 0; i < versions.length; i++) {
+            if (String(versions[i].path || "") === target)
+                return i
+        }
+        return -1
+    }
+
+    function versionLabel(version) {
+        var label = String((version || {}).displayVersion || (version || {}).versionCode || (version || {}).name || "")
+        return label.length > 0 ? label : "JSON"
+    }
+
+    function versionDisplayLabel(version) {
+        var label = versionLabel(version)
+        return (version || {}).deprecated === true ? label + "（弃用）" : label
+    }
+
     function normalizedProductFile(file) {
         var item = file || {}
-        var fileName = String(item["name"] || "")
+        var versions = []
+        var sourceVersions = item["versions"] || []
+        for (var i = 0; i < sourceVersions.length; i++)
+            versions.push(normalizedProductVersion(sourceVersions[i]))
+        if (versions.length === 0 && String(item["path"] || "").length > 0)
+            versions.push(normalizedProductVersion(item))
+
+        var defaultPath = String(item["path"] || (versions.length > 0 ? versions[0].path : ""))
+        var defaultVersionIndex = findVersionIndexByPath(versions, defaultPath)
+        if (defaultVersionIndex < 0 && versions.length > 0)
+            defaultVersionIndex = 0
+
+        var selectedVersion = defaultVersionIndex >= 0 ? versions[defaultVersionIndex] : null
+        var fileName = String(item["name"] || (selectedVersion ? selectedVersion.name : ""))
         var productName = String(item["model"] || item["displayName"] || fileName)
         return {
-            name: fileName,
-            path: String(item["path"] || ""),
+            name: String(item["name"] || productName),
+            path: selectedVersion ? selectedVersion.path : defaultPath,
             modified: String(item["modified"] || ""),
             size: item["size"] || 0,
             displayName: String(item["displayName"] || productName || fileName),
             productModelName: productName,
             protocol: String(item["protocol"] || "j1939"),
-            description: String(item["description"] || "")
+            description: String(item["description"] || ""),
+            versions: versions,
+            defaultVersionIndex: defaultVersionIndex
         }
     }
 
     function loadProductList() {
         if (!layoutManager) return
         var files = layoutManager.getProductFiles()
+        var entries = []
         productModel.clear()
-        for (var i = 0; i < files.length; i++)
-            productModel.append(normalizedProductFile(files[i]))
+        currentVersionModel.clear()
+        currentVersionIndex = -1
+        for (var i = 0; i < files.length; i++) {
+            var entry = normalizedProductFile(files[i])
+            entries.push(entry)
+            productModel.append({
+                                    name: entry.name,
+                                    path: entry.path,
+                                    modified: entry.modified,
+                                    size: entry.size,
+                                    displayName: entry.displayName,
+                                    productModelName: entry.productModelName,
+                                    protocol: entry.protocol,
+                                    description: entry.description,
+                                    versionCount: entry.versions.length
+                                })
+        }
+        productEntries = entries
     }
 
-    function loadProduct(idx) {
-        if (idx < 0 || idx >= productModel.count) return
-        currentFilePath = productModel.get(idx).path
+    function productEntryAt(idx) {
+        return idx >= 0 && idx < productEntries.length ? productEntries[idx] : null
+    }
+
+    function selectedVersionForEntry(entry, versionIndex) {
+        if (!entry)
+            return null
+        var versions = entry.versions || []
+        if (versionIndex >= 0 && versionIndex < versions.length)
+            return versions[versionIndex]
+        if (entry.defaultVersionIndex >= 0 && entry.defaultVersionIndex < versions.length)
+            return versions[entry.defaultVersionIndex]
+        return versions.length > 0 ? versions[0] : null
+    }
+
+    function refreshVersionModel(entry) {
+        currentVersionModel.clear()
+        var versions = entry ? (entry.versions || []) : []
+        for (var i = 0; i < versions.length; i++) {
+            currentVersionModel.append({
+                                           label: versionLabel(versions[i]),
+                                           path: String(versions[i].path || ""),
+                                           description: String(versions[i].description || ""),
+                                           status: String(versions[i].status || "active"),
+                                           deprecated: versions[i].deprecated === true
+                                       })
+        }
+    }
+
+    function currentVersionOptionAt(index) {
+        return index >= 0 && index < currentVersionModel.count
+                ? currentVersionModel.get(index)
+                : ({})
+    }
+
+    function loadProductVersion(productIndex, versionIndex) {
+        if (productIndex < 0 || productIndex >= productEntries.length)
+            return
+        var entry = productEntryAt(productIndex)
+        var version = selectedVersionForEntry(entry, versionIndex)
+        var resolvedVersionIndex = version ? findVersionIndexByPath(entry.versions || [], version.path) : -1
+        var path = String(version ? version.path : entry.path || "")
+        if (path.length === 0)
+            return
+
+        productList.currentIndex = productIndex
+        refreshVersionModel(entry)
+        currentVersionIndex = resolvedVersionIndex
+        currentFilePath = path
         currentConfig = layoutManager.loadProductConfig(currentFilePath)
         saveProductMessage = ""
         saveProductMessageIsError = false
         hasUnsavedChanges = false
         loadCells()
+    }
+
+    function openCurrentProductConfig() {
+        if (layoutManager && layoutManager.openProductConfigPath && currentFilePath.length > 0)
+            layoutManager.openProductConfigPath(currentFilePath)
+    }
+
+    function loadProduct(idx) {
+        if (idx < 0 || idx >= productModel.count) return
+        var entry = productEntryAt(idx)
+        loadProductVersion(idx, entry ? entry.defaultVersionIndex : -1)
     }
 
     function findProductIndexByName(name) {
@@ -808,6 +936,7 @@ Item {
     }
 
     ListModel { id: productModel }
+    ListModel { id: currentVersionModel }
     ListModel { id: bindingStatusModel }
 
     Connections {
@@ -894,6 +1023,68 @@ Item {
                 Layout.maximumWidth: 360
             }
             Item { Layout.fillWidth: true }
+            ComboBox {
+                id: versionSelector
+                visible: root.currentFilePath !== "" && currentVersionModel.count > 0
+                enabled: currentVersionModel.count > 1
+                model: currentVersionModel
+                textRole: "label"
+                currentIndex: root.currentVersionIndex
+                font.pixelSize: 10
+                Layout.preferredWidth: 108
+                Layout.preferredHeight: 30
+                ToolTip.visible: hovered
+                ToolTip.text: "选择产品 JSON 版本"
+                contentItem: Label {
+                    leftPadding: 12
+                    rightPadding: versionSelector.indicator
+                                  ? versionSelector.indicator.width + versionSelector.spacing + 12
+                                  : 12
+                    verticalAlignment: Text.AlignVCenter
+                    elide: Text.ElideRight
+                    clip: true
+                    text: {
+                        var option = root.currentVersionOptionAt(versionSelector.currentIndex)
+                        return root.versionDisplayLabel(option)
+                    }
+                    color: {
+                        var option = root.currentVersionOptionAt(versionSelector.currentIndex)
+                        return option.deprecated === true ? root.dtTextMuted : root.dtText
+                    }
+                    font.pixelSize: versionSelector.font.pixelSize
+                }
+                delegate: ItemDelegate {
+                    id: versionSelectorDelegate
+                    width: versionSelector.width
+                    highlighted: versionSelector.highlightedIndex === index
+                    property var versionOption: root.currentVersionOptionAt(index)
+                    contentItem: Label {
+                        leftPadding: 12
+                        rightPadding: 12
+                        verticalAlignment: Text.AlignVCenter
+                        elide: Text.ElideRight
+                        clip: true
+                        text: root.versionDisplayLabel(versionSelectorDelegate.versionOption)
+                        color: versionSelectorDelegate.versionOption.deprecated === true ? root.dtTextMuted : root.dtText
+                        font.pixelSize: 10
+                    }
+                }
+                onActivated: function(index) {
+                    if (productList.currentIndex >= 0 && index !== root.currentVersionIndex) {
+                        root.commitCellEdits(-1)
+                        loadProductVersion(productList.currentIndex, index)
+                    }
+                }
+            }
+            Button {
+                text: "打开 JSON"
+                enabled: root.currentFilePath !== ""
+                font.pixelSize: 11
+                focusPolicy: Qt.NoFocus
+                ToolTip.visible: hovered
+                ToolTip.text: "用默认编辑器打开当前版本 JSON"
+                onClicked: openCurrentProductConfig()
+            }
             Button {
                 text: "创建新产品"
                 enabled: true
@@ -973,20 +1164,6 @@ Item {
                                         font.bold: productList.currentIndex === index
                                         color: dtText
                                         elide: Text.ElideRight
-                                    }
-                                }
-                                Button {
-                                    visible: rowHover.hovered
-                                    Layout.preferredWidth: 68
-                                    Layout.preferredHeight: 26
-                                    text: "配置文件"
-                                    font.pixelSize: 10
-                                    focusPolicy: Qt.NoFocus
-                                    ToolTip.visible: hovered
-                                    ToolTip.text: "打开 JSON 配置文件"
-                                    onClicked: {
-                                        if (layoutManager && layoutManager.openProductConfigPath)
-                                            layoutManager.openProductConfigPath(productEntry.path || "")
                                     }
                                 }
                             }
