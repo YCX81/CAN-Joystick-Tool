@@ -15,10 +15,11 @@ Item {
     property int activeCellIndex: 0
     property int productMetadataRevision: 0
     property string cloneProductError: ""
+    property string saveProductMessage: ""
+    property bool saveProductMessageIsError: false
     readonly property int defaultCanvasWidth: Constants.homeCardDesignSize
     readonly property int defaultCanvasHeight: Constants.homeCardDesignSize
     readonly property real panelWidth: 320
-    readonly property var cloneProtocolOptions: [ "j1939", "canopen" ]
     readonly property var cloneCalibrationModeOptions: [
         { label: "中心点", value: "centerOnly" },
         { label: "五点行程", value: "fivePointTravel" }
@@ -36,7 +37,7 @@ Item {
 
     readonly property var cellTypeOptions: [
         { value: "canvas",     label: "画布" },
-        { value: "rawFrames",  label: "报文" },
+        { value: "busStats",   label: "总线统计" },
         { value: "recordInfo", label: "记录" },
         { value: "empty",      label: "空白" }
     ]
@@ -193,202 +194,38 @@ Item {
         return j1939CanAddressText(product.canAddress || product.sourceAddress)
     }
 
-    function cloneFrameFormat() {
-        return normalizedProtocol(cloneProtocolBox.currentText) === "canopen" ? "standard" : "extended"
-    }
-
-    function cloneAddressLabel() {
-        return cloneFrameFormat() === "standard" ? "CAN地址（标准帧）" : "CAN地址（扩展帧）"
-    }
-
-    function resetCloneAddressForProtocol() {
-        cloneAddressField.text = cloneFrameFormat() === "standard" ? "0x748" : "0x0CFDD633"
-    }
-
-    function previewFrameLabel(message) {
-        var id = String(message.id || "").toLowerCase()
-        if (id === "addressclaim" || id === "address_claim")
-            return "ADDR"
-        if (id === "heartbeat")
-            return "HB"
-        if (id.length > 0)
-            return id.toUpperCase()
-        return "MSG"
-    }
-
-    function previewFramePeriodMs(message) {
-        var period = parseConfigNumber(message.period)
-        if (!isNaN(period) && period > 0)
-            return period
-
-        var id = String(message.id || "").toLowerCase()
-        var can = currentConfig.can || {}
-        var canopen = can.canopen || {}
-        if (id === "heartbeat") {
-            var heartbeat = parseConfigNumber(canopen.heartbeatMs)
-            if (!isNaN(heartbeat) && heartbeat > 0)
-                return heartbeat
-        }
-        return NaN
-    }
-
-    function previewPeriodText(message) {
-        var period = previewFramePeriodMs(message)
-        if (isNaN(period) || period <= 0)
-            return "事件触发"
-
-        var hz = 1000 / period
-        var hzText = hz >= 10 ? Math.round(hz).toString() : hz.toFixed(1)
-        return period + " ms / " + hzText + " Hz"
-    }
-
-    function previewFrameIdText(message) {
-        var product = currentConfig.product || {}
-        var protocol = String(product.protocol || "j1939").toLowerCase()
-
-        if (protocol === "can" || protocol === "canopen") {
-            var canId = parseConfigNumber(message.canId)
-            if (!isNaN(canId))
-                return hexText(canId, protocol === "can" && (message.frameFormat || product.canFrameFormat) === "extended" ? 8 : 3)
-            return "CAN-ID 未配置"
-        }
-
-        var pgn = parseConfigNumber(message.pgn)
-        if (isNaN(pgn))
-            return "PGN 未配置"
-
-        var source = j1939SourceAddressFromCanAddress(parseConfigNumber(product.canAddress))
-        if (isNaN(source))
-            source = parseConfigNumber(product.sourceAddress)
-        if (isNaN(source))
-            return "PGN " + hexText(pgn, 4) + " / SA未配置"
-
-        var priority = parseConfigNumber(message.priority)
-        if (isNaN(priority))
-            priority = 6
-        var id = composeJ1939Id(priority, pgn, source, 0xFF)
-        return hexText(id, 8)
-    }
-
-    function previewFrameDetail(message) {
-        var product = currentConfig.product || {}
-        var protocol = String(product.protocol || "j1939").toLowerCase()
-        var parts = []
-        parts.push("DLC " + (message.dlc !== undefined ? message.dlc : 8))
-
-        if (protocol === "can") {
-            parts.push((message.frameFormat || product.canFrameFormat || "standard") === "extended" ? "扩展帧" : "标准帧")
-        } else if (protocol === "canopen") {
-            var formula = message.cobIdFormula || ""
-            if (formula !== "")
-                parts.push(formula)
-        } else if (message.pgn) {
-            parts.push("PGN " + String(message.pgn).toUpperCase())
-        }
-
-        var tags = previewFrameTags(message)
-        if (tags.length > 0)
-            parts.push(tags.join(" / "))
-
-        return parts.join(" · ")
-    }
-
-    function previewFrameTags(message) {
-        var fields = message.fields || []
-        var hasStatus = false
-        var hasCrc = false
-        var hasSelfCheck = false
-        var hasError = false
-
-        for (var i = 0; i < fields.length; i++) {
-            var field = fields[i] || {}
-            var type = String(field.type || "").toLowerCase()
-            var name = String(field.name || "").toLowerCase()
-            if (type === "status")
-                hasStatus = true
-            if (type === "crc" || name.indexOf("crc") >= 0)
-                hasCrc = true
-            if (type === "selfcheck" || name.indexOf("selfcheck") >= 0 || name.indexOf("self_check") >= 0)
-                hasSelfCheck = true
-            if (type.indexOf("error") >= 0 || type.indexOf("fault") >= 0 || type.indexOf("diagnostic") >= 0
-                    || name.indexOf("error") >= 0 || name.indexOf("fault") >= 0 || name.indexOf("alarm") >= 0)
-                hasError = true
-        }
-
-        var tags = []
-        if (hasStatus) tags.push("状态位")
-        if (hasCrc) tags.push("CRC")
-        if (hasSelfCheck) tags.push("自检")
-        if (hasError) tags.push("错误")
-        return tags
-    }
-
-    function expectedRawFrameRows() {
-        var can = currentConfig.can || {}
-        var messages = can.messages || []
-        var rows = []
-        for (var i = 0; i < messages.length; i++) {
-            var message = messages[i] || {}
-            rows.push({
-                lbl: previewFrameLabel(message),
-                cid: previewFrameIdText(message),
-                period: "--",
-                count: "0",
-                data: "--",
-                detail: previewFrameDetail(message),
-                warn: previewFrameWarning(message)
-            })
-        }
-        return rows
-    }
-
-    function previewFrameWarning(message) {
-        var product = currentConfig.product || {}
-        var protocol = String(product.protocol || "j1939").toLowerCase()
-
-        if (protocol === "j1939") {
-            if (isNaN(parseConfigNumber(message.pgn)))
-                return "PGN缺失"
-            var source = j1939SourceAddressFromCanAddress(parseConfigNumber(product.canAddress))
-            if (isNaN(source))
-                source = parseConfigNumber(product.sourceAddress)
-            if (isNaN(source))
-                return "SA缺失"
-        } else if ((protocol === "can" || protocol === "canopen") && isNaN(parseConfigNumber(message.canId))) {
-            return "ID缺失"
-        }
-
-        return ""
-    }
-
-    function previewDiagnosticText() {
-        var rows = expectedRawFrameRows()
-        var crcCount = 0
-        var errorCount = 0
-        for (var i = 0; i < rows.length; i++) {
-            if (rows[i].detail.indexOf("CRC") >= 0 || rows[i].detail.indexOf("自检") >= 0)
-                crcCount++
-            if (rows[i].detail.indexOf("错误") >= 0 || rows[i].warn !== "")
-                errorCount++
-        }
-        if (crcCount === 0 && errorCount === 0)
-            return "运行态"
-        return (crcCount > 0 ? ("校验 " + crcCount) : "") + (errorCount > 0 ? ((crcCount > 0 ? " / " : "") + "告警 " + errorCount) : "")
-    }
-
     Component.onCompleted: loadProductList()
+
+    function normalizedProductFile(file) {
+        var item = file || {}
+        var fileName = String(item["name"] || "")
+        var productName = String(item["model"] || item["displayName"] || fileName)
+        return {
+            name: fileName,
+            path: String(item["path"] || ""),
+            modified: String(item["modified"] || ""),
+            size: item["size"] || 0,
+            displayName: String(item["displayName"] || productName || fileName),
+            productModelName: productName,
+            protocol: String(item["protocol"] || "j1939"),
+            description: String(item["description"] || "")
+        }
+    }
 
     function loadProductList() {
         if (!layoutManager) return
         var files = layoutManager.getProductFiles()
         productModel.clear()
-        for (var i = 0; i < files.length; i++) productModel.append(files[i])
+        for (var i = 0; i < files.length; i++)
+            productModel.append(normalizedProductFile(files[i]))
     }
 
     function loadProduct(idx) {
         if (idx < 0 || idx >= productModel.count) return
         currentFilePath = productModel.get(idx).path
         currentConfig = layoutManager.loadProductConfig(currentFilePath)
+        saveProductMessage = ""
+        saveProductMessageIsError = false
         hasUnsavedChanges = false
         loadCells()
     }
@@ -408,7 +245,9 @@ Item {
 
     function normalizedProtocol(protocol) {
         var value = String(protocol || "j1939").toLowerCase()
-        return value === "canopen" ? "canopen" : "j1939"
+        if (value === "can" || value === "canopen")
+            return value
+        return "j1939"
     }
 
     function calibrationModeIndex(mode) {
@@ -472,16 +311,14 @@ Item {
         return {
             product: {
                 name: "",
-                model: "",
                 description: "",
-                protocol: "j1939",
-                canFrameFormat: "extended",
-                canAddress: "0x0CFDD633",
-                sourceAddress: "0x33"
+                protocol: "can",
+                canFrameFormat: "standard",
+                canAddress: "0x000"
             },
             calibration: {
                 mode: "centerOnly",
-                transport: "j1939VendorPgn",
+                transport: "manualCanMapping",
                 allowedInNormalModeReadOnly: true
             },
             can: {
@@ -507,20 +344,13 @@ Item {
         var templateConfig = productTemplateConfig()
         var product = templateConfig.product || {}
         var calibration = templateConfig.calibration || {}
-        var can = templateConfig.can || {}
-        var canopen = can.canopen || {}
-        var protocol = normalizedProtocol(product.protocol)
-        var model = product.model || product.name || ""
+        var model = product.name || ""
 
         cloneModelField.text = model ? (model + "-NEW") : ""
-        cloneNameField.text = product.name || model
         cloneDescriptionArea.text = product.description || ""
         cloneCustomerField.text = firstConfiguredCustomerName()
-        cloneProtocolBox.currentIndex = protocol === "canopen" ? 1 : 0
-        cloneAddressField.text = protocol === "canopen"
-                ? canopenCanAddressText(product.canAddress || product.nodeId || canopen.nodeId)
-                : j1939CanAddressText(product.canAddress || product.sourceAddress)
         cloneCalibrationModeBox.currentIndex = calibrationModeIndex(calibration.mode)
+        cloneBaudRateBox.value = ((templateConfig.can || {}).defaultBaudRate || 250)
         cloneProductError = ""
         cloneProductPopup.open()
         cloneModelField.forceActiveFocus()
@@ -529,72 +359,32 @@ Item {
 
     function validateCloneProductForm() {
         var model = sanitizeProductModel(cloneModelField.text)
-        var protocol = String(cloneProtocolBox.currentText || "").toLowerCase()
-        var addressValue = parseConfigNumber(cloneAddressField.text)
 
         if (model.length === 0)
             return "型号不能为空"
-        if (protocol !== "j1939" && protocol !== "canopen")
-            return "协议只能是 j1939 或 canopen"
         if (layoutManager && layoutManager.productConfigExists && layoutManager.productConfigExists(model))
             return "型号文件已存在：" + model + ".json"
-        if (isNaN(addressValue))
-            return "CAN地址不能为空"
+        if (cloneBaudRateBox.value <= 0)
+            return "CAN波特率必须大于0"
         return ""
     }
 
     function buildClonedProductConfig() {
-        var config = deepCopyConfig(productTemplateConfig())
         var model = sanitizeProductModel(cloneModelField.text)
-        var protocol = normalizedProtocol(cloneProtocolBox.currentText)
-        var addressValue = parseConfigNumber(cloneAddressField.text)
-        var sourceAddress = j1939SourceAddressFromCanAddress(addressValue)
-        var sourceAddressText = hexText(sourceAddress, 2)
-        var canAddressText = j1939CanAddressText(addressValue)
-        var nodeId = canopenNodeIdFromCanAddress(addressValue)
-        var canopenAddressText = canopenCanAddressText(addressValue)
         var calibrationMode = currentCloneCalibrationMode()
-
-        var product = config.product || {}
-        product.name = String(cloneNameField.text || "").trim() || model
-        product.model = model
-        product.description = String(cloneDescriptionArea.text || "").trim()
-        product.protocol = protocol
         var customerName = String(cloneCustomerField.text || "").trim()
-        if (customerName.length > 0) {
-            product.customerBindings = [
-                { name: customerName, isDefault: true, note: "SOP configured customer" }
-            ]
-        } else {
-            delete product.customerBindings
-        }
-        if (protocol === "j1939") {
-            product.canFrameFormat = "extended"
-            product.canAddress = canAddressText
-            product.sourceAddress = sourceAddressText
-            delete product.nodeId
-        } else {
-            product.canFrameFormat = "standard"
-            product.canAddress = canopenAddressText
-            product.nodeId = nodeId
-            delete product.sourceAddress
-        }
-        config.product = product
 
-        var calibration = config.calibration || {}
-        calibration.mode = calibrationMode
-        calibration.transport = protocol === "canopen" ? "canopenSdo" : "j1939VendorPgn"
-        config.calibration = calibration
-
-        if (protocol === "canopen") {
-            var can = config.can || {}
-            var canopen = can.canopen || {}
-            canopen.nodeId = nodeId
-            can.canopen = canopen
-            config.can = can
+        var spec = {
+            model: model,
+            description: String(cloneDescriptionArea.text || "").trim(),
+            customerName: customerName,
+            calibrationMode: calibrationMode,
+            baudRate: cloneBaudRateBox.value
         }
 
-        return config
+        if (layoutManager && layoutManager.buildStandardProductConfig)
+            return layoutManager.buildStandardProductConfig(spec)
+        return defaultProductConfig()
     }
 
     function saveCloneProduct() {
@@ -616,6 +406,8 @@ Item {
             productList.currentIndex = idx
             loadProduct(idx)
         }
+        if (layoutManager && layoutManager.openProductConfigFile)
+            layoutManager.openProductConfigFile(model)
     }
 
     // Resolve component IDs to their definitions
@@ -624,7 +416,7 @@ Item {
         var allComps = currentConfig.components || []
         for (var i = 0; i < compIds.length; i++) {
             var id = compIds[i]
-            if (id === "rawFrames" || id === "recordInfo") { result.push({ id: id, type: id }); continue }
+            if (isReservedCellComponentId(id)) { result.push({ id: id, type: id }); continue }
             for (var j = 0; j < allComps.length; j++) {
                 if (allComps[j].id === id) { result.push(allComps[j]); break }
             }
@@ -635,7 +427,7 @@ Item {
     // Guess cell type from component list
     function detectCellType(compIds) {
         if (!compIds || compIds.length === 0) return "empty"
-        if (compIds.indexOf("rawFrames") >= 0) return "rawFrames"
+        if (compIds.indexOf("busStats") >= 0) return "busStats"
         if (compIds.indexOf("recordInfo") >= 0) return "recordInfo"
         return "canvas"  // buttons, EJM, FNR all go to canvas
     }
@@ -779,7 +571,7 @@ Item {
 
     function defaultCellTitle(index, cellType) {
         if (cellType === "canvas") return canvasDefaultTitle(index)
-        if (cellType === "rawFrames") return "CAN 报文"
+        if (cellType === "busStats") return "总线统计"
         if (cellType === "recordInfo") return "记录信息"
         return ""
     }
@@ -801,6 +593,57 @@ Item {
                 : normalizedCellTitle(index, cellType, title)
     }
 
+    function componentsForCellType(cellType, currentComponents) {
+        if (cellType === "busStats")
+            return ["busStats"]
+        if (cellType === "recordInfo")
+            return ["recordInfo"]
+        if (cellType === "empty")
+            return []
+        if (cellType === "canvas")
+            return sanitizedCanvasComponentIds(currentComponents || [])
+        return currentComponents || []
+    }
+
+    function isReservedCellComponentId(id) {
+        return id === "busStats" || id === "recordInfo"
+    }
+
+    function bindingComponentId(bindingId) {
+        if (bindingId === undefined || bindingId === null)
+            return ""
+        var value = String(bindingId).trim()
+        if (value.length === 0)
+            return ""
+        var dot = value.indexOf(".")
+        return dot > 0 ? value.substring(0, dot) : value
+    }
+
+    function appendCanvasComponentId(result, id) {
+        if (!id || isReservedCellComponentId(id))
+            return
+        if (result.indexOf(id) < 0)
+            result.push(id)
+    }
+
+    function sanitizedCanvasComponentIds(componentIds) {
+        var result = []
+        var ids = componentIds || []
+        for (var i = 0; i < ids.length; i++)
+            appendCanvasComponentId(result, ids[i])
+        return result
+    }
+
+    function canvasComponentIdsFromVisualComponents(visualComponents, fallbackComponents) {
+        var result = []
+        var visuals = visualComponents || []
+        for (var i = 0; i < visuals.length; i++)
+            appendCanvasComponentId(result, bindingComponentId(visuals[i].bindingId))
+        if (result.length > 0)
+            return result
+        return sanitizedCanvasComponentIds(fallbackComponents || [])
+    }
+
     function setCellTitle(cell, title) {
         if (!cell)
             return
@@ -815,9 +658,15 @@ Item {
     function setCellType(cell, value) {
         if (!cell || cell.cellType === value)
             return
+        var previousType = cell.cellType
         cell.cellType = value
+        cell.cellCompIds = componentsForCellType(value, previousType === "canvas" ? cell.cellCompIds : [])
         if (value === "canvas" && cell.cellTitle.trim().length === 0)
             cell.cellTitle = defaultCellTitle(cell.cellIndex, value)
+        else if (value !== "canvas")
+            cell.cellTitle = defaultCellTitle(cell.cellIndex, value)
+        if (value !== "canvas" && cell.canvasItem)
+            cell.canvasItem.clear()
         hasUnsavedChanges = true
         refreshCanvasMode()
     }
@@ -865,21 +714,26 @@ Item {
             // Map old types to new unified types
             var oldType = c.cellType || detectCellType(c.components)
             if (oldType === "buttons" || oldType === "ejm") oldType = "canvas"
+            var visualComponents = c.visualComponents || []
             cell.cellTitle = loadedCellTitle(i, oldType, c.title)
             cell.cellType = oldType
-            cell.cellCompIds = c.components || []
+            cell.cellCompIds = oldType === "canvas"
+                    ? canvasComponentIdsFromVisualComponents(visualComponents, c.components || [])
+                    : componentsForCellType(oldType, c.components || [])
             var canvasMeta = normalizedCanvasMeta(c.canvas)
             var savedCanvasMeta = sourceCanvasMeta(c.canvas)
             cell.canvasDesignWidth = canvasMeta.width
             cell.canvasDesignHeight = canvasMeta.height
             cell.canvasScaleMode = canvasMeta.scaleMode
 
+            if (cell.canvasItem)
+                cell.canvasItem.clear()
+
             // For canvas cells: populate with visual components or auto-generate from component IDs
             if (cell.cellType === "canvas" && cell.canvasItem) {
-                var vis = c.visualComponents || []
+                var vis = visualComponents
                 if (vis.length > 0) {
                     // Load saved visual layout with bindingIds
-                    cell.canvasItem.clear()
                     for (var j = 0; j < vis.length; j++) {
                         addVisualComponent(cell.canvasItem, vis[j], savedCanvasMeta)
                     }
@@ -891,7 +745,13 @@ Item {
         }
         for (var k = cells.length; k < cellRepeater.count; k++) {
             var ec = cellRepeater.itemAt(k)
-            if (ec) { ec.cellTitle = ""; ec.cellType = "empty"; ec.cellCompIds = [] }
+            if (ec) {
+                ec.cellTitle = ""
+                ec.cellType = "empty"
+                ec.cellCompIds = []
+                if (ec.canvasItem)
+                    ec.canvasItem.clear()
+            }
         }
         refreshCanvasMode()
         refreshBindingStatus()
@@ -913,7 +773,7 @@ Item {
                 col: i%2,
                 title: normalizedCellTitle(i, cell.cellType, cell.cellTitle),
                 cellType: cell.cellType,
-                components: cell.cellCompIds
+                components: componentsForCellType(cell.cellType, cell.cellCompIds)
             }
             if (cell.cellType === "canvas" && cell.canvasItem) {
                 var canvasData = cell.canvasItem.toJSON()
@@ -924,6 +784,7 @@ Item {
                 }
                 cd.visualComponents = []
                 var comps = canvasData.components || []
+                cd.components = canvasComponentIdsFromVisualComponents(comps, cell.cellCompIds)
                 for (var j = 0; j < comps.length; j++)
                     cd.visualComponents.push({ type: comps[j].type, x: comps[j].x, y: comps[j].y, config: comps[j].config, bindingId: comps[j].bindingId || "" })
             }
@@ -933,10 +794,17 @@ Item {
     }
 
     function saveProduct() {
-        if (!currentFilePath || !currentConfig) return
+        if (!currentFilePath || !currentConfig) {
+            saveProductMessage = "未选择可保存的产品配置。"
+            saveProductMessageIsError = true
+            return
+        }
         syncCurrentLayoutFromCells()
-        if (layoutManager.saveProductConfig(currentConfig, currentFilePath))
+        if (layoutManager.saveProductConfig(currentConfig, currentFilePath)) {
             hasUnsavedChanges = false
+            saveProductMessage = "已保存：" + currentFilePath
+            saveProductMessageIsError = false
+        }
     }
 
     ListModel { id: productModel }
@@ -947,6 +815,16 @@ Item {
         function onErrorOccurred(error) {
             if (cloneProductPopup.opened)
                 cloneProductError = error
+            else {
+                saveProductMessage = error
+                saveProductMessageIsError = true
+            }
+        }
+        function onProductConfigSaved(path) {
+            if (!cloneProductPopup.opened) {
+                saveProductMessage = "已保存：" + path
+                saveProductMessageIsError = false
+            }
         }
     }
 
@@ -1007,6 +885,14 @@ Item {
                 Label { id: pL; anchors.centerIn: parent; text: currentConfig.product ? currentConfig.product.name||"" : ""; font.pixelSize: 8; font.bold: true; color: "white" }
             }
             Label { visible: !!currentConfig.product; text: root.productDescriptionText(); font.pixelSize: 10; color: dtTextSec; elide: Text.ElideRight; Layout.fillWidth: true }
+            Label {
+                visible: saveProductMessage.length > 0
+                text: saveProductMessage
+                font.pixelSize: 10
+                color: saveProductMessageIsError ? "#d70015" : dtSuccess
+                elide: Text.ElideRight
+                Layout.maximumWidth: 360
+            }
             Item { Layout.fillWidth: true }
             Button {
                 text: "创建新产品"
@@ -1015,7 +901,8 @@ Item {
                 onClicked: openCloneProductPopup()
             }
             Button {
-                text: hasUnsavedChanges ? "保存 *" : "已保存"; enabled: hasUnsavedChanges && currentFilePath !== ""
+                text: hasUnsavedChanges ? "保存 *" : "保存"
+                enabled: currentFilePath !== ""
                 font.pixelSize: 11
                 palette.button: hasUnsavedChanges ? dtAccent : "#e5e5ea"
                 palette.buttonText: hasUnsavedChanges ? "white" : dtTextMuted
@@ -1037,7 +924,9 @@ Item {
             Layout.alignment: Qt.AlignTop
 
             readonly property real gap: Constants.downloadToolCardGap
-            readonly property real functionPanelHeight: Math.min(220, Math.max(180, height * 0.28))
+            readonly property real functionPanelHeight: Math.min(Constants.downloadToolBottomPanelMaxHeight,
+                                                                 Math.max(Constants.downloadToolBottomPanelMinHeight,
+                                                                          height * Constants.downloadToolBottomPanelHeightRatio))
             readonly property real dashboardHeight: Math.max(320, height - functionPanelHeight - gap)
 
             Rectangle {
@@ -1057,8 +946,12 @@ Item {
                         model: productModel; clip: true; spacing: 1; currentIndex: -1
                         delegate: Rectangle {
                             width: productList.width; height: 46; radius: 4
-                            color: productList.currentIndex === index ? "#e8f0fe" : (pha.containsMouse ? dtBg : "transparent")
+                            readonly property var productEntry: productModel.get(index)
+                            readonly property string productNameText: String(productEntry.displayName || productEntry.productModelName || productEntry.name || "")
+                            color: productList.currentIndex === index ? "#e8f0fe" : (rowHover.hovered ? dtBg : "transparent")
+                            HoverHandler { id: rowHover }
                             RowLayout {
+                                z: 2
                                 anchors.fill: parent
                                 anchors.leftMargin: 6
                                 anchors.rightMargin: 6
@@ -1071,28 +964,35 @@ Item {
                                 }
                                 ColumnLayout {
                                     Layout.fillWidth: true
-                                    spacing: 1
+                                    spacing: 0
                                     Label {
                                         Layout.fillWidth: true
-                                        text: model.displayName || model.name
-                                        font.pixelSize: 10
+                                        text: productNameText
+                                        font.pixelSize: 11
                                         font.bold: productList.currentIndex === index
                                         color: dtText
                                         elide: Text.ElideRight
                                     }
-                                    Label {
-                                        Layout.fillWidth: true
-                                        text: (model.protocol || "j1939").toUpperCase() + "  " + (model.description || model.model || "")
-                                        font.pixelSize: 8
-                                        color: dtTextSec
-                                        elide: Text.ElideRight
+                                }
+                                Button {
+                                    visible: rowHover.hovered
+                                    Layout.preferredWidth: 68
+                                    Layout.preferredHeight: 26
+                                    text: "配置文件"
+                                    font.pixelSize: 10
+                                    focusPolicy: Qt.NoFocus
+                                    ToolTip.visible: hovered
+                                    ToolTip.text: "打开 JSON 配置文件"
+                                    onClicked: {
+                                        if (layoutManager && layoutManager.openProductConfigPath)
+                                            layoutManager.openProductConfigPath(productEntry.path || "")
                                     }
                                 }
                             }
                             MouseArea {
                                 id: pha
+                                z: 1
                                 anchors.fill: parent
-                                hoverEnabled: true
                                 cursorShape: Qt.PointingHandCursor
                                 onClicked: {
                                     root.commitCellEdits(-1)
@@ -1169,7 +1069,9 @@ Item {
                 anchors.bottom: parent.bottom; anchors.bottomMargin: 8
 
                 readonly property real gap: Constants.downloadToolCardGap
-                readonly property real functionPanelHeight: Math.min(220, Math.max(180, height * 0.28))
+                readonly property real functionPanelHeight: Math.min(Constants.downloadToolBottomPanelMaxHeight,
+                                                                     Math.max(Constants.downloadToolBottomPanelMinHeight,
+                                                                              height * Constants.downloadToolBottomPanelHeightRatio))
                 readonly property real dashboardHeight: Math.max(320, height - functionPanelHeight - gap)
                 readonly property var editorLayout: currentConfig && currentConfig.layout ? currentConfig.layout : ({})
                 readonly property var leftLayout: editorLayout.left ? editorLayout.left : ({})
@@ -1576,150 +1478,83 @@ Item {
                                     anchors.bottom: parent.bottom
                                     z: cellCard.cellType === "canvas" ? 0 : 1
 
-                                    Column {
-                                        id: rawFramesPanel
-                                        visible: cellCard.cellType === "rawFrames"
+                                    ColumnLayout {
+                                        id: busStatsPanel
+                                        visible: cellCard.cellType === "busStats"
                                         anchors.fill: parent
-                                        spacing: Math.max(5, 6 * dtViewport.cardScale)
+                                        spacing: Math.max(7, 9 * dtViewport.cardScale)
                                         clip: true
 
-                                        readonly property real labelFont: dtViewport.cardTitleFont
-                                        readonly property real idFont: dtViewport.cardBodyFont
-                                        readonly property real dataFont: dtViewport.cardValueFont
-                                        readonly property real metaFont: dtViewport.cardMetaFont
-                                        readonly property string protocolText: currentConfig.product && currentConfig.product.protocol
-                                                                           ? currentConfig.product.protocol.toUpperCase()
-                                                                           : "J1939"
-                                        readonly property string productText: currentConfig.product
-                                                                           ? (currentConfig.product.model || currentConfig.product.name || "---")
-                                                                           : "---"
-                                        readonly property var expectedRows: expectedRawFrameRows()
+                                        readonly property int messageCount: ((currentConfig.can || {}).messages || []).length
 
-                                        Flow {
-                                            width: parent.width
-                                            spacing: 4
+                                        RowLayout {
+                                            Layout.fillWidth: true
+                                            spacing: 8
 
-                                            Repeater {
-                                                model: [
-                                                    { label: "总线负载", value: "--" },
-                                                    { label: "Count", value: "--" },
-                                                    { label: "平均间隔", value: "--" },
-                                                    { label: "最小/最大", value: "-- / --" }
-                                                ]
+                                            Text {
+                                                text: "总线统计"
+                                                color: dtText
+                                                font.pixelSize: Math.max(18, 21 * dtViewport.cardScale)
+                                                font.weight: Font.Bold
+                                                font.letterSpacing: 0
+                                                Layout.fillWidth: true
+                                                elide: Text.ElideRight
+                                            }
 
-                                                Rectangle {
-                                                    height: Math.max(24, 26 * dtViewport.cardScale)
-                                                    width: Math.min(rawInfoText.implicitWidth + 16, body.width)
-                                                    radius: height / 2
-                                                    color: "#f5f5f7"
-                                                    border.width: 1
-                                                    border.color: dtBorder
-
-                                                    Text {
-                                                        id: rawInfoText
-                                                        anchors.centerIn: parent
-                                                        text: modelData.label + " " + modelData.value
-                                                        color: dtTextSec
-                                                        font.pixelSize: rawFramesPanel.metaFont
-                                                        font.bold: false
-                                                        elide: Text.ElideRight
-                                                        width: parent.width - 10
-                                                    }
-                                                }
+                                            Text {
+                                                text: "--%"
+                                                color: dtTextSec
+                                                font.pixelSize: Math.max(15, 18 * dtViewport.cardScale)
+                                                font.weight: Font.Bold
+                                                font.family: "Consolas"
+                                                font.letterSpacing: 0
+                                                Layout.alignment: Qt.AlignVCenter
                                             }
                                         }
 
                                         Rectangle {
-                                            width: parent.width
+                                            Layout.fillWidth: true
                                             height: 1
                                             color: dtBorder
                                             opacity: 0.75
                                         }
 
                                         Repeater {
-                                            model: rawFramesPanel.expectedRows
-                                            Row {
-                                                width: parent ? parent.width : 0
-                                                spacing: Math.max(6, 8 * dtViewport.cardScale)
-                                                height: Math.max(46, 50 * dtViewport.cardScale)
+                                            model: [
+                                                { label: "总线负载", value: "--%" },
+                                                { label: "Rx FPS", value: "-- fps" },
+                                                { label: "Count", value: "0" },
+                                                { label: "匹配报文", value: "0/" + busStatsPanel.messageCount },
+                                                { label: "平均间隔", value: "--" },
+                                                { label: "最小/最大", value: "-- / --" }
+                                            ]
+
+                                            RowLayout {
+                                                Layout.fillWidth: true
+                                                spacing: 8
 
                                                 Text {
-                                                    id: frameLabel
-                                                    text: modelData.lbl
-                                                    color: modelData.warn !== "" ? dtWarning : dtAccent
-                                                    font.pixelSize: rawFramesPanel.labelFont
-                                                    font.bold: true
-                                                    width: Math.max(52, 56 * dtViewport.cardScale)
-                                                    anchors.top: parent.top
-                                                    anchors.topMargin: 2
+                                                    text: modelData.label
+                                                    color: dtTextSec
+                                                    font.pixelSize: Math.max(11, 12 * dtViewport.cardScale)
+                                                    font.weight: Font.DemiBold
+                                                    font.letterSpacing: 0
+                                                    width: Math.max(70, 78 * dtViewport.cardScale)
+                                                    elide: Text.ElideRight
+                                                    Layout.alignment: Qt.AlignVCenter
                                                 }
 
-                                                Column {
-                                                    width: Math.max(1, parent.width - frameLabel.width - parent.spacing)
-                                                    spacing: 1
-
-                                                    Row {
-                                                        width: parent.width
-                                                        spacing: Math.max(5, 6 * dtViewport.cardScale)
-
-                                                        Text {
-                                                            id: frameIdText
-                                                            text: modelData.cid
-                                                            color: modelData.warn !== "" ? dtWarning : dtTextSec
-                                                            font.pixelSize: rawFramesPanel.idFont
-                                                            font.family: "Consolas"
-                                                            font.bold: modelData.warn !== ""
-                                                            elide: Text.ElideRight
-                                                            width: Math.max(88, parent.width * 0.46)
-                                                        }
-                                                        Text {
-                                                            text: modelData.period
-                                                            color: dtText
-                                                            font.pixelSize: rawFramesPanel.idFont
-                                                            font.family: "Consolas"
-                                                            font.bold: true
-                                                            elide: Text.ElideRight
-                                                            width: Math.max(70, parent.width * 0.24)
-                                                        }
-                                                        Text {
-                                                            text: "Count " + modelData.count
-                                                            color: dtTextSec
-                                                            font.pixelSize: rawFramesPanel.metaFont
-                                                            font.family: "Consolas"
-                                                            elide: Text.ElideRight
-                                                            width: Math.max(1, parent.width - frameIdText.width - Math.max(70, parent.width * 0.24) - parent.spacing * 2)
-                                                        }
-                                                    }
-                                                    Text {
-                                                        text: "Data " + modelData.data + " · " + (modelData.warn !== "" ? (modelData.detail + " · " + modelData.warn) : modelData.detail)
-                                                        color: modelData.warn !== "" ? dtWarning : dtText
-                                                        font.pixelSize: rawFramesPanel.metaFont
-                                                        font.family: "Consolas"
-                                                        elide: Text.ElideRight
-                                                        width: parent.width
-                                                    }
+                                                Text {
+                                                    text: modelData.value
+                                                    color: dtTextMuted
+                                                    font.pixelSize: Math.max(11, 12 * dtViewport.cardScale)
+                                                    font.weight: Font.DemiBold
+                                                    font.family: "Consolas"
+                                                    font.letterSpacing: 0
+                                                    Layout.fillWidth: true
+                                                    elide: Text.ElideRight
+                                                    Layout.alignment: Qt.AlignVCenter
                                                 }
-                                            }
-                                        }
-
-                                        Row {
-                                            width: parent.width
-                                            spacing: 5
-                                            visible: rawFramesPanel.expectedRows.length === 0
-
-                                            Rectangle {
-                                                width: 8
-                                                height: 8
-                                                radius: 4
-                                                color: dtTextMuted
-                                                anchors.verticalCenter: parent.verticalCenter
-                                            }
-                                            Text {
-                                                text: "未配置CAN报文"
-                                                color: dtTextMuted
-                                                font.pixelSize: rawFramesPanel.metaFont
-                                                elide: Text.ElideRight
-                                                width: parent.width - 14
                                             }
                                         }
                                     }
@@ -1733,7 +1568,7 @@ Item {
                                         clip: true
 
                                         readonly property var rows: [
-                                            { label: "产品型号", val: currentConfig.product ? currentConfig.product.model || "---" : "---" },
+                                            { label: "产品型号", val: currentConfig.product ? currentConfig.product.name || currentConfig.product.model || "---" : "---" },
                                             { label: "通信协议", val: currentConfig.product ? String(currentConfig.product.protocol || "j1939").toUpperCase() : "---" },
                                             { label: "CAN地址", val: root.productAddressText() },
                                             { label: "产品描述", val: "", multiline: true, editableDescription: true }
@@ -2083,13 +1918,6 @@ Item {
                     onTextChanged: cloneProductError = ""
                 }
 
-                Label { text: "名称"; color: dtText; font.pixelSize: 11 }
-                TextField {
-                    id: cloneNameField
-                    Layout.fillWidth: true
-                    selectByMouse: true
-                    font.pixelSize: 11
-                }
 
                 Label { text: "描述"; color: dtText; font.pixelSize: 11 }
                 TextArea {
@@ -2110,27 +1938,12 @@ Item {
                     onTextChanged: cloneProductError = ""
                 }
 
-                Label { text: "协议"; color: dtText; font.pixelSize: 11 }
-                ComboBox {
-                    id: cloneProtocolBox
+                Label { text: "映射方式"; color: root.dtText; font.pixelSize: 11 }
+                Label {
                     Layout.fillWidth: true
-                    model: cloneProtocolOptions
+                    text: "CAN报文映射"
+                    color: root.dtText
                     font.pixelSize: 11
-                    onCurrentTextChanged: {
-                        cloneProductError = ""
-                        if (cloneProductPopup.opened && activeFocus)
-                            resetCloneAddressForProtocol()
-                    }
-                    onActivated: resetCloneAddressForProtocol()
-                }
-
-                Label { text: cloneAddressLabel(); color: dtText; font.pixelSize: 11 }
-                TextField {
-                    id: cloneAddressField
-                    Layout.fillWidth: true
-                    selectByMouse: true
-                    font.pixelSize: 11
-                    onTextChanged: cloneProductError = ""
                 }
 
                 Label { text: "校准模式"; color: dtText; font.pixelSize: 11 }
@@ -2141,6 +1954,27 @@ Item {
                     textRole: "label"
                     valueRole: "value"
                     font.pixelSize: 11
+                }
+
+                Label { text: "CAN波特率"; color: root.dtText; font.pixelSize: 11 }
+                SpinBox {
+                    id: cloneBaudRateBox
+                    Layout.fillWidth: true
+                    from: 10
+                    to: 1000
+                    value: 250
+                    editable: true
+                    font.pixelSize: 11
+                    onValueChanged: root.cloneProductError = ""
+                }
+
+                Label {
+                    Layout.columnSpan: 2
+                    Layout.fillWidth: true
+                    text: "保存后会自动打开该产品 JSON，请在 JSON 中手动填写 can.messages、components 和 layout.visualComponents 的 bindingId。"
+                    color: root.dtTextSec
+                    font.pixelSize: 11
+                    wrapMode: Text.WordWrap
                 }
 
             }

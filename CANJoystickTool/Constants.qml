@@ -100,6 +100,9 @@ QtObject {
     readonly property int downloadToolCardHeaderGap: 6
     readonly property int downloadToolCardBodyWidth: 364
     readonly property int downloadToolCardBodyHeight: 382
+    readonly property int downloadToolBottomPanelMinHeight: 260
+    readonly property int downloadToolBottomPanelMaxHeight: 360
+    readonly property real downloadToolBottomPanelHeightRatio: 0.36
 
     // ===== Shadow parameters =====
     readonly property int panelShadowOffset: 30
