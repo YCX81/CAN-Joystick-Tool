@@ -874,7 +874,7 @@ Item {
     // ===== Top Bar =====
     Rectangle {
         id: topBar; anchors.top: parent.top; anchors.left: parent.left; anchors.right: parent.right
-        height: 44; color: "white"
+        height: 60; color: "white"
         Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: dtBorder }
         RowLayout {
             anchors.fill: parent; anchors.leftMargin: 12; anchors.rightMargin: 12; spacing: 10
@@ -1064,10 +1064,10 @@ Item {
 
             Item {
                 id: dtViewport
-                anchors.top: parent.top; anchors.topMargin: Constants.downloadToolContentMargin
+                anchors.top: parent.top; anchors.topMargin: Constants.downloadToolContentVerticalMargin
                 anchors.left: parent.left; anchors.leftMargin: Constants.downloadToolContentMargin
                 anchors.right: parent.right; anchors.rightMargin: Constants.downloadToolContentMargin
-                anchors.bottom: parent.bottom; anchors.bottomMargin: Constants.downloadToolContentMargin
+                anchors.bottom: parent.bottom; anchors.bottomMargin: Constants.downloadToolContentVerticalMargin
 
                 readonly property real gap: Constants.downloadToolCardGap
                 readonly property real functionPanelHeight: Math.min(Constants.downloadToolBottomPanelMaxHeight,
@@ -1080,7 +1080,8 @@ Item {
                 readonly property real leftWidthRatio: leftLayout.widthRatio ? leftLayout.widthRatio
                                                                              : Constants.downloadToolLeftWidthRatioDefault
                 readonly property real joySlotW: Math.max(0, Math.min(width - gap, width * leftWidthRatio))
-                readonly property real joyCardSize: Math.max(0, Math.min(joySlotW, dashboardHeight))
+                readonly property real joyCardWidth: Math.max(0, joySlotW)
+                readonly property real joyCardHeight: Math.max(0, dashboardHeight)
                 readonly property real gridW: Math.max(0, width - joySlotW - gap)
                 readonly property real gridH: dashboardHeight
                 readonly property real cellSize: Math.max(0, Math.min((gridW - gap) / 2, (dashboardHeight - gap) / 2))
@@ -1089,7 +1090,7 @@ Item {
                 readonly property real gridOffsetX: Math.max(0, (gridW - gridContentW) / 2)
                 readonly property real gridOffsetY: Math.max(0, (dashboardHeight - gridContentH) / 2)
                 readonly property real cardScale: cellSize / Constants.homeCardDesignSize
-                readonly property real joyCardScale: joyCardSize / Constants.homeCardDesignSize
+                readonly property real joyCardScale: Math.min(joyCardWidth, joyCardHeight) / Constants.homeCardDesignSize
                 readonly property real cardMargin: Math.max(Constants.downloadToolCardMarginMin,
                                                             Constants.downloadToolCardMargin * cardScale)
                 readonly property real joyCardMargin: Math.max(Constants.downloadToolCardMarginMin,
@@ -1107,18 +1108,17 @@ Item {
                 readonly property real cardValueFont: Math.max(14, 16 * cardScale)
                 readonly property real cardMetaFont: Math.max(11, 12 * cardScale)
 
-                Rectangle {
+                AluminumPanel {
                     id: joyPrev
-                    x: Math.max(0, (dtViewport.joySlotW - width) / 2)
-                    y: Math.max(0, (dtViewport.dashboardHeight - height) / 2)
-                    width: dtViewport.joyCardSize
-                    height: dtViewport.joyCardSize
-                    radius: Constants.radiusPanel * dtViewport.joyCardScale; color: "#eaeaec"
-                    border.width: 1; border.color: dtBorder
+                    x: 0
+                    y: 0
+                    panelWidth: dtViewport.joyCardWidth
+                    panelHeight: dtViewport.joyCardHeight
+                    borderRadius: 32
+                    contentMargins: dtViewport.joyCardMargin
 
                     Item {
                         anchors.fill: parent
-                        anchors.margins: dtViewport.joyCardMargin
 
                         Text {
                             id: joyHeader
@@ -1216,13 +1216,14 @@ Item {
                     Repeater {
                         id: cellRepeater; model: 4
 
-                        Rectangle {
+                        AluminumPanel {
                             id: cellCard
                             x: dtViewport.gridOffsetX + (index % 2) * (gridArea.cellSize + dtViewport.gap)
                             y: dtViewport.gridOffsetY + Math.floor(index / 2) * (gridArea.cellSize + dtViewport.gap)
-                            width: gridArea.cellSize; height: gridArea.cellSize
-                            radius: Constants.radiusPanel * dtViewport.cardScale; color: "#eaeaec"
-                            border.width: 1; border.color: activeCellIndex === index ? dtAccent : dtBorder
+                            panelWidth: gridArea.cellSize
+                            panelHeight: gridArea.cellSize
+                            borderRadius: Math.max(8, Constants.radiusPanel * dtViewport.cardScale)
+                            contentMargins: 0
                             z: activeCellIndex === index ? 10 : 0
 
                             property string cellTitle: ""
@@ -1291,6 +1292,15 @@ Item {
                             function cancelProductDescriptionEdit() {
                                 productDescriptionDraft = productDescriptionOriginal
                                 productDescriptionEditing = false
+                            }
+
+                            Rectangle {
+                                anchors.fill: parent
+                                radius: cellCard.borderRadius
+                                color: "transparent"
+                                border.width: activeCellIndex === index ? 2 : 0
+                                border.color: dtAccent
+                                z: 30
                             }
 
                             MouseArea {

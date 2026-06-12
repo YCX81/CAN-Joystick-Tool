@@ -88,6 +88,7 @@ QtObject {
 
     // ===== DownloadTool test layout contract =====
     readonly property int downloadToolContentMargin: 8
+    readonly property int downloadToolContentVerticalMargin: 0
     readonly property int downloadToolCardGap: 8
     readonly property int downloadToolCardMargin: 16
     readonly property int downloadToolCardMarginMin: 12
@@ -99,9 +100,9 @@ QtObject {
     readonly property int downloadToolCardTitleMinFontSize: 14
     readonly property real downloadToolLeftWidthRatioDefault: 0.52
     readonly property int downloadToolDashboardMinHeight: 320
-    readonly property int downloadToolBottomPanelMinHeight: 260
-    readonly property int downloadToolBottomPanelMaxHeight: 360
-    readonly property real downloadToolBottomPanelHeightRatio: 0.36
+    readonly property int downloadToolBottomPanelMinHeight: 230
+    readonly property int downloadToolBottomPanelMaxHeight: 330
+    readonly property real downloadToolBottomPanelHeightRatio: 0.32
     readonly property int downloadToolMonitorRowHeight: 32
     readonly property int downloadToolMonitorHeaderHeight: 22
     readonly property int downloadToolMonitorColumnGap: 5
