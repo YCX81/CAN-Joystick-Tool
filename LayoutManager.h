@@ -128,9 +128,14 @@ public:
     Q_INVOKABLE QJsonArray getProductFiles();
     Q_INVOKABLE QJsonObject loadProductConfig(const QString &filePath);
     Q_INVOKABLE bool saveProductConfig(const QJsonObject &configJson, const QString &filePath);
+    Q_INVOKABLE QJsonObject validateProductConfig(const QJsonObject &configJson) const;
+    Q_INVOKABLE QJsonObject buildStandardProductConfig(const QJsonObject &spec) const;
     Q_INVOKABLE QString sanitizeProductModel(const QString &model) const;
     Q_INVOKABLE bool productConfigExists(const QString &model) const;
     Q_INVOKABLE bool saveProductConfigAs(const QJsonObject &configJson, const QString &model);
+    Q_INVOKABLE QString productConfigPath(const QString &model) const;
+    Q_INVOKABLE bool openProductConfigFile(const QString &model) const;
+    Q_INVOKABLE bool openProductConfigPath(const QString &filePath);
 
     // ========== 工具方法 ==========
 
