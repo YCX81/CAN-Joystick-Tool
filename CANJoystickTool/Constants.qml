@@ -86,23 +86,25 @@ QtObject {
     // ===== Home card reference =====
     readonly property int homeCardDesignSize: 480
 
-    // ===== DownloadTool card reference =====
-    // Reference geometry is taken from the DownloadTool product page at the
-    // wide testing layout. All editor previews scale from these proportions.
-    readonly property int downloadToolStageWidth: 1683
-    readonly property int downloadToolStageHeight: 888
-    readonly property int downloadToolLeftCardWidth: 875
-    readonly property int downloadToolRightCardWidth: 396
-    readonly property int downloadToolRightCardHeight: 440
+    // ===== DownloadTool test layout contract =====
+    readonly property int downloadToolContentMargin: 8
     readonly property int downloadToolCardGap: 8
     readonly property int downloadToolCardMargin: 16
+    readonly property int downloadToolCardMarginMin: 12
     readonly property int downloadToolCardHeaderHeight: 20
+    readonly property int downloadToolCardHeaderMinHeight: 18
     readonly property int downloadToolCardHeaderGap: 6
-    readonly property int downloadToolCardBodyWidth: 364
-    readonly property int downloadToolCardBodyHeight: 382
+    readonly property int downloadToolCardHeaderGapMin: 4
+    readonly property int downloadToolCardTitleFontSize: 16
+    readonly property int downloadToolCardTitleMinFontSize: 14
+    readonly property real downloadToolLeftWidthRatioDefault: 0.52
+    readonly property int downloadToolDashboardMinHeight: 320
     readonly property int downloadToolBottomPanelMinHeight: 260
     readonly property int downloadToolBottomPanelMaxHeight: 360
     readonly property real downloadToolBottomPanelHeightRatio: 0.36
+    readonly property int downloadToolMonitorRowHeight: 32
+    readonly property int downloadToolMonitorHeaderHeight: 22
+    readonly property int downloadToolMonitorColumnGap: 5
 
     // ===== Shadow parameters =====
     readonly property int panelShadowOffset: 30

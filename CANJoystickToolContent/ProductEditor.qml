@@ -927,7 +927,8 @@ Item {
             readonly property real functionPanelHeight: Math.min(Constants.downloadToolBottomPanelMaxHeight,
                                                                  Math.max(Constants.downloadToolBottomPanelMinHeight,
                                                                           height * Constants.downloadToolBottomPanelHeightRatio))
-            readonly property real dashboardHeight: Math.max(320, height - functionPanelHeight - gap)
+            readonly property real dashboardHeight: Math.max(Constants.downloadToolDashboardMinHeight,
+                                                             height - functionPanelHeight - gap)
 
             Rectangle {
                 id: productListCard
@@ -1063,19 +1064,21 @@ Item {
 
             Item {
                 id: dtViewport
-                anchors.top: parent.top; anchors.topMargin: 8
-                anchors.left: parent.left; anchors.leftMargin: 8
-                anchors.right: parent.right; anchors.rightMargin: 8
-                anchors.bottom: parent.bottom; anchors.bottomMargin: 8
+                anchors.top: parent.top; anchors.topMargin: Constants.downloadToolContentMargin
+                anchors.left: parent.left; anchors.leftMargin: Constants.downloadToolContentMargin
+                anchors.right: parent.right; anchors.rightMargin: Constants.downloadToolContentMargin
+                anchors.bottom: parent.bottom; anchors.bottomMargin: Constants.downloadToolContentMargin
 
                 readonly property real gap: Constants.downloadToolCardGap
                 readonly property real functionPanelHeight: Math.min(Constants.downloadToolBottomPanelMaxHeight,
                                                                      Math.max(Constants.downloadToolBottomPanelMinHeight,
                                                                               height * Constants.downloadToolBottomPanelHeightRatio))
-                readonly property real dashboardHeight: Math.max(320, height - functionPanelHeight - gap)
+                readonly property real dashboardHeight: Math.max(Constants.downloadToolDashboardMinHeight,
+                                                                 height - functionPanelHeight - gap)
                 readonly property var editorLayout: currentConfig && currentConfig.layout ? currentConfig.layout : ({})
                 readonly property var leftLayout: editorLayout.left ? editorLayout.left : ({})
-                readonly property real leftWidthRatio: leftLayout.widthRatio ? leftLayout.widthRatio : 0.52
+                readonly property real leftWidthRatio: leftLayout.widthRatio ? leftLayout.widthRatio
+                                                                             : Constants.downloadToolLeftWidthRatioDefault
                 readonly property real joySlotW: Math.max(0, Math.min(width - gap, width * leftWidthRatio))
                 readonly property real joyCardSize: Math.max(0, Math.min(joySlotW, dashboardHeight))
                 readonly property real gridW: Math.max(0, width - joySlotW - gap)
@@ -1087,12 +1090,18 @@ Item {
                 readonly property real gridOffsetY: Math.max(0, (dashboardHeight - gridContentH) / 2)
                 readonly property real cardScale: cellSize / Constants.homeCardDesignSize
                 readonly property real joyCardScale: joyCardSize / Constants.homeCardDesignSize
-                readonly property real cardMargin: Math.max(12, Constants.downloadToolCardMargin * cardScale)
-                readonly property real joyCardMargin: Math.max(12, Constants.downloadToolCardMargin * joyCardScale)
-                readonly property real cardHeaderHeight: Math.max(24, Constants.downloadToolCardHeaderHeight * cardScale)
-                readonly property real joyCardHeaderHeight: Math.max(18, Constants.downloadToolCardHeaderHeight * joyCardScale)
-                readonly property real cardHeaderGap: Math.max(4, Constants.downloadToolCardHeaderGap * cardScale)
-                readonly property real cardTitleFont: Math.max(13, 15 * cardScale)
+                readonly property real cardMargin: Math.max(Constants.downloadToolCardMarginMin,
+                                                            Constants.downloadToolCardMargin * cardScale)
+                readonly property real joyCardMargin: Math.max(Constants.downloadToolCardMarginMin,
+                                                               Constants.downloadToolCardMargin * joyCardScale)
+                readonly property real cardHeaderHeight: Math.max(Constants.downloadToolCardHeaderMinHeight,
+                                                                  Constants.downloadToolCardHeaderHeight * cardScale)
+                readonly property real joyCardHeaderHeight: Math.max(Constants.downloadToolCardHeaderMinHeight,
+                                                                     Constants.downloadToolCardHeaderHeight * joyCardScale)
+                readonly property real cardHeaderGap: Math.max(Constants.downloadToolCardHeaderGapMin,
+                                                               Constants.downloadToolCardHeaderGap * cardScale)
+                readonly property real cardTitleFont: Math.max(Constants.downloadToolCardTitleMinFontSize,
+                                                               Constants.downloadToolCardTitleFontSize * cardScale)
                 readonly property real cardControlFont: Math.max(12, 13 * cardScale)
                 readonly property real cardBodyFont: Math.max(13, 15 * cardScale)
                 readonly property real cardValueFont: Math.max(14, 16 * cardScale)
