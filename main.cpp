@@ -1,4 +1,5 @@
 #include <QApplication>
+#include <QIcon>
 #include <QQmlApplicationEngine>
 #include <QQuickStyle>
 #include <QSurfaceFormat>
@@ -14,6 +15,7 @@ int main(int argc, char *argv[])
     QApplication app(argc, argv);
     app.setOrganizationName("CANJoystickTool");
     app.setApplicationName("CANJoystickTool");
+    app.setWindowIcon(QIcon(QStringLiteral(":/assets/app_icon.png")));
 
     QQuickStyle::setStyle("Material");
 

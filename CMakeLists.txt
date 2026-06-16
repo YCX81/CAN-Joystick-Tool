@@ -16,6 +16,12 @@ qt_add_executable(CANJoystickTool
     LayoutManager.cpp
 )
 
+qt_add_resources(CANJoystickTool "app_icon"
+    PREFIX "/"
+    FILES
+        assets/app_icon.png
+)
+
 # 标记 Singleton QML 文件（必须在 qt_add_qml_module 之前）
 set_source_files_properties(CANJoystickTool/Constants.qml
     PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
@@ -98,5 +104,6 @@ if(WIN32 AND EXISTS "${QT_SQLITE_DRIVER}")
 endif()
 
 if(WIN32)
+    target_sources(CANJoystickTool PRIVATE app.rc)
     set_target_properties(CANJoystickTool PROPERTIES WIN32_EXECUTABLE TRUE)
 endif()
