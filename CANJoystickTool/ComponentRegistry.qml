@@ -20,7 +20,7 @@ QtObject {
         {
             id: "rollers",
             name: "Rollers",
-            components: ["VerticalRoller", "HorizontalRoller"]
+            components: ["VerticalRoller", "HorizontalRoller", "RotaryPotentiometer"]
         }
     ]
 
@@ -176,6 +176,24 @@ QtObject {
             thumbnailScale: 0.35,
             defaultConfig: {
                 value: 0,
+                label: ""
+            },
+            hasLabel: true
+        },
+
+        "RotaryPotentiometer": {
+            name: "Rotary",
+            description: "正视旋转电位计 + 数字显示",
+            defaultWidth: 112,
+            defaultHeight: 154,
+            thumbnailScale: 0.42,
+            defaultConfig: {
+                value: 0,
+                minValue: 0,
+                maxValue: 360,
+                minimumAngle: 0,
+                maximumAngle: 360,
+                displayUnit: "°",
                 label: ""
             },
             hasLabel: true

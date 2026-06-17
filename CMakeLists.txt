@@ -51,6 +51,7 @@ qt_add_qml_module(CANJoystickTool
         CANJoystickTool/JoystickPad.qml
         CANJoystickTool/StatusIndicator.qml
         CANJoystickTool/RollerWheel.qml
+        CANJoystickTool/RotaryPotentiometer.qml
         CANJoystickTool/DigitalDisplay.qml
         CANJoystickTool/RockerSwitch.qml
         CANJoystickTool/IndustrialButton.qml
@@ -62,6 +63,7 @@ qt_add_qml_module(CANJoystickTool
         CANJoystickTool/FNRSwitchUnit.qml
         CANJoystickTool/VerticalRollerUnit.qml
         CANJoystickTool/HorizontalRollerUnit.qml
+        CANJoystickTool/RotaryPotentiometerUnit.qml
         CANJoystickTool/HorizontalFNRUnit.qml
         CANJoystickTool/HorizontalFNRRightUnit.qml
         # 可视化编辑组件

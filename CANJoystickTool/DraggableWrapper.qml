@@ -174,9 +174,11 @@ Item {
         if (type === "HorizontalFNRRight") return "HorizontalFNRRightUnit.qml"
         if (type === "VerticalRoller") return "VerticalRollerUnit.qml"
         if (type === "HorizontalRoller") return "HorizontalRollerUnit.qml"
+        if (type === "RotaryPotentiometer") return "RotaryPotentiometerUnit.qml"
         var mapping = {
             "IndustrialButton": "IndustrialButton.qml",
             "RollerWheel": "RollerWheel.qml",
+            "RotaryPotentiometer": "RotaryPotentiometer.qml",
             "JoystickPad": "JoystickPad.qml",
             "DigitalDisplay": "DigitalDisplay.qml",
             "StatusIndicator": "StatusIndicator.qml",

@@ -184,7 +184,8 @@ Item {
                                 ComponentTile {
                                     componentType: modelData
                                     componentDef: ComponentRegistry.getDefinition(modelData)
-                                    tileWidth: modelData === "HorizontalRoller" ? 112 : 66
+                                    tileWidth: modelData === "HorizontalRoller" ? 112
+                                               : modelData === "RotaryPotentiometer" ? 84 : 66
                                     tileHeight: 72
                                     onClicked: {
                                         root.activeComponentType = modelData
@@ -284,7 +285,8 @@ Item {
                             ComponentTile {
                                 componentType: modelData
                                 componentDef: ComponentRegistry.getDefinition(modelData)
-                                tileWidth: modelData === "HorizontalRoller" ? 104 : 62
+                                tileWidth: modelData === "HorizontalRoller" ? 104
+                                           : modelData === "RotaryPotentiometer" ? 78 : 62
                                 tileHeight: modelData === "HorizontalRoller" ? 64 : 76
                                 onClicked: {
                                     root.activeComponentType = modelData
@@ -485,6 +487,7 @@ Item {
             if (type === "HorizontalFNRRight") return "HorizontalFNRRightUnit.qml"
             if (type === "VerticalRoller") return "VerticalRollerUnit.qml"
             if (type === "HorizontalRoller") return "HorizontalRollerUnit.qml"
+            if (type === "RotaryPotentiometer") return "RotaryPotentiometerUnit.qml"
             return ""
         }
 

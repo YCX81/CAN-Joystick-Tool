@@ -85,7 +85,7 @@ AluminumPanel {
                 selectionRect.width = 0
                 selectionRect.height = 0
             }
-            labelEditor.visible = false
+            labelEditor.closeLabelEditor(false)
         }
 
         onPositionChanged: function(mouse) {
@@ -270,6 +270,27 @@ AluminumPanel {
         border.color: "#18000000"
 
         property var targetComponent: null
+        property string originalLabel: ""
+        property bool shouldRestoreLabel: false
+
+        function closeLabelEditor(commit) {
+            if (commit && targetComponent) {
+                targetComponent.setLabel(labelField.text)
+                root.layoutModified()
+                shouldRestoreLabel = false
+            }
+            visible = false
+        }
+
+        onVisibleChanged: {
+            if (visible)
+                return
+            if (shouldRestoreLabel && targetComponent)
+                targetComponent.setLabel(originalLabel)
+            targetComponent = null
+            originalLabel = ""
+            shouldRestoreLabel = false
+        }
 
         layer.enabled: true
         layer.effect: MultiEffect {
@@ -317,15 +338,11 @@ AluminumPanel {
             }
 
             onAccepted: {
-                if (labelEditor.targetComponent) {
-                    labelEditor.targetComponent.setLabel(text)
-                    root.layoutModified()
-                }
-                labelEditor.visible = false
+                labelEditor.closeLabelEditor(true)
             }
 
             Keys.onEscapePressed: {
-                labelEditor.visible = false
+                labelEditor.closeLabelEditor(false)
             }
         }
     }
@@ -441,7 +458,9 @@ AluminumPanel {
     // Detect component category
     function getBindCategory(wrapperType) {
         if (wrapperType.indexOf("Button") === 0) return "button"
-        if (wrapperType === "VerticalRoller" || wrapperType === "HorizontalRoller") return "roller"
+        if (wrapperType === "VerticalRoller"
+                || wrapperType === "HorizontalRoller"
+                || wrapperType === "RotaryPotentiometer") return "roller"
         if (wrapperType === "FNRSwitch" || wrapperType === "HorizontalFNR" || wrapperType === "HorizontalFNRRight") return "fnr"
         return "other"
     }
@@ -460,7 +479,8 @@ AluminumPanel {
                 for (var b = 0; b < count; b++) {
                     result.push({ bindId: comp.id + "." + b, desc: "按钮" + (b+1), color: "#ff3b30" })
                 }
-            } else if (cat === "roller" && comp.type === "roller") {
+            } else if (cat === "roller" && (comp.type === "roller"
+                       || comp.type === "potentiometer")) {
                 result.push({ bindId: comp.id, desc: comp.label || "轴", color: "#ff9500" })
             } else if (cat === "fnr" && comp.type === "fnrSwitch") {
                 // FNR 直接绑定到 fnrSwitch 组件（按钮映射在 JSON 中定义）
@@ -690,8 +710,13 @@ AluminumPanel {
     }
 
     function showLabelEditor(wrapper) {
+        if (labelEditor.visible)
+            labelEditor.closeLabelEditor(false)
         labelEditor.targetComponent = wrapper
-        labelField.text = wrapper.getLabel()
+        labelEditor.originalLabel = wrapper.getLabel()
+        labelEditor.shouldRestoreLabel = true
+        labelField.text = labelEditor.originalLabel
+        wrapper.setLabel("")
         var topPos = wrapper.mapToItem(root, wrapper.width / 2, 0)
         var bottomPos = wrapper.mapToItem(root, wrapper.width / 2, wrapper.height)
         var cx = topPos.x
@@ -889,7 +914,7 @@ AluminumPanel {
         } else if (event.key === Qt.Key_Delete || event.key === Qt.Key_Backspace) {
             deleteSelected(); event.accepted = true
         } else if (event.key === Qt.Key_Escape) {
-            contextMenu.close(); labelEditor.visible = false
+            contextMenu.close(); labelEditor.closeLabelEditor(false)
             clearSelection(); event.accepted = true
         } else if (event.key === Qt.Key_C && (event.modifiers & Qt.ControlModifier)) {
             copySelected(); event.accepted = true

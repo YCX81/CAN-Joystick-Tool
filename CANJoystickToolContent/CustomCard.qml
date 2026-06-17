@@ -98,6 +98,7 @@ AluminumPanel {
         switch (type) {
             case "VerticalRoller":
             case "HorizontalRoller":
+            case "RotaryPotentiometer":
             case "RollerWheel":
                 if (instance.valueChanged) {
                     instance.valueChanged.connect(function() {
@@ -142,10 +143,12 @@ AluminumPanel {
         if (type === "FNRSwitch") return prefix + "FNRSwitchUnit.qml"
         if (type === "VerticalRoller") return prefix + "VerticalRollerUnit.qml"
         if (type === "HorizontalRoller") return prefix + "HorizontalRollerUnit.qml"
+        if (type === "RotaryPotentiometer") return prefix + "RotaryPotentiometerUnit.qml"
         // 基础组件 (向后兼容)
         var mapping = {
             "IndustrialButton": prefix + "IndustrialButton.qml",
             "RollerWheel": prefix + "RollerWheel.qml",
+            "RotaryPotentiometer": prefix + "RotaryPotentiometer.qml",
             "JoystickPad": prefix + "JoystickPad.qml",
             "DigitalDisplay": prefix + "DigitalDisplay.qml",
             "StatusIndicator": prefix + "StatusIndicator.qml",
