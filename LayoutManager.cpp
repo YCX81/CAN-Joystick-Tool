@@ -812,6 +812,8 @@ void LayoutManager::initDefaultDirectories()
     const QString appDir = QCoreApplication::applicationDirPath();
     const QString desktopPath = QStandardPaths::writableLocation(QStandardPaths::DesktopLocation);
     const QStringList assetCandidates = {
+        QDir(appDir).filePath(QStringLiteral("firmware")),
+        QDir(appDir).filePath(QStringLiteral("products")),
         QDir(appDir).filePath(QStringLiteral("../CANJoystickDownloadTool/firmware")),
         QDir(desktopPath).filePath(QStringLiteral("CANJoystickDownloadTool/firmware")),
         QDir(appDir).filePath(QStringLiteral("../CANJoystickDownloadTool/products")),
@@ -824,7 +826,7 @@ void LayoutManager::initDefaultDirectories()
         }
     }
     if (m_productsDirectory.isEmpty()) {
-        m_productsDirectory = QDir(desktopPath).filePath(QStringLiteral("CANJoystickDownloadTool/firmware"));
+        m_productsDirectory = QDir(appDir).filePath(QStringLiteral("firmware"));
     }
 
     // 确保目录存在
@@ -1831,12 +1833,24 @@ QString LayoutManager::productionDatabasePath() const
 {
     QStringList candidates;
 
+    const QString envDatabasePath = qEnvironmentVariable("CANJOYSTICK_DATABASE_PATH").trimmed();
+    if (!envDatabasePath.isEmpty()) {
+        candidates.append(QFileInfo(envDatabasePath).absoluteFilePath());
+    }
+
+    const QString envDataDir = qEnvironmentVariable("CANJOYSTICK_DATA_DIR").trimmed();
+    if (!envDataDir.isEmpty()) {
+        candidates.append(QDir(envDataDir).filePath(QStringLiteral("production_data.db")));
+    }
+
+    const QString appDir = QCoreApplication::applicationDirPath();
+    candidates.append(QDir(appDir).filePath(QStringLiteral("data/production_data.db")));
+
     QDir projectDir(QDir(m_productsDirectory).absolutePath());
     if (projectDir.cdUp()) {
         candidates.append(projectDir.filePath(QStringLiteral("data/production_data.db")));
     }
 
-    const QString appDir = QCoreApplication::applicationDirPath();
     candidates.append(QDir(appDir).filePath(QStringLiteral("../CANJoystickDownloadTool/data/production_data.db")));
 
     const QString desktopPath = QStandardPaths::writableLocation(QStandardPaths::DesktopLocation);
