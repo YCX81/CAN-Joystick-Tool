@@ -126,13 +126,17 @@ public:
     // ========== 产品配置操作 ==========
 
     Q_INVOKABLE QJsonArray getProductFiles();
+    Q_INVOKABLE QJsonArray getCustomerOptions() const;
     Q_INVOKABLE QJsonObject loadProductConfig(const QString &filePath);
     Q_INVOKABLE bool saveProductConfig(const QJsonObject &configJson, const QString &filePath);
     Q_INVOKABLE QJsonObject validateProductConfig(const QJsonObject &configJson) const;
     Q_INVOKABLE QJsonObject buildStandardProductConfig(const QJsonObject &spec) const;
     Q_INVOKABLE QString sanitizeProductModel(const QString &model) const;
     Q_INVOKABLE bool productConfigExists(const QString &model) const;
+    Q_INVOKABLE QString productConfigVersionPath(const QString &model, const QString &versionCode) const;
+    Q_INVOKABLE bool productConfigVersionExists(const QString &model, const QString &versionCode) const;
     Q_INVOKABLE bool saveProductConfigAs(const QJsonObject &configJson, const QString &model);
+    Q_INVOKABLE bool saveProductConfigVersionAs(const QJsonObject &configJson, const QString &model, const QString &versionCode);
     Q_INVOKABLE QString productConfigPath(const QString &model) const;
     Q_INVOKABLE bool openProductConfigFile(const QString &model) const;
     Q_INVOKABLE bool openProductConfigPath(const QString &filePath);
@@ -179,7 +183,8 @@ private:
     // 初始化默认目录
     void initDefaultDirectories();
 
-    QString downloadRecordDirectory() const;
+    QString productionDatabasePath() const;
+    QString customerDatabasePath() const;
     QString productConfigPathForDatabase(const QString &filePath) const;
     bool ensureProductDatabaseSchema(QSqlDatabase &db);
     bool syncProductConfigToDatabase(const QJsonObject &configJson, const QString &filePath);

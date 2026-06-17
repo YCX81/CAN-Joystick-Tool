@@ -61,6 +61,29 @@ QString versionCodeFromNameSuffix(const QString &name)
     return suffixMatch.hasMatch() ? suffixMatch.captured(2).trimmed().toUpper() : QString();
 }
 
+QString normalizedVersionCode(QString versionCode)
+{
+    versionCode = versionCode.trimmed();
+    if (versionCode.endsWith(QStringLiteral(".json"), Qt::CaseInsensitive)) {
+        versionCode.chop(5);
+    }
+    if (versionCode.isEmpty()) {
+        return QStringLiteral("V1");
+    }
+
+    if (versionCode.at(0).isDigit()) {
+        versionCode.prepend(QLatin1Char('V'));
+    }
+    if (versionCode.startsWith(QLatin1Char('v'))) {
+        versionCode[0] = QLatin1Char('V');
+    }
+    versionCode.replace(QRegularExpression(QStringLiteral("[<>:\"/\\\\|?*\\x00-\\x1F\\s]+")), QStringLiteral("_"));
+    while (!versionCode.isEmpty() && (versionCode.endsWith('.') || versionCode.endsWith(' '))) {
+        versionCode.chop(1);
+    }
+    return versionCode.isEmpty() ? QStringLiteral("V1") : versionCode;
+}
+
 QString productBaseNameFromVersionedName(const QString &name)
 {
     static const QRegularExpression versionSuffix(
@@ -91,6 +114,44 @@ QString displayVersionFromProductConfig(const QJsonObject &configJson, const QFi
         displayVersion = firmware.value(QStringLiteral("displayVersion")).toString().trimmed();
     }
     return displayVersion.isEmpty() ? versionCodeFromProductConfig(configJson, fileInfo) : displayVersion;
+}
+
+QJsonObject configWithDefaultVersionMetadata(const QJsonObject &configJson, const QFileInfo &fileInfo)
+{
+    QJsonObject normalized = configJson;
+    const QJsonObject product = normalized.value(QStringLiteral("product")).toObject();
+    QJsonObject firmware = normalized.value(QStringLiteral("firmware")).toObject();
+
+    QString versionCode = firmware.value(QStringLiteral("version_code")).toString().trimmed();
+    if (versionCode.isEmpty()) {
+        versionCode = firmware.value(QStringLiteral("versionCode")).toString().trimmed();
+    }
+    if (versionCode.isEmpty()) {
+        versionCode = versionCodeFromNameSuffix(fileInfo.completeBaseName());
+    }
+    versionCode = normalizedVersionCode(versionCode);
+
+    if (firmware.value(QStringLiteral("version_code")).toString().trimmed().isEmpty()) {
+        firmware.insert(QStringLiteral("version_code"), versionCode);
+    }
+    if (firmware.value(QStringLiteral("display_version")).toString().trimmed().isEmpty()) {
+        firmware.insert(QStringLiteral("display_version"), versionCode);
+    }
+    if (firmware.value(QStringLiteral("variant_code")).toString().trimmed().isEmpty()) {
+        firmware.insert(QStringLiteral("variant_code"), versionCode);
+    }
+    if (firmware.value(QStringLiteral("status")).toString().trimmed().isEmpty()) {
+        firmware.insert(QStringLiteral("status"), QStringLiteral("active"));
+    }
+    if (firmware.value(QStringLiteral("description")).toString().trimmed().isEmpty()) {
+        const QString description = product.value(QStringLiteral("description")).toString().trimmed();
+        if (!description.isEmpty()) {
+            firmware.insert(QStringLiteral("description"), description);
+        }
+    }
+
+    normalized.insert(QStringLiteral("firmware"), firmware);
+    return normalized;
 }
 
 QString normalizedProductVersionStatus(const QString &status)
@@ -201,7 +262,15 @@ struct ProductFileGroup
     QString model;
     QString protocol;
     QString description;
+    QMap<QString, QString> customerNames;
+    QSet<int> baudRates;
     QVector<QJsonObject> versions;
+};
+
+struct CustomerBindingSpec
+{
+    QString name;
+    bool isDefault = false;
 };
 
 QString assetRootNameForDirectory(const QString &directory)
@@ -263,6 +332,130 @@ int boundedJsonInt(const QJsonObject &object, const QString &key, int fallback, 
         }
     }
     return qBound(minValue, value, maxValue);
+}
+
+void collectCustomerName(QMap<QString, QString> &names, const QString &name)
+{
+    const QString trimmed = name.trimmed();
+    if (trimmed.isEmpty()) {
+        return;
+    }
+
+    const QString key = trimmed.toCaseFolded();
+    if (!names.contains(key)) {
+        names.insert(key, trimmed);
+    }
+}
+
+void collectCustomerNamesFromValue(QMap<QString, QString> &names, const QJsonValue &value)
+{
+    if (value.isString()) {
+        collectCustomerName(names, value.toString());
+        return;
+    }
+
+    if (value.isArray()) {
+        const QJsonArray entries = value.toArray();
+        for (const QJsonValue &entry : entries) {
+            collectCustomerNamesFromValue(names, entry);
+        }
+        return;
+    }
+
+    if (!value.isObject()) {
+        return;
+    }
+
+    const QJsonObject object = value.toObject();
+    QString name = object.value(QStringLiteral("customerName")).toString().trimmed();
+    if (name.isEmpty()) {
+        name = object.value(QStringLiteral("name")).toString().trimmed();
+    }
+    if (name.isEmpty()) {
+        name = object.value(QStringLiteral("displayName")).toString().trimmed();
+    }
+    collectCustomerName(names, name);
+}
+
+QMap<QString, QString> customerNamesFromProductConfig(const QJsonObject &configJson)
+{
+    QMap<QString, QString> names;
+    const QJsonObject product = configJson.value(QStringLiteral("product")).toObject();
+
+    collectCustomerName(names, product.value(QStringLiteral("customerName")).toString());
+    collectCustomerName(names, product.value(QStringLiteral("customer")).toString());
+    collectCustomerNamesFromValue(names, product.value(QStringLiteral("customerBindings")));
+    collectCustomerNamesFromValue(names, product.value(QStringLiteral("customers")));
+    collectCustomerNamesFromValue(names, configJson.value(QStringLiteral("customerBindings")));
+    collectCustomerNamesFromValue(names, configJson.value(QStringLiteral("customers")));
+
+    return names;
+}
+
+void appendCustomerBindingSpecs(QVector<CustomerBindingSpec> &bindings, const QJsonValue &value)
+{
+    if (value.isArray()) {
+        const QJsonArray entries = value.toArray();
+        for (const QJsonValue &entry : entries) {
+            appendCustomerBindingSpecs(bindings, entry);
+        }
+        return;
+    }
+
+    CustomerBindingSpec binding;
+    if (value.isString()) {
+        binding.name = value.toString().trimmed();
+    } else if (value.isObject()) {
+        const QJsonObject object = value.toObject();
+        binding.name = object.value(QStringLiteral("customerName"))
+            .toString(object.value(QStringLiteral("name")).toString())
+            .trimmed();
+        binding.isDefault = object.value(QStringLiteral("isDefault")).toBool(false);
+    }
+
+    if (!binding.name.isEmpty()) {
+        bindings.append(binding);
+    }
+}
+
+QVector<CustomerBindingSpec> customerBindingSpecsFromProductConfig(const QJsonObject &configJson)
+{
+    QVector<CustomerBindingSpec> bindings;
+    const QJsonObject product = configJson.value(QStringLiteral("product")).toObject();
+
+    appendCustomerBindingSpecs(bindings, product.value(QStringLiteral("customerBindings")));
+    appendCustomerBindingSpecs(bindings, product.value(QStringLiteral("customers")));
+    appendCustomerBindingSpecs(bindings, configJson.value(QStringLiteral("customerBindings")));
+    appendCustomerBindingSpecs(bindings, configJson.value(QStringLiteral("customers")));
+
+    return bindings;
+}
+
+QJsonArray customerNamesToJsonArray(const QMap<QString, QString> &names)
+{
+    QJsonArray result;
+    for (auto it = names.cbegin(); it != names.cend(); ++it) {
+        result.append(it.value());
+    }
+    return result;
+}
+
+QJsonArray baudRatesToJsonArray(const QSet<int> &baudRates)
+{
+    QList<int> values = baudRates.values();
+    std::sort(values.begin(), values.end());
+
+    QJsonArray result;
+    for (int value : values) {
+        result.append(value);
+    }
+    return result;
+}
+
+int defaultBaudRateFromProductConfig(const QJsonObject &configJson)
+{
+    const QJsonObject can = configJson.value(QStringLiteral("can")).toObject();
+    return boundedJsonInt(can, QStringLiteral("defaultBaudRate"), 250, 10, 1000);
 }
 
 bool jsonBool(const QJsonObject &object, const QString &key, bool fallback = false)
@@ -574,6 +767,7 @@ bool isRuntimeVisualType(const QString &type)
 {
     return type.startsWith(QStringLiteral("Button"))
         || type.contains(QStringLiteral("Roller"))
+        || type.contains(QStringLiteral("Potentiometer"))
         || type.contains(QStringLiteral("FNR"));
 }
 
@@ -901,6 +1095,8 @@ QJsonArray LayoutManager::getProductFiles()
         const QJsonDocument productDoc = readJsonFile(fileInfo.absoluteFilePath());
         const QJsonObject root = productDoc.isObject() ? productDoc.object() : QJsonObject();
         const QJsonObject product = root.value(QStringLiteral("product")).toObject();
+        const QMap<QString, QString> customerNames = customerNamesFromProductConfig(root);
+        const int defaultBaudRate = defaultBaudRateFromProductConfig(root);
         const QString productName = product.value(QStringLiteral("name"))
             .toString(product.value(QStringLiteral("model")).toString(fileInfo.completeBaseName()))
             .trimmed();
@@ -922,18 +1118,27 @@ QJsonArray LayoutManager::getProductFiles()
         } else if (group.description.isEmpty()) {
             group.description = product.value(QStringLiteral("description")).toString();
         }
+        for (auto customerIt = customerNames.cbegin(); customerIt != customerNames.cend(); ++customerIt) {
+            collectCustomerName(group.customerNames, customerIt.value());
+        }
+        group.baudRates.insert(defaultBaudRate);
 
         const QJsonObject firmware = root.value(QStringLiteral("firmware")).toObject();
         const QString versionStatus = statusFromProductConfig(root);
+        const QString versionCode = versionCodeFromProductConfig(root, fileInfo);
+        const QString displayVersion = displayVersionFromProductConfig(root, fileInfo);
         QJsonObject versionObj;
         versionObj["name"] = fileInfo.baseName();
         versionObj["path"] = fileInfo.absoluteFilePath();
         versionObj["modified"] = fileInfo.lastModified().toString(Qt::ISODate);
         versionObj["size"] = fileInfo.size();
-        versionObj["versionCode"] = versionCodeFromProductConfig(root, fileInfo);
-        versionObj["displayVersion"] = displayVersionFromProductConfig(root, fileInfo);
+        versionObj["versionCode"] = versionCode;
+        versionObj["displayVersion"] = displayVersion;
+        versionObj["label"] = displayVersion.isEmpty() ? versionCode : displayVersion;
         versionObj["status"] = versionStatus;
         versionObj["deprecated"] = versionStatus == QStringLiteral("deprecated");
+        versionObj["customerNames"] = customerNamesToJsonArray(customerNames);
+        versionObj["defaultBaudRate"] = defaultBaudRate;
         versionObj["description"] = firmware.value(QStringLiteral("description"))
             .toString(product.value(QStringLiteral("description")).toString());
         group.versions.append(versionObj);
@@ -964,13 +1169,67 @@ QJsonArray LayoutManager::getProductFiles()
         fileObj["model"] = group.model;
         fileObj["versionCode"] = defaultVersion.value(QStringLiteral("versionCode")).toString();
         fileObj["displayVersion"] = defaultVersion.value(QStringLiteral("displayVersion")).toString();
+        fileObj["label"] = defaultVersion.value(QStringLiteral("label")).toString();
         fileObj["status"] = defaultVersion.value(QStringLiteral("status")).toString();
         fileObj["deprecated"] = defaultVersion.value(QStringLiteral("deprecated")).toBool();
+        fileObj["customerNames"] = customerNamesToJsonArray(group.customerNames);
+        fileObj["defaultBaudRate"] = defaultVersion.value(QStringLiteral("defaultBaudRate")).toInt(250);
+        fileObj["baudRates"] = baudRatesToJsonArray(group.baudRates);
         fileObj["versions"] = versions;
         files.append(fileObj);
     }
 
     return files;
+}
+
+QJsonArray LayoutManager::getCustomerOptions() const
+{
+    QJsonArray customers;
+    const QString databasePath = customerDatabasePath();
+    if (databasePath.isEmpty() || !QFileInfo::exists(databasePath)) {
+        return customers;
+    }
+
+    const QString connectionName = QStringLiteral("product_editor_customers_%1")
+        .arg(QUuid::createUuid().toString(QUuid::WithoutBraces));
+
+    {
+        QSqlDatabase db = QSqlDatabase::addDatabase(QStringLiteral("QSQLITE"), connectionName);
+        db.setDatabaseName(databasePath);
+        db.setConnectOptions(QStringLiteral("QSQLITE_OPEN_READONLY"));
+        if (!db.open()) {
+            qWarning() << "Failed to open customer database" << databasePath << db.lastError().text();
+        } else if (databaseTableHasColumn(db, QStringLiteral("customers"), QStringLiteral("name"))) {
+            const bool hasStatusColumn = databaseTableHasColumn(db, QStringLiteral("customers"), QStringLiteral("status"));
+            QSqlQuery query(db);
+            const QString statement = hasStatusColumn
+                ? QStringLiteral(
+                    "SELECT name FROM customers "
+                    "WHERE name IS NOT NULL AND TRIM(name) <> '' "
+                    "AND LOWER(COALESCE(status, 'active')) NOT IN ('deleted', 'removed') "
+                    "ORDER BY name COLLATE NOCASE")
+                : QStringLiteral(
+                    "SELECT name FROM customers "
+                    "WHERE name IS NOT NULL AND TRIM(name) <> '' "
+                    "ORDER BY name COLLATE NOCASE");
+            if (!query.exec(statement)) {
+                qWarning() << "Failed to query customer database" << databasePath << query.lastError().text();
+            } else {
+                QMap<QString, QString> names;
+                while (query.next()) {
+                    collectCustomerName(names, query.value(0).toString());
+                }
+                customers = customerNamesToJsonArray(names);
+            }
+            db.close();
+        } else {
+            qWarning() << "Customer database has no customers.name table" << databasePath;
+            db.close();
+        }
+    }
+
+    QSqlDatabase::removeDatabase(connectionName);
+    return customers;
 }
 
 QJsonObject LayoutManager::loadProductConfig(const QString &filePath)
@@ -1115,7 +1374,8 @@ QJsonObject LayoutManager::validateProductConfig(const QJsonObject &configJson) 
             if (buttonFieldCounts.contains(source) && buttonFieldCounts.value(source) != componentCount) {
                 appendMessage(errors, tr("Button group %1 count does not match %2 buttonCount").arg(id, source));
             }
-        } else if (type == QStringLiteral("roller")) {
+        } else if (type == QStringLiteral("roller")
+                   || type == QStringLiteral("potentiometer")) {
             validateRef(fieldRefTarget(component, QStringLiteral("position")), tr("Roller %1").arg(id), true);
             validateRef(fieldRefTarget(component, QStringLiteral("status")), tr("Roller %1 status").arg(id), false);
         } else if (type == QStringLiteral("counter") || type == QStringLiteral("indicator")) {
@@ -1299,8 +1559,11 @@ bool LayoutManager::saveProductConfig(const QJsonObject &configJson, const QStri
         return false;
     }
 
-    if (!isManualMappingDraft(configJson)) {
-        const QJsonObject validation = validateProductConfig(configJson);
+    const QFileInfo targetFileInfo(filePath);
+    const QJsonObject normalizedConfig = configWithDefaultVersionMetadata(configJson, targetFileInfo);
+
+    if (!isManualMappingDraft(normalizedConfig)) {
+        const QJsonObject validation = validateProductConfig(normalizedConfig);
         if (!validation.value(QStringLiteral("ok")).toBool()) {
         const QJsonArray errors = validation.value(QStringLiteral("errors")).toArray();
         QStringList errorText;
@@ -1312,12 +1575,12 @@ bool LayoutManager::saveProductConfig(const QJsonObject &configJson, const QStri
         }
     }
 
-    const QJsonDocument doc(configJson);
+    const QJsonDocument doc(normalizedConfig);
     if (!writeJsonFile(filePath, doc)) {
         return false;
     }
 
-    if (!syncProductConfigToDatabase(configJson, filePath)) {
+    if (!syncProductConfigToDatabase(normalizedConfig, filePath)) {
         return false;
     }
 
@@ -1344,6 +1607,26 @@ QString LayoutManager::sanitizeProductModel(const QString &model) const
 bool LayoutManager::productConfigExists(const QString &model) const
 {
     const QString path = productConfigPath(model);
+    return !path.isEmpty() && QFileInfo::exists(path);
+}
+
+QString LayoutManager::productConfigVersionPath(const QString &model, const QString &versionCode) const
+{
+    const QString safeModel = sanitizeProductModel(model);
+    const QString baseModel = productBaseNameFromVersionedName(safeModel);
+    const QString safeVersionCode = normalizedVersionCode(versionCode);
+    if (baseModel.isEmpty() || safeVersionCode.isEmpty()) {
+        return QString();
+    }
+
+    const QDir dir(m_productsDirectory);
+    const QString fileName = QStringLiteral("%1_%2.json").arg(baseModel, safeVersionCode);
+    return QDir(dir.filePath(baseModel)).filePath(fileName);
+}
+
+bool LayoutManager::productConfigVersionExists(const QString &model, const QString &versionCode) const
+{
+    const QString path = productConfigVersionPath(model, versionCode);
     return !path.isEmpty() && QFileInfo::exists(path);
 }
 
@@ -1430,8 +1713,11 @@ bool LayoutManager::saveProductConfigAs(const QJsonObject &configJson, const QSt
         return false;
     }
 
-    if (!isManualMappingDraft(configJson)) {
-        const QJsonObject validation = validateProductConfig(configJson);
+    const QFileInfo targetFileInfo(filePath);
+    const QJsonObject normalizedConfig = configWithDefaultVersionMetadata(configJson, targetFileInfo);
+
+    if (!isManualMappingDraft(normalizedConfig)) {
+        const QJsonObject validation = validateProductConfig(normalizedConfig);
         if (!validation.value(QStringLiteral("ok")).toBool()) {
         const QJsonArray errors = validation.value(QStringLiteral("errors")).toArray();
         QStringList errorText;
@@ -1443,12 +1729,62 @@ bool LayoutManager::saveProductConfigAs(const QJsonObject &configJson, const QSt
         }
     }
 
-    const QJsonDocument doc(configJson);
+    const QJsonDocument doc(normalizedConfig);
     if (!writeJsonFile(filePath, doc)) {
         return false;
     }
 
-    if (!syncProductConfigToDatabase(configJson, filePath)) {
+    if (!syncProductConfigToDatabase(normalizedConfig, filePath)) {
+        return false;
+    }
+
+    emit productConfigSaved(filePath);
+    return true;
+}
+
+bool LayoutManager::saveProductConfigVersionAs(const QJsonObject &configJson,
+                                               const QString &model,
+                                               const QString &versionCode)
+{
+    const QString safeModel = sanitizeProductModel(model);
+    if (safeModel.isEmpty()) {
+        emit errorOccurred(tr("Product name cannot be empty"));
+        return false;
+    }
+
+    const QString filePath = productConfigVersionPath(safeModel, versionCode);
+    const QString targetDirectory = QFileInfo(filePath).absolutePath();
+    if (!ensureDirectoryExists(targetDirectory)) {
+        emit errorOccurred(tr("Failed to create products directory: %1").arg(targetDirectory));
+        return false;
+    }
+    if (QFileInfo::exists(filePath)) {
+        emit errorOccurred(tr("Product config already exists: %1").arg(filePath));
+        return false;
+    }
+
+    const QFileInfo fileInfo(filePath);
+    const QJsonObject normalizedConfig = configWithDefaultVersionMetadata(configJson, fileInfo);
+
+    if (!isManualMappingDraft(normalizedConfig)) {
+        const QJsonObject validation = validateProductConfig(normalizedConfig);
+        if (!validation.value(QStringLiteral("ok")).toBool()) {
+        const QJsonArray errors = validation.value(QStringLiteral("errors")).toArray();
+        QStringList errorText;
+        for (const QJsonValue &error : errors) {
+            errorText.append(error.toString());
+        }
+        emit errorOccurred(tr("Product config validation failed: %1").arg(errorText.join(QStringLiteral("; "))));
+        return false;
+        }
+    }
+
+    const QJsonDocument doc(normalizedConfig);
+    if (!writeJsonFile(filePath, doc)) {
+        return false;
+    }
+
+    if (!syncProductConfigToDatabase(normalizedConfig, filePath)) {
         return false;
     }
 
@@ -1491,14 +1827,63 @@ bool LayoutManager::ensureDirectoryExists(const QString &path)
     return true;
 }
 
-QString LayoutManager::downloadRecordDirectory() const
+QString LayoutManager::productionDatabasePath() const
 {
+    QStringList candidates;
+
     QDir projectDir(QDir(m_productsDirectory).absolutePath());
     if (projectDir.cdUp()) {
-        return projectDir.filePath(QStringLiteral("downloadrecord"));
+        candidates.append(projectDir.filePath(QStringLiteral("data/production_data.db")));
     }
 
-    return QDir(QCoreApplication::applicationDirPath()).filePath(QStringLiteral("downloadrecord"));
+    const QString appDir = QCoreApplication::applicationDirPath();
+    candidates.append(QDir(appDir).filePath(QStringLiteral("../CANJoystickDownloadTool/data/production_data.db")));
+
+    const QString desktopPath = QStandardPaths::writableLocation(QStandardPaths::DesktopLocation);
+    candidates.append(QDir(desktopPath).filePath(QStringLiteral("CANJoystickDownloadTool/data/production_data.db")));
+
+    for (const QString &candidate : candidates) {
+        const QString cleanPath = QDir::cleanPath(candidate);
+        if (QFileInfo::exists(cleanPath)) {
+            return QDir::fromNativeSeparators(cleanPath);
+        }
+    }
+
+    return candidates.isEmpty()
+        ? QString()
+        : QDir::fromNativeSeparators(QDir::cleanPath(candidates.constFirst()));
+}
+
+QString LayoutManager::customerDatabasePath() const
+{
+    QStringList candidates;
+
+    const QString primaryDataPath = productionDatabasePath();
+    if (!primaryDataPath.isEmpty()) {
+        candidates.append(primaryDataPath);
+    }
+
+    QDir projectDir(QDir(m_productsDirectory).absolutePath());
+    if (projectDir.cdUp()) {
+        candidates.append(projectDir.filePath(QStringLiteral("downloadrecord/production_data.db")));
+    }
+
+    const QString appDir = QCoreApplication::applicationDirPath();
+    candidates.append(QDir(appDir).filePath(QStringLiteral("../CANJoystickDownloadTool/downloadrecord/production_data.db")));
+
+    const QString desktopPath = QStandardPaths::writableLocation(QStandardPaths::DesktopLocation);
+    candidates.append(QDir(desktopPath).filePath(QStringLiteral("CANJoystickDownloadTool/downloadrecord/production_data.db")));
+
+    for (const QString &candidate : candidates) {
+        const QString cleanPath = QDir::cleanPath(candidate);
+        if (QFileInfo::exists(cleanPath)) {
+            return QDir::fromNativeSeparators(cleanPath);
+        }
+    }
+
+    return candidates.isEmpty()
+        ? QString()
+        : QDir::fromNativeSeparators(QDir::cleanPath(candidates.constFirst()));
 }
 
 QString LayoutManager::productConfigPathForDatabase(const QString &filePath) const
@@ -1553,6 +1938,28 @@ bool LayoutManager::ensureProductDatabaseSchema(QSqlDatabase &db)
             "updated_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),"
             "FOREIGN KEY(product_id) REFERENCES products(id),"
             "UNIQUE(product_id, version_code)"
+            ")"),
+        QStringLiteral(
+            "CREATE TABLE IF NOT EXISTS customers ("
+            "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+            "name TEXT NOT NULL UNIQUE,"
+            "code TEXT UNIQUE,"
+            "type TEXT NOT NULL DEFAULT 'real',"
+            "status TEXT NOT NULL DEFAULT 'active',"
+            "created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),"
+            "updated_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))"
+            ")"),
+        QStringLiteral(
+            "CREATE TABLE IF NOT EXISTS product_customer_bindings ("
+            "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+            "product_id INTEGER NOT NULL,"
+            "customer_id INTEGER NOT NULL,"
+            "is_default INTEGER NOT NULL DEFAULT 0,"
+            "created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),"
+            "updated_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),"
+            "FOREIGN KEY(product_id) REFERENCES products(id),"
+            "FOREIGN KEY(customer_id) REFERENCES customers(id),"
+            "UNIQUE(product_id, customer_id)"
             ")")
     };
 
@@ -1591,10 +1998,33 @@ bool LayoutManager::ensureProductDatabaseSchema(QSqlDatabase &db)
         }
     }
 
+    const QList<QPair<QString, QString>> versionColumns = {
+        {QStringLiteral("schema_version"), QStringLiteral("INTEGER")},
+        {QStringLiteral("description"), QStringLiteral("TEXT NOT NULL DEFAULT ''")},
+        {QStringLiteral("status"), QStringLiteral("TEXT NOT NULL DEFAULT 'released'")},
+        {QStringLiteral("released_at"), QStringLiteral("TEXT NOT NULL DEFAULT ''")}
+    };
+
+    for (const auto &column : versionColumns) {
+        if (databaseTableHasColumn(db, QStringLiteral("product_config_versions"), column.first)) {
+            continue;
+        }
+
+        QSqlQuery alter(db);
+        const QString statement = QStringLiteral("ALTER TABLE product_config_versions ADD COLUMN %1 %2")
+            .arg(column.first, column.second);
+        if (!alter.exec(statement)) {
+            emit errorOccurred(tr("Failed to update product version database schema: %1").arg(alter.lastError().text()));
+            return false;
+        }
+    }
+
     const QStringList indexStatements = {
         QStringLiteral("CREATE INDEX IF NOT EXISTS idx_products_protocol ON products(protocol)"),
         QStringLiteral("CREATE INDEX IF NOT EXISTS idx_product_config_versions_product ON product_config_versions(product_id)"),
-        QStringLiteral("CREATE INDEX IF NOT EXISTS idx_product_config_versions_status ON product_config_versions(status)")
+        QStringLiteral("CREATE INDEX IF NOT EXISTS idx_product_config_versions_status ON product_config_versions(status)"),
+        QStringLiteral("CREATE INDEX IF NOT EXISTS idx_product_customer_product ON product_customer_bindings(product_id)"),
+        QStringLiteral("CREATE INDEX IF NOT EXISTS idx_product_customer_customer ON product_customer_bindings(customer_id)")
     };
     for (const QString &statement : indexStatements) {
         QSqlQuery query(db);
@@ -1627,7 +2057,7 @@ bool LayoutManager::syncProductConfigToDatabase(const QJsonObject &configJson, c
     const QString databaseConfigPath = productConfigPathForDatabase(filePath);
     const QString versionCode = versionCodeFromProductConfig(configJson, fileInfo);
     const QString configSha256 = fileSha256Hex(filePath);
-    const QString databasePath = QDir(downloadRecordDirectory()).filePath(QStringLiteral("production_data.db"));
+    const QString databasePath = productionDatabasePath();
 
     if (!ensureDirectoryExists(QFileInfo(databasePath).absolutePath())) {
         emit errorOccurred(tr("Failed to create record database directory: %1").arg(QFileInfo(databasePath).absolutePath()));
@@ -1745,6 +2175,91 @@ bool LayoutManager::syncProductConfigToDatabase(const QJsonObject &configJson, c
             emit errorOccurred(tr("Failed to update product: %1").arg(update.lastError().text()));
             db.close();
             return false;
+        }
+
+        const QVector<CustomerBindingSpec> customerBindings = customerBindingSpecsFromProductConfig(configJson);
+        QSqlQuery clearBindings(db);
+        clearBindings.prepare(QStringLiteral("DELETE FROM product_customer_bindings WHERE product_id = ?"));
+        clearBindings.addBindValue(productId);
+        if (!clearBindings.exec()) {
+            db.rollback();
+            emit errorOccurred(tr("Failed to clear product/customer bindings: %1").arg(clearBindings.lastError().text()));
+            db.close();
+            return false;
+        }
+
+        QSet<QString> importedCustomerNames;
+        for (const CustomerBindingSpec &binding : customerBindings) {
+            const QString customerName = binding.name.trimmed();
+            const QString customerKey = customerName.toCaseFolded();
+            if (customerName.isEmpty() || importedCustomerNames.contains(customerKey)) {
+                continue;
+            }
+            importedCustomerNames.insert(customerKey);
+
+            qint64 customerId = 0;
+            QSqlQuery selectCustomer(db);
+            selectCustomer.prepare(QStringLiteral("SELECT id FROM customers WHERE name = ? LIMIT 1"));
+            selectCustomer.addBindValue(customerName);
+            if (!selectCustomer.exec()) {
+                db.rollback();
+                emit errorOccurred(tr("Failed to query customer: %1").arg(selectCustomer.lastError().text()));
+                db.close();
+                return false;
+            }
+            if (selectCustomer.next()) {
+                customerId = selectCustomer.value(0).toLongLong();
+            }
+
+            if (customerId <= 0) {
+                const bool hasCustomerTypeColumn = databaseTableHasColumn(db, QStringLiteral("customers"), QStringLiteral("type"));
+                const bool hasCustomerStatusColumn = databaseTableHasColumn(db, QStringLiteral("customers"), QStringLiteral("status"));
+                QSqlQuery insertCustomer(db);
+                if (hasCustomerTypeColumn && hasCustomerStatusColumn) {
+                    insertCustomer.prepare(QStringLiteral(
+                        "INSERT INTO customers (name, type, status) VALUES (?, 'real', 'active')"));
+                } else {
+                    insertCustomer.prepare(QStringLiteral("INSERT INTO customers (name) VALUES (?)"));
+                }
+                insertCustomer.addBindValue(customerName);
+                if (!insertCustomer.exec()) {
+                    db.rollback();
+                    emit errorOccurred(tr("Failed to insert customer: %1").arg(insertCustomer.lastError().text()));
+                    db.close();
+                    return false;
+                }
+                customerId = insertCustomer.lastInsertId().toLongLong();
+            }
+
+            QSqlQuery insertBinding(db);
+            insertBinding.prepare(QStringLiteral(
+                "INSERT OR IGNORE INTO product_customer_bindings "
+                "(product_id, customer_id, is_default) VALUES (?, ?, ?)"));
+            insertBinding.addBindValue(productId);
+            insertBinding.addBindValue(customerId);
+            insertBinding.addBindValue(binding.isDefault ? 1 : 0);
+            if (!insertBinding.exec()) {
+                db.rollback();
+                emit errorOccurred(tr("Failed to insert product/customer binding: %1").arg(insertBinding.lastError().text()));
+                db.close();
+                return false;
+            }
+
+            QSqlQuery updateBinding(db);
+            updateBinding.prepare(QStringLiteral(
+                "UPDATE product_customer_bindings SET "
+                "is_default = CASE WHEN ? = 1 THEN 1 ELSE is_default END, "
+                "updated_at = datetime('now', 'localtime') "
+                "WHERE product_id = ? AND customer_id = ?"));
+            updateBinding.addBindValue(binding.isDefault ? 1 : 0);
+            updateBinding.addBindValue(productId);
+            updateBinding.addBindValue(customerId);
+            if (!updateBinding.exec()) {
+                db.rollback();
+                emit errorOccurred(tr("Failed to update product/customer binding: %1").arg(updateBinding.lastError().text()));
+                db.close();
+                return false;
+            }
         }
 
         QSqlQuery clearDefaultVersion(db);

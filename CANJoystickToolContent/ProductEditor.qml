@@ -12,11 +12,14 @@ Item {
     property string currentFilePath: ""
     property var productEntries: []
     property int currentVersionIndex: -1
+    property string currentVersionDisplayText: ""
+    property bool currentVersionDeprecated: false
     property bool hasUnsavedChanges: false
     property bool loadingCells: false
     property int activeCellIndex: 0
     property int productMetadataRevision: 0
     property string cloneProductError: ""
+    property bool cloneProductCreatesVersion: false
     property string saveProductMessage: ""
     property bool saveProductMessageIsError: false
     readonly property int defaultCanvasWidth: Constants.homeCardDesignSize
@@ -198,19 +201,59 @@ Item {
 
     Component.onCompleted: loadProductList()
 
+    function versionStringValue(item, keys) {
+        var source = item || {}
+        for (var i = 0; i < keys.length; i++) {
+            var value = source[keys[i]]
+            if (value !== undefined && value !== null) {
+                var text = String(value).trim()
+                if (text.length > 0)
+                    return text
+            }
+        }
+        return ""
+    }
+
+    function fileBaseName(path) {
+        var text = String(path || "").replace(/\\/g, "/")
+        var slashIndex = text.lastIndexOf("/")
+        if (slashIndex >= 0)
+            text = text.substring(slashIndex + 1)
+        if (text.length >= 5 && text.toLowerCase().lastIndexOf(".json") === text.length - 5)
+            text = text.substring(0, text.length - 5)
+        return text
+    }
+
+    function versionCodeFromVersionItem(item) {
+        var direct = versionStringValue(item, ["label", "displayVersion", "versionCode", "display_version", "version_code"])
+        if (direct.length > 0)
+            return direct
+
+        var baseName = fileBaseName(versionStringValue(item, ["name", "path"]))
+        var match = baseName.match(/_(V\d+(?:\.\d+)*)$/i)
+        if (match && match.length > 1)
+            return String(match[1]).toUpperCase()
+        return baseName
+    }
+
     function normalizedProductVersion(version) {
         var item = version || {}
-        var fallbackLabel = String(item["displayVersion"] || item["versionCode"] || item["name"] || "")
+        var fallbackLabel = versionCodeFromVersionItem(item)
+        var status = versionStringValue(item, ["status"]) || "active"
+        var defaultBaudRate = Number(item["defaultBaudRate"] || 250)
         return {
-            name: String(item["name"] || fallbackLabel),
-            path: String(item["path"] || ""),
-            modified: String(item["modified"] || ""),
+            name: versionStringValue(item, ["name"]) || fallbackLabel,
+            path: versionStringValue(item, ["path"]),
+            modified: versionStringValue(item, ["modified"]),
             size: item["size"] || 0,
-            versionCode: String(item["versionCode"] || fallbackLabel),
-            displayVersion: fallbackLabel,
-            description: String(item["description"] || ""),
-            status: String(item["status"] || "active"),
-            deprecated: item["deprecated"] === true
+            versionCode: versionStringValue(item, ["versionCode", "version_code"]) || fallbackLabel,
+            displayVersion: versionStringValue(item, ["displayVersion", "display_version", "label"]) || fallbackLabel,
+            label: fallbackLabel,
+            description: versionStringValue(item, ["description"]),
+            status: status,
+            deprecated: item["deprecated"] === true || status.toLowerCase() === "deprecated",
+            customerNames: cloneOptionArray(item["customerNames"]),
+            defaultBaudRate: defaultBaudRate > 0 ? defaultBaudRate : 250
         }
     }
 
@@ -226,7 +269,7 @@ Item {
     }
 
     function versionLabel(version) {
-        var label = String((version || {}).displayVersion || (version || {}).versionCode || (version || {}).name || "")
+        var label = versionCodeFromVersionItem(version)
         return label.length > 0 ? label : "JSON"
     }
 
@@ -252,6 +295,7 @@ Item {
         var selectedVersion = defaultVersionIndex >= 0 ? versions[defaultVersionIndex] : null
         var fileName = String(item["name"] || (selectedVersion ? selectedVersion.name : ""))
         var productName = String(item["model"] || item["displayName"] || fileName)
+        var defaultBaudRate = Number(item["defaultBaudRate"] || (selectedVersion ? selectedVersion.defaultBaudRate : 250) || 250)
         return {
             name: String(item["name"] || productName),
             path: selectedVersion ? selectedVersion.path : defaultPath,
@@ -262,7 +306,10 @@ Item {
             protocol: String(item["protocol"] || "j1939"),
             description: String(item["description"] || ""),
             versions: versions,
-            defaultVersionIndex: defaultVersionIndex
+            defaultVersionIndex: defaultVersionIndex,
+            customerNames: cloneOptionArray(item["customerNames"]),
+            defaultBaudRate: defaultBaudRate > 0 ? defaultBaudRate : 250,
+            baudRates: cloneOptionArray(item["baudRates"])
         }
     }
 
@@ -273,6 +320,7 @@ Item {
         productModel.clear()
         currentVersionModel.clear()
         currentVersionIndex = -1
+        refreshCurrentVersionDisplay()
         for (var i = 0; i < files.length; i++) {
             var entry = normalizedProductFile(files[i])
             entries.push(entry)
@@ -289,6 +337,7 @@ Item {
                                 })
         }
         productEntries = entries
+        rebuildCloneOptionModels()
     }
 
     function productEntryAt(idx) {
@@ -316,7 +365,7 @@ Item {
                                            description: String(versions[i].description || ""),
                                            status: String(versions[i].status || "active"),
                                            deprecated: versions[i].deprecated === true
-                                       })
+                                        })
         }
     }
 
@@ -326,12 +375,45 @@ Item {
                 : ({})
     }
 
+    function refreshCurrentVersionDisplay() {
+        if (currentVersionIndex < 0 || currentVersionIndex >= currentVersionModel.count) {
+            currentVersionDisplayText = ""
+            currentVersionDeprecated = false
+            return
+        }
+
+        var option = currentVersionOptionAt(currentVersionIndex)
+        currentVersionDisplayText = versionDisplayLabel(option)
+        currentVersionDeprecated = option.deprecated === true
+    }
+
+    function currentConfigVersionDisplayText() {
+        var firmware = currentConfig && currentConfig.firmware ? currentConfig.firmware : {}
+        var label = versionStringValue(firmware, ["display_version", "displayVersion", "version_code", "versionCode", "variant_code", "variantCode"])
+        if (label.length > 0)
+            return label
+
+        var fileLabel = versionCodeFromVersionItem({ path: currentFilePath })
+        return fileLabel.length > 0 ? fileLabel : "JSON"
+    }
+
+    function versionSelectorDisplayText(controlDisplayText) {
+        if (currentVersionDisplayText.length > 0)
+            return currentVersionDisplayText
+        var comboText = String(controlDisplayText || "").trim()
+        if (comboText.length > 0)
+            return comboText
+        return currentConfigVersionDisplayText()
+    }
+
     function loadProductVersion(productIndex, versionIndex) {
         if (productIndex < 0 || productIndex >= productEntries.length)
             return
         var entry = productEntryAt(productIndex)
         var version = selectedVersionForEntry(entry, versionIndex)
         var resolvedVersionIndex = version ? findVersionIndexByPath(entry.versions || [], version.path) : -1
+        if (resolvedVersionIndex < 0 && entry && entry.versions && entry.versions.length > 0)
+            resolvedVersionIndex = 0
         var path = String(version ? version.path : entry.path || "")
         if (path.length === 0)
             return
@@ -339,6 +421,7 @@ Item {
         productList.currentIndex = productIndex
         refreshVersionModel(entry)
         currentVersionIndex = resolvedVersionIndex
+        refreshCurrentVersionDisplay()
         currentFilePath = path
         currentConfig = layoutManager.loadProductConfig(currentFilePath)
         saveProductMessage = ""
@@ -390,6 +473,146 @@ Item {
     function currentCloneCalibrationMode() {
         var item = cloneCalibrationModeOptions[cloneCalibrationModeBox.currentIndex]
         return item ? item.value : "centerOnly"
+    }
+
+    function cloneOptionArray(value) {
+        if (value === undefined || value === null)
+            return []
+        if (Array.isArray(value))
+            return value
+        return [ value ]
+    }
+
+    function appendCloneCustomerOption(options, seen, value) {
+        var text = String(value || "").trim()
+        if (text.length === 0)
+            return
+        var key = text.toLowerCase()
+        if (seen[key])
+            return
+        seen[key] = true
+        options.push(text)
+    }
+
+    function appendCloneCustomerOptionsFromValue(options, seen, value) {
+        if (value === undefined || value === null)
+            return
+
+        if (typeof value === "string") {
+            appendCloneCustomerOption(options, seen, value)
+            return
+        }
+
+        var entries = cloneOptionArray(value)
+        for (var i = 0; i < entries.length; i++) {
+            var entry = entries[i]
+            if (typeof entry === "string") {
+                appendCloneCustomerOption(options, seen, entry)
+            } else if (entry && typeof entry === "object") {
+                appendCloneCustomerOption(options, seen, entry.customerName || entry.name || entry.displayName)
+            }
+        }
+    }
+
+    function appendCloneCustomerOptionsFromConfig(options, seen, config) {
+        if (!config)
+            return
+        var product = config.product || {}
+        appendCloneCustomerOption(options, seen, product.customerName)
+        appendCloneCustomerOption(options, seen, product.customer)
+        appendCloneCustomerOptionsFromValue(options, seen, product.customerBindings)
+        appendCloneCustomerOptionsFromValue(options, seen, product.customers)
+        appendCloneCustomerOptionsFromValue(options, seen, config.customerBindings)
+        appendCloneCustomerOptionsFromValue(options, seen, config.customers)
+    }
+
+    function appendCloneBaudRateOption(options, seen, value) {
+        var rate = Number(value)
+        if (!isFinite(rate) || rate <= 0)
+            return
+        rate = Math.round(rate)
+        var key = String(rate)
+        if (seen[key])
+            return
+        seen[key] = true
+        options.push(rate)
+    }
+
+    function appendCloneBaudRateOptionsFromEntry(options, seen, entry) {
+        if (!entry)
+            return
+        appendCloneBaudRateOption(options, seen, entry.defaultBaudRate)
+        var rates = cloneOptionArray(entry.baudRates)
+        for (var i = 0; i < rates.length; i++)
+            appendCloneBaudRateOption(options, seen, rates[i])
+
+        var versions = cloneOptionArray(entry.versions)
+        for (var j = 0; j < versions.length; j++)
+            appendCloneBaudRateOption(options, seen, versions[j].defaultBaudRate)
+    }
+
+    function rebuildCloneOptionModels() {
+        var customers = []
+        var seenCustomers = ({})
+        var rates = []
+        var seenRates = ({})
+
+        if (layoutManager && layoutManager.getCustomerOptions)
+            appendCloneCustomerOptionsFromValue(customers, seenCustomers, layoutManager.getCustomerOptions())
+
+        for (var i = 0; i < productEntries.length; i++) {
+            var entry = productEntries[i]
+            appendCloneCustomerOptionsFromValue(customers, seenCustomers, entry.customerNames)
+            var versions = cloneOptionArray(entry.versions)
+            for (var j = 0; j < versions.length; j++)
+                appendCloneCustomerOptionsFromValue(customers, seenCustomers, versions[j].customerNames)
+            appendCloneBaudRateOptionsFromEntry(rates, seenRates, entry)
+        }
+        appendCloneCustomerOptionsFromConfig(customers, seenCustomers, currentConfig)
+        var currentCan = currentConfig && currentConfig.can ? currentConfig.can : {}
+        appendCloneBaudRateOption(rates, seenRates, currentCan.defaultBaudRate)
+
+        customers.sort(function(left, right) { return left.localeCompare(right) })
+        rates.sort(function(left, right) { return left - right })
+        if (rates.length === 0)
+            rates.push(250)
+
+        cloneCustomerModel.clear()
+        for (var customerIndex = 0; customerIndex < customers.length; customerIndex++)
+            cloneCustomerModel.append({ label: customers[customerIndex], value: customers[customerIndex] })
+
+        cloneBaudRateModel.clear()
+        for (var rateIndex = 0; rateIndex < rates.length; rateIndex++)
+            cloneBaudRateModel.append({ label: String(rates[rateIndex]), value: rates[rateIndex] })
+    }
+
+    function selectComboValue(comboBox, model, value) {
+        var target = String(value || "").trim()
+        if (target.length === 0) {
+            comboBox.currentIndex = -1
+            return
+        }
+
+        for (var i = 0; i < model.count; i++) {
+            if (String(model.get(i).value || "").trim() === target) {
+                comboBox.currentIndex = i
+                return
+            }
+        }
+        comboBox.currentIndex = -1
+    }
+
+    function currentCloneCustomerName() {
+        if (cloneCustomerBox.currentIndex < 0 || cloneCustomerBox.currentIndex >= cloneCustomerModel.count)
+            return ""
+        return String(cloneCustomerModel.get(cloneCustomerBox.currentIndex).value || "").trim()
+    }
+
+    function currentCloneBaudRate() {
+        if (cloneBaudRateBox.currentIndex < 0 || cloneBaudRateBox.currentIndex >= cloneBaudRateModel.count)
+            return 250
+        var value = Number(cloneBaudRateModel.get(cloneBaudRateBox.currentIndex).value)
+        return value > 0 ? value : 250
     }
 
     function firstConfiguredCustomerName() {
@@ -468,51 +691,168 @@ Item {
         return currentConfig && currentConfig.product ? currentConfig : defaultProductConfig()
     }
 
+    function productBaseNameFromVersionedName(name) {
+        var text = String(name || "").trim()
+        var match = text.match(/^(.*)_(V\d+(?:\.\d+)*)$/i)
+        return match && match.length > 1 ? String(match[1]).trim() : text
+    }
+
+    function normalizedCloneVersionCode() {
+        var text = String(cloneVersionField.text || "").trim()
+        if (text.length === 0)
+            return "V1"
+        if (text.length >= 5 && text.toLowerCase().lastIndexOf(".json") === text.length - 5)
+            text = text.substring(0, text.length - 5)
+        if (/^\d/.test(text))
+            text = "V" + text
+        if (text.charAt(0) === "v")
+            text = "V" + text.substring(1)
+        text = text.replace(/[<>:"\/\\|?*\x00-\x1f\s]+/g, "_").replace(/[. ]+$/g, "")
+        return text.length > 0 ? text : "V1"
+    }
+
+    function nextVersionCodeForEntry(entry) {
+        var maxMajor = 0
+        var versions = entry ? (entry.versions || []) : []
+        for (var i = 0; i < versions.length; i++) {
+            var label = versionCodeFromVersionItem(versions[i])
+            var match = String(label || "").match(/^V(\d+)/i)
+            if (match && match.length > 1) {
+                var major = Number(match[1])
+                if (isFinite(major) && major > maxMajor)
+                    maxMajor = major
+            }
+        }
+        return "V" + (maxMajor > 0 ? maxMajor + 1 : 2)
+    }
+
+    function setVersionMetadata(config, versionCode) {
+        var firmware = config.firmware || {}
+        firmware.version_code = versionCode
+        firmware.display_version = versionCode
+        firmware.variant_code = versionCode
+        firmware.status = "active"
+        config.firmware = firmware
+        return config
+    }
+
+    function setProductCustomerBinding(config, customerName) {
+        var name = String(customerName || "").trim()
+        if (name.length === 0)
+            return config
+        var product = config.product || {}
+        product.customerBindings = [
+            { name: name, isDefault: true, note: "SOP configured customer" }
+        ]
+        config.product = product
+        return config
+    }
+
     function openCloneProductPopup() {
+        cloneProductCreatesVersion = false
         var templateConfig = productTemplateConfig()
         var product = templateConfig.product || {}
         var calibration = templateConfig.calibration || {}
         var model = product.name || ""
+        var baudRate = Number((templateConfig.can || {}).defaultBaudRate || 250)
 
-        cloneModelField.text = model ? (model + "-NEW") : ""
+        rebuildCloneOptionModels()
+        cloneModelField.text = model ? (productBaseNameFromVersionedName(model) + "-NEW") : ""
+        cloneVersionField.text = "V1"
         cloneDescriptionArea.text = product.description || ""
-        cloneCustomerField.text = firstConfiguredCustomerName()
+        selectComboValue(cloneCustomerBox, cloneCustomerModel, firstConfiguredCustomerName())
         cloneCalibrationModeBox.currentIndex = calibrationModeIndex(calibration.mode)
-        cloneBaudRateBox.value = ((templateConfig.can || {}).defaultBaudRate || 250)
+        selectComboValue(cloneBaudRateBox, cloneBaudRateModel, baudRate)
+        if (cloneBaudRateBox.currentIndex < 0 && cloneBaudRateModel.count > 0)
+            cloneBaudRateBox.currentIndex = 0
         cloneProductError = ""
         cloneProductPopup.open()
         cloneModelField.forceActiveFocus()
         cloneModelField.selectAll()
     }
 
+    function openCloneProductVersionPopup() {
+        if (productList.currentIndex < 0 || !currentConfig || !currentConfig.product)
+            return
+
+        cloneProductCreatesVersion = true
+        var entry = productEntryAt(productList.currentIndex)
+        var templateConfig = productTemplateConfig()
+        var product = templateConfig.product || {}
+        var calibration = templateConfig.calibration || {}
+        var model = productBaseNameFromVersionedName(entry ? entry.productModelName : product.name)
+        var baudRate = Number((templateConfig.can || {}).defaultBaudRate || 250)
+
+        rebuildCloneOptionModels()
+        cloneModelField.text = model
+        cloneVersionField.text = nextVersionCodeForEntry(entry)
+        cloneDescriptionArea.text = product.description || ""
+        selectComboValue(cloneCustomerBox, cloneCustomerModel, firstConfiguredCustomerName())
+        cloneCalibrationModeBox.currentIndex = calibrationModeIndex(calibration.mode)
+        selectComboValue(cloneBaudRateBox, cloneBaudRateModel, baudRate)
+        if (cloneBaudRateBox.currentIndex < 0 && cloneBaudRateModel.count > 0)
+            cloneBaudRateBox.currentIndex = 0
+        cloneProductError = ""
+        cloneProductPopup.open()
+        cloneVersionField.forceActiveFocus()
+        cloneVersionField.selectAll()
+    }
+
     function validateCloneProductForm() {
         var model = sanitizeProductModel(cloneModelField.text)
+        var versionCode = normalizedCloneVersionCode()
 
         if (model.length === 0)
             return "型号不能为空"
-        if (layoutManager && layoutManager.productConfigExists && layoutManager.productConfigExists(model))
-            return "型号文件已存在：" + model + ".json"
-        if (cloneBaudRateBox.value <= 0)
+        if (versionCode.length === 0)
+            return "版本号不能为空"
+        if (!cloneProductCreatesVersion && layoutManager && layoutManager.productConfigExists && layoutManager.productConfigExists(model))
+            return "型号已存在，请使用创建新版本：" + model
+        if (layoutManager && layoutManager.productConfigVersionExists
+                && layoutManager.productConfigVersionExists(model, versionCode))
+            return "版本文件已存在：" + model + "_" + versionCode + ".json"
+        if (currentCloneBaudRate() <= 0)
             return "CAN波特率必须大于0"
         return ""
     }
 
     function buildClonedProductConfig() {
         var model = sanitizeProductModel(cloneModelField.text)
+        var versionCode = normalizedCloneVersionCode()
         var calibrationMode = currentCloneCalibrationMode()
-        var customerName = String(cloneCustomerField.text || "").trim()
+        var customerName = currentCloneCustomerName()
+
+        if (cloneProductCreatesVersion) {
+            var versionConfig = deepCopyConfig(productTemplateConfig())
+            var product = versionConfig.product || {}
+            product.name = model
+            product.description = String(cloneDescriptionArea.text || "").trim()
+            versionConfig.product = product
+
+            var calibration = versionConfig.calibration || {}
+            calibration.mode = calibrationMode
+            versionConfig.calibration = calibration
+
+            var can = versionConfig.can || {}
+            can.defaultBaudRate = currentCloneBaudRate()
+            versionConfig.can = can
+
+            versionConfig = setProductCustomerBinding(versionConfig, customerName)
+            return setVersionMetadata(versionConfig, versionCode)
+        }
 
         var spec = {
             model: model,
             description: String(cloneDescriptionArea.text || "").trim(),
             customerName: customerName,
             calibrationMode: calibrationMode,
-            baudRate: cloneBaudRateBox.value
+            baudRate: currentCloneBaudRate()
         }
 
-        if (layoutManager && layoutManager.buildStandardProductConfig)
-            return layoutManager.buildStandardProductConfig(spec)
-        return defaultProductConfig()
+        var config = layoutManager && layoutManager.buildStandardProductConfig
+                ? layoutManager.buildStandardProductConfig(spec)
+                : defaultProductConfig()
+        return setVersionMetadata(config, versionCode)
     }
 
     function saveCloneProduct() {
@@ -523,19 +863,29 @@ Item {
         if (currentConfig && currentConfig.product)
             syncCurrentLayoutFromCells()
         var model = sanitizeProductModel(cloneModelField.text)
+        var versionCode = normalizedCloneVersionCode()
         var config = buildClonedProductConfig()
-        if (!layoutManager.saveProductConfigAs(config, model))
+        if (layoutManager && layoutManager.saveProductConfigVersionAs) {
+            if (!layoutManager.saveProductConfigVersionAs(config, model, versionCode))
+                return
+        } else if (!layoutManager.saveProductConfigAs(config, model)) {
             return
+        }
 
         cloneProductPopup.close()
         loadProductList()
         var idx = findProductIndexByName(model)
         if (idx >= 0) {
             productList.currentIndex = idx
-            loadProduct(idx)
+            var targetPath = layoutManager && layoutManager.productConfigVersionPath
+                    ? layoutManager.productConfigVersionPath(model, versionCode)
+                    : ""
+            var entry = productEntryAt(idx)
+            var versionIndex = targetPath.length > 0 ? findVersionIndexByPath(entry ? entry.versions : [], targetPath) : -1
+            loadProductVersion(idx, versionIndex)
         }
-        if (layoutManager && layoutManager.openProductConfigFile)
-            layoutManager.openProductConfigFile(model)
+        if (layoutManager && layoutManager.openProductConfigPath && layoutManager.productConfigVersionPath)
+            layoutManager.openProductConfigPath(layoutManager.productConfigVersionPath(model, versionCode))
     }
 
     // Resolve component IDs to their definitions
@@ -564,8 +914,11 @@ Item {
     function mapToCanvasType(compDef) {
         switch (compDef.type) {
         case "buttonGroup": return { type: "ButtonRed", perItem: true, count: compDef.count || 8, label: "" }
-        case "roller": return {
-            type: compDef.orientation === "vertical" ? "VerticalRoller" : "HorizontalRoller",
+        case "roller":
+        case "potentiometer": return {
+            type: compDef.type === "potentiometer" || compDef.orientation === "rotary"
+                  ? "RotaryPotentiometer"
+                  : compDef.orientation === "vertical" ? "VerticalRoller" : "HorizontalRoller",
             perItem: false,
             label: compDef.label || ""
         }
@@ -938,6 +1291,8 @@ Item {
     ListModel { id: productModel }
     ListModel { id: currentVersionModel }
     ListModel { id: bindingStatusModel }
+    ListModel { id: cloneCustomerModel }
+    ListModel { id: cloneBaudRateModel }
 
     Connections {
         target: layoutManager
@@ -1030,29 +1385,12 @@ Item {
                 model: currentVersionModel
                 textRole: "label"
                 currentIndex: root.currentVersionIndex
+                displayText: root.versionSelectorDisplayText(versionSelector.currentText)
                 font.pixelSize: 10
                 Layout.preferredWidth: 108
                 Layout.preferredHeight: 30
                 ToolTip.visible: hovered
                 ToolTip.text: "选择产品 JSON 版本"
-                contentItem: Label {
-                    leftPadding: 12
-                    rightPadding: versionSelector.indicator
-                                  ? versionSelector.indicator.width + versionSelector.spacing + 12
-                                  : 12
-                    verticalAlignment: Text.AlignVCenter
-                    elide: Text.ElideRight
-                    clip: true
-                    text: {
-                        var option = root.currentVersionOptionAt(versionSelector.currentIndex)
-                        return root.versionDisplayLabel(option)
-                    }
-                    color: {
-                        var option = root.currentVersionOptionAt(versionSelector.currentIndex)
-                        return option.deprecated === true ? root.dtTextMuted : root.dtText
-                    }
-                    font.pixelSize: versionSelector.font.pixelSize
-                }
                 delegate: ItemDelegate {
                     id: versionSelectorDelegate
                     width: versionSelector.width
@@ -1090,6 +1428,14 @@ Item {
                 enabled: true
                 font.pixelSize: 11
                 onClicked: openCloneProductPopup()
+            }
+            Button {
+                text: "创建新版本"
+                enabled: currentFilePath !== "" && !!currentConfig.product
+                font.pixelSize: 11
+                ToolTip.visible: hovered
+                ToolTip.text: "复制当前 JSON 并保存为该产品的新版本"
+                onClicked: openCloneProductVersionPopup()
             }
             Button {
                 text: hasUnsavedChanges ? "保存 *" : "保存"
@@ -1556,35 +1902,33 @@ Item {
                                         }
 
                                         Rectangle {
-                                            anchors.fill: titleEditor
+                                            id: titleEditFrame
+                                            anchors.fill: parent
                                             visible: cellCard.titleEditing
-                                            color: "#eaeaec"
+                                            color: "white"
                                             radius: 5
+                                            border.width: titleEditor.activeFocus ? 1 : 0
+                                            border.color: dtAccent
                                         }
 
-                                        TextField {
+                                        TextInput {
                                             id: titleEditor
-                                            anchors.fill: parent
+                                            anchors.fill: titleEditFrame
+                                            anchors.leftMargin: 6
+                                            anchors.rightMargin: 6
+                                            anchors.topMargin: 1
+                                            anchors.bottomMargin: 1
                                             visible: cellCard.titleEditing
                                             clip: true
                                             color: dtTextSec
-                                            placeholderText: root.defaultCellTitle(cellCard.cellIndex, cellCard.cellType)
+                                            selectionColor: dtAccent
+                                            selectedTextColor: "white"
                                             font.pixelSize: dtViewport.cardTitleFont
                                             font.weight: Font.Bold
                                             font.letterSpacing: 0
                                             horizontalAlignment: TextInput.AlignLeft
                                             verticalAlignment: TextInput.AlignVCenter
                                             selectByMouse: true
-                                            leftPadding: 4
-                                            rightPadding: 4
-                                            topPadding: 0
-                                            bottomPadding: 0
-                                            background: Rectangle {
-                                                radius: 4
-                                                color: "white"
-                                                border.width: titleEditor.activeFocus ? 1 : 0
-                                                border.color: dtAccent
-                                            }
 
                                             function commitTitle() {
                                                 root.setCellTitle(cellCard, root.normalizedCellTitle(cellCard.cellIndex, cellCard.cellType, text))
@@ -2109,11 +2453,20 @@ Item {
                 TextField {
                     id: cloneModelField
                     Layout.fillWidth: true
+                    readOnly: cloneProductCreatesVersion
                     selectByMouse: true
                     font.pixelSize: 11
                     onTextChanged: cloneProductError = ""
                 }
 
+                Label { text: "版本"; color: dtText; font.pixelSize: 11 }
+                TextField {
+                    id: cloneVersionField
+                    Layout.fillWidth: true
+                    selectByMouse: true
+                    font.pixelSize: 11
+                    onTextChanged: cloneProductError = ""
+                }
 
                 Label { text: "描述"; color: dtText; font.pixelSize: 11 }
                 TextArea {
@@ -2126,20 +2479,15 @@ Item {
                 }
 
                 Label { text: "客户"; color: dtText; font.pixelSize: 11 }
-                TextField {
-                    id: cloneCustomerField
+                ComboBox {
+                    id: cloneCustomerBox
                     Layout.fillWidth: true
-                    selectByMouse: true
+                    model: cloneCustomerModel
+                    textRole: "label"
+                    valueRole: "value"
+                    currentIndex: -1
                     font.pixelSize: 11
-                    onTextChanged: cloneProductError = ""
-                }
-
-                Label { text: "映射方式"; color: root.dtText; font.pixelSize: 11 }
-                Label {
-                    Layout.fillWidth: true
-                    text: "CAN报文映射"
-                    color: root.dtText
-                    font.pixelSize: 11
+                    onActivated: root.cloneProductError = ""
                 }
 
                 Label { text: "校准模式"; color: dtText; font.pixelSize: 11 }
@@ -2153,15 +2501,14 @@ Item {
                 }
 
                 Label { text: "CAN波特率"; color: root.dtText; font.pixelSize: 11 }
-                SpinBox {
+                ComboBox {
                     id: cloneBaudRateBox
                     Layout.fillWidth: true
-                    from: 10
-                    to: 1000
-                    value: 250
-                    editable: true
+                    model: cloneBaudRateModel
+                    textRole: "label"
+                    valueRole: "value"
                     font.pixelSize: 11
-                    onValueChanged: root.cloneProductError = ""
+                    onActivated: root.cloneProductError = ""
                 }
 
                 Label {
@@ -2193,7 +2540,7 @@ Item {
                     onClicked: cloneProductPopup.close()
                 }
                 Button {
-                    text: "保存新产品"
+                    text: cloneProductCreatesVersion ? "保存新版本" : "保存新产品"
                     font.pixelSize: 11
                     palette.button: dtAccent
                     palette.buttonText: "white"
@@ -2313,6 +2660,7 @@ Item {
                     if (t === "FNRSwitch") return dpFNRComp
                     if (t === "VerticalRoller") return dpVRollerComp
                     if (t === "HorizontalRoller") return dpHRollerComp
+                    if (t === "RotaryPotentiometer") return dpPotentiometerComp
                     if (t === "HorizontalFNR") return dpHFNRComp
                     if (t === "HorizontalFNRRight") return dpHFNRRightComp
                     return null
@@ -2326,6 +2674,7 @@ Item {
     Component { id: dpFNRComp; FNRSwitchUnit {} }
     Component { id: dpVRollerComp; VerticalRollerUnit {} }
     Component { id: dpHRollerComp; HorizontalRollerUnit {} }
+    Component { id: dpPotentiometerComp; RotaryPotentiometerUnit {} }
     Component { id: dpHFNRComp; HorizontalFNRUnit {} }
     Component { id: dpHFNRRightComp; HorizontalFNRRightUnit {} }
 
