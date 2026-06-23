@@ -190,10 +190,10 @@ QtObject {
             defaultConfig: {
                 value: 0,
                 minValue: 0,
-                maxValue: 360,
-                minimumAngle: 0,
-                maximumAngle: 360,
-                displayUnit: "°",
+                maxValue: 100,
+                minimumAngle: 30,
+                maximumAngle: 330,
+                displayUnit: "%",
                 label: ""
             },
             hasLabel: true
