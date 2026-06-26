@@ -114,6 +114,10 @@ function New-J1939EjmFields([int]$RollerCount) {
         $fields += New-Field "thetaStatus" 4 0 6 "status" "j1939_axis_status"
         $fields += New-RangeField "thetaPos" 4
     }
+    if ($RollerCount -ge 4) {
+        $fields += New-Field "roller4Status" 6 0 6 "status" "j1939_axis_status"
+        $fields += New-RangeField "roller4Pos" 6
+    }
     return @($fields)
 }
 
@@ -202,11 +206,11 @@ function New-GeneratedComponents([string]$Protocol, [int]$ButtonCount, [int]$Rol
             if ($axis -le 5) { $message = "tpdo2" }
             $components += [ordered]@{ id = "axis$axis"; type = "roller"; label = "axis$axis"; orientation = "horizontal"; position = "$message.axis$($axis)Value"; status = $null }
         } else {
-            $ids = @("ejm_handleX", "ejm_handleY", "ejm_theta")
-            $labels = @("handleX", "handleY", "theta")
-            $positions = @("ejm.handleXPos", "ejm.handleYPos", "ejm.thetaPos")
-            $statuses = @("ejm.handleXStatus", "ejm.handleYStatus", "ejm.thetaStatus")
-            $components += [ordered]@{ id = $ids[$i]; type = "roller"; label = $labels[$i]; orientation = "horizontal"; position = $positions[$i]; status = $statuses[$i] }
+            $ids = @("ejm_handleX", "ejm_handleY", "ejm_theta", "ejm_roller4")
+            $labels = @("handleX", "handleY", "theta", "roller4")
+            $positions = @("ejm.handleXPos", "ejm.handleYPos", "ejm.thetaPos", "ejm.roller4Pos")
+            $statuses = @("ejm.handleXStatus", "ejm.handleYStatus", "ejm.thetaStatus", "ejm.roller4Status")
+            $components += [ordered]@{ id = $ids[$i]; type = "roller"; label = $labels[$i]; orientation = "vertical"; position = $positions[$i]; status = $statuses[$i] }
         }
     }
     if ($FnrEnabled -and $ButtonCount -gt 0) {
@@ -382,7 +386,7 @@ function Convert-Product($Path) {
     if ($protocol -ne "canopen") { $protocol = "j1939" }
 
     $buttonCount = [Math]::Min(12, [Math]::Max(0, (Infer-ButtonCount $config)))
-    $rollerLimit = 3
+    $rollerLimit = 4
     if ($protocol -eq "canopen") { $rollerLimit = 6 }
     $rollerCount = [Math]::Min($rollerLimit, [Math]::Max(0, (Infer-RollerCount $config)))
     $fnrEnabled = Infer-FnrEnabled $config

@@ -588,7 +588,11 @@ QJsonArray j1939EjmFields(int rollerCount, bool includeFnr = false)
         fields.append(makeField(QStringLiteral("thetaStatus"), 4, 0, 6, QStringLiteral("status"), QStringLiteral("j1939_axis_status")));
         fields.append(makeRangePositionField(QStringLiteral("thetaPos"), 4));
     }
-    if (includeFnr) {
+    if (rollerCount >= 4) {
+        fields.append(makeField(QStringLiteral("roller4Status"), 6, 0, 6, QStringLiteral("status"), QStringLiteral("j1939_axis_status")));
+        fields.append(makeRangePositionField(QStringLiteral("roller4Pos"), 6));
+    }
+    if (includeFnr && rollerCount < 4) {
         fields.append(makeField(QStringLiteral("fnr"), 6, 0, 2, QStringLiteral("fnr"), QStringLiteral("unsigned")));
     }
     return fields;
@@ -637,13 +641,24 @@ QString rollerComponentId(const QString &protocol, int index)
         return QStringLiteral("ejm_handleX");
     case 1:
         return QStringLiteral("ejm_handleY");
-    default:
+    case 2:
         return QStringLiteral("ejm_theta");
+    case 3:
+        return QStringLiteral("ejm_roller4");
+    default:
+        return QStringLiteral("ejm_roller%1").arg(index + 1);
     }
 }
 
 QString rollerLabel(const QString &protocol, int index)
 {
+    if (protocol != QStringLiteral("canopen") && index == 3) {
+        return QStringLiteral("Roller4");
+    }
+    if (protocol != QStringLiteral("canopen") && index > 3) {
+        return QStringLiteral("Roller%1").arg(index + 1);
+    }
+
     if (protocol == QStringLiteral("canopen")) {
         return QStringLiteral("轴%1").arg(index + 3);
     }
@@ -671,8 +686,12 @@ QString rollerPositionRef(const QString &protocol, int index)
         return QStringLiteral("ejm.handleXPos");
     case 1:
         return QStringLiteral("ejm.handleYPos");
-    default:
+    case 2:
         return QStringLiteral("ejm.thetaPos");
+    case 3:
+        return QStringLiteral("ejm.roller4Pos");
+    default:
+        return QStringLiteral("ejm.roller%1Pos").arg(index + 1);
     }
 }
 
@@ -687,8 +706,12 @@ QJsonValue rollerStatusRef(const QString &protocol, int index)
         return QStringLiteral("ejm.handleXStatus");
     case 1:
         return QStringLiteral("ejm.handleYStatus");
-    default:
+    case 2:
         return QStringLiteral("ejm.thetaStatus");
+    case 3:
+        return QStringLiteral("ejm.roller4Status");
+    default:
+        return QStringLiteral("ejm.roller%1Status").arg(index + 1);
     }
 }
 
