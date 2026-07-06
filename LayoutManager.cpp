@@ -1506,9 +1506,10 @@ QJsonObject LayoutManager::buildStandardProductConfig(const QJsonObject &spec) c
     QJsonObject product;
     product.insert(QStringLiteral("name"), productName);
     product.insert(QStringLiteral("description"), description);
-    product.insert(QStringLiteral("protocol"), QStringLiteral("can"));
-    product.insert(QStringLiteral("canFrameFormat"), QStringLiteral("standard"));
-    product.insert(QStringLiteral("canAddress"), QStringLiteral("0x000"));
+    product.insert(QStringLiteral("protocol"), QStringLiteral("j1939"));
+    product.insert(QStringLiteral("canFrameFormat"), QStringLiteral("extended"));
+    product.insert(QStringLiteral("canAddress"), QStringLiteral("0x0CFDD633"));
+    product.insert(QStringLiteral("sourceAddress"), QStringLiteral("0x33"));
 
     if (!customerName.isEmpty()) {
         product.insert(QStringLiteral("customerBindings"), QJsonArray{

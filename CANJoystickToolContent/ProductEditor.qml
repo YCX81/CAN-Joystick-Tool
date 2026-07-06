@@ -663,9 +663,10 @@ Item {
             product: {
                 name: "",
                 description: "",
-                protocol: "can",
-                canFrameFormat: "standard",
-                canAddress: "0x000"
+                protocol: "j1939",
+                canFrameFormat: "extended",
+                canAddress: "0x0CFDD633",
+                sourceAddress: "0x33"
             },
             calibration: {
                 mode: "centerOnly",
@@ -748,6 +749,29 @@ Item {
         return config
     }
 
+    function applyCloneMetadata(config, model, description, calibrationMode, customerName, baudRate, versionCode) {
+        var clonedConfig = deepCopyConfig(config)
+        var product = clonedConfig.product || {}
+        product.name = model
+        product.description = description
+        clonedConfig.product = product
+
+        var calibration = clonedConfig.calibration || {}
+        calibration.mode = calibrationMode
+        clonedConfig.calibration = calibration
+
+        var can = clonedConfig.can || {}
+        can.defaultBaudRate = baudRate
+        clonedConfig.can = can
+
+        var firmware = clonedConfig.firmware || {}
+        firmware.description = description
+        clonedConfig.firmware = firmware
+
+        clonedConfig = setProductCustomerBinding(clonedConfig, customerName)
+        return setVersionMetadata(clonedConfig, versionCode)
+    }
+
     function openCloneProductPopup() {
         cloneProductCreatesVersion = false
         var templateConfig = productTemplateConfig()
@@ -821,38 +845,9 @@ Item {
         var versionCode = normalizedCloneVersionCode()
         var calibrationMode = currentCloneCalibrationMode()
         var customerName = currentCloneCustomerName()
-
-        if (cloneProductCreatesVersion) {
-            var versionConfig = deepCopyConfig(productTemplateConfig())
-            var product = versionConfig.product || {}
-            product.name = model
-            product.description = String(cloneDescriptionArea.text || "").trim()
-            versionConfig.product = product
-
-            var calibration = versionConfig.calibration || {}
-            calibration.mode = calibrationMode
-            versionConfig.calibration = calibration
-
-            var can = versionConfig.can || {}
-            can.defaultBaudRate = currentCloneBaudRate()
-            versionConfig.can = can
-
-            versionConfig = setProductCustomerBinding(versionConfig, customerName)
-            return setVersionMetadata(versionConfig, versionCode)
-        }
-
-        var spec = {
-            model: model,
-            description: String(cloneDescriptionArea.text || "").trim(),
-            customerName: customerName,
-            calibrationMode: calibrationMode,
-            baudRate: currentCloneBaudRate()
-        }
-
-        var config = layoutManager && layoutManager.buildStandardProductConfig
-                ? layoutManager.buildStandardProductConfig(spec)
-                : defaultProductConfig()
-        return setVersionMetadata(config, versionCode)
+        var description = String(cloneDescriptionArea.text || "").trim()
+        var config = deepCopyConfig(productTemplateConfig())
+        return applyCloneMetadata(config, model, description, calibrationMode, customerName, currentCloneBaudRate(), versionCode)
     }
 
     function saveCloneProduct() {
