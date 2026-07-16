@@ -186,8 +186,9 @@ private:
     QString productionDatabasePath() const;
     QString customerDatabasePath() const;
     QString productConfigPathForDatabase(const QString &filePath) const;
-    bool ensureProductDatabaseSchema(QSqlDatabase &db);
+    bool validateProductionDatabaseSchema(QSqlDatabase &db);
     bool syncProductConfigToDatabase(const QJsonObject &configJson, const QString &filePath);
+    bool persistProductConfig(const QJsonObject &configJson, const QString &filePath);
 
     // 写入JSON文件
     bool writeJsonFile(const QString &path, const QJsonDocument &doc);

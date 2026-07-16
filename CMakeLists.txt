@@ -2,6 +2,8 @@ cmake_minimum_required(VERSION 3.16)
 
 project(CANJoystickTool VERSION 1.0 LANGUAGES CXX)
 
+include(CTest)
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
@@ -92,7 +94,50 @@ if(WIN32)
     get_target_property(QT_QMAKE_EXECUTABLE Qt6::qmake IMPORTED_LOCATION)
     get_filename_component(QT_BIN_DIR "${QT_QMAKE_EXECUTABLE}" DIRECTORY)
     get_filename_component(QT_PREFIX_DIR "${QT_BIN_DIR}" DIRECTORY)
+    get_filename_component(CXX_RUNTIME_DIR "${CMAKE_CXX_COMPILER}" DIRECTORY)
     set(QT_SQLITE_DRIVER "${QT_PREFIX_DIR}/plugins/sqldrivers/qsqlite.dll")
+endif()
+
+function(add_qt_runtime_test test_name target_name)
+    if(WIN32)
+        add_test(NAME ${test_name}
+            COMMAND "${CMAKE_COMMAND}" -E env
+                "PATH=${QT_BIN_DIR};${CXX_RUNTIME_DIR};$ENV{PATH}"
+                "QT_PLUGIN_PATH=${QT_PREFIX_DIR}/plugins"
+                "$<TARGET_FILE:${target_name}>")
+    else()
+        add_test(NAME ${test_name} COMMAND "$<TARGET_FILE:${target_name}>")
+    endif()
+endfunction()
+
+if(BUILD_TESTING)
+    add_executable(product_config_builder_smoke
+        tests/product_config_builder_smoke.cpp
+        LayoutManager.h
+        LayoutManager.cpp
+    )
+    target_include_directories(product_config_builder_smoke PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    target_link_libraries(product_config_builder_smoke PRIVATE
+        Qt6::Quick
+        Qt6::QuickControls2
+        Qt6::Widgets
+        Qt6::Sql
+    )
+    add_qt_runtime_test(product_config_builder_smoke product_config_builder_smoke)
+
+    add_executable(layoutmanager_database_smoke
+        tests/layoutmanager_database_smoke.cpp
+        LayoutManager.h
+        LayoutManager.cpp
+    )
+    target_include_directories(layoutmanager_database_smoke PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    target_link_libraries(layoutmanager_database_smoke PRIVATE
+        Qt6::Quick
+        Qt6::QuickControls2
+        Qt6::Widgets
+        Qt6::Sql
+    )
+    add_qt_runtime_test(layoutmanager_database_smoke layoutmanager_database_smoke)
 endif()
 
 if(WIN32 AND EXISTS "${QT_SQLITE_DRIVER}")

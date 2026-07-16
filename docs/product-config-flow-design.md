@@ -1,205 +1,92 @@
-# 新产品 CAN 报文映射 SOP
+# 新产品配置流程
 
-## 目标
+## 默认流程
 
-新产品创建流程不再自动推断报文到组件的映射，也不再区分 CANopen/J1939 模板。
+JoystickTool 的“创建新产品”用于覆盖常见的 J1939 摇杆产品：
 
-新的 SOP 是：
+1. 输入型号和版本。
+2. 从已有客户中选择，或直接输入一个新客户名称。
+3. 设置按钮数量和滚轮数量。
+4. 保存后生成可直接使用的通用 J1939 JSON。
+5. JSON 保存成功后，同步产品、版本、客户和产品/客户绑定到生产目录数据库。
 
-1. 在 JoystickTool 中创建新产品。
-2. JoystickTool 生成一个 `protocol: "can"` 的产品 JSON 草稿。
-3. 保存草稿后自动打开该 JSON 文件。
-4. 用户在 JSON 中手动填写 CAN 报文、字段解析、组件绑定和视觉 `bindingId`。
-5. 填写完成后把 `editor.manualMappingRequired` 改为 `false`，`editor.mappingStatus` 改为 `"complete"`。
-6. DownloadTool 扫描到完整 JSON 后，按 `can.messages[].canId` 匹配 CAN 帧并解析字段。
+创建新版本与创建新产品不同：新版本完整复制当前版本的报文解析、组件和画布，只更新版本及表单中的元数据，不重新套用通用模板。
 
-## 草稿 JSON 规则
+## 通用 J1939 模板
 
-新建产品默认生成：
+默认值和范围：
+
+- 按钮：默认 10 个，可设置为 0 到 12 个。
+- 滚轮：默认 4 个，可设置为 0 到 4 个。
+- 波特率：默认 250 kbit/s。
+- 源地址：默认 `0x33`。
+- 帧格式：扩展帧。
+
+生成的报文包括：
+
+- `bjm` / PGN `0xFDD6`：X/Y 轴状态和位置；按钮按 J1939 2-bit 编码生成。
+- `ejm` / PGN `0xFDD7`：每个滚轮占 2 字节，包含 6-bit 状态和 10-bit 位置；滚轮数量为 0 时不生成该报文。
+- `addressClaim` / PGN `0x0EEFF`：地址声明中的 identity 字段。
+
+按钮和滚轮数量会同时更新四层内容：
+
+1. `can.messages[].fields` 的字段定义。
+2. `components[]` 的按钮组和滚轮组件。
+3. `layout.grid.cells[].components` 的组件引用。
+4. `layout.grid.cells[].visualComponents` 的可视化绑定。
+
+因此通用配置保存后已经是完整配置：
 
 ```json
 {
-  "schemaVersion": 2,
-  "version": "2.0",
-  "product": {
-    "model": "PRODUCT-MODEL",
-    "protocol": "can",
-    "canFrameFormat": "standard",
-    "canAddress": "0x000"
-  },
-  "calibration": {
-    "mode": "centerOnly",
-    "transport": "manualCanMapping",
-    "allowedInNormalModeReadOnly": true
-  },
-  "can": {
-    "defaultBaudRate": 250,
-    "messages": [
-      {
-        "id": "can_message_1",
-        "name": "CAN报文1",
-        "canId": "0x000",
-        "frameFormat": "standard",
-        "dlc": 8,
-        "period": 20,
-        "fields": []
-      }
-    ]
-  },
-  "components": [],
-  "layout": {
-    "grid": {
-      "rows": 2,
-      "columns": 2,
-      "cells": []
-    }
-  },
   "editor": {
-    "creationFlow": "manualCanMessageMapping",
-    "manualMappingRequired": true,
-    "mappingStatus": "draft"
+    "profile": "j1939Generic",
+    "creationFlow": "genericJ1939",
+    "manualMappingRequired": false,
+    "mappingStatus": "complete",
+    "buttonCount": 10,
+    "rollerCount": 4
   }
 }
 ```
 
-草稿允许在 JoystickTool 中保存，但 DownloadTool 会把 `manualMappingRequired: true` 视为未完成，不会加载为有效产品。
+## 客户输入和数据库同步
 
-## 手工填写顺序
+客户框是可编辑下拉框：
 
-### 1. 填写报文
+- 选择已有名称时复用现有客户。
+- 输入新名称时，名称先写入产品 JSON 的 `product.customerBindings`。
+- 保存同步时，如果数据库中不存在该客户，则创建 active/real 客户，再创建默认产品绑定。
+- 客户名称会去除首尾空格；空名称表示不建立客户绑定。
 
-在 `can.messages[]` 中填写每条 CAN 报文：
+JoystickTool 不负责创建或迁移生产数据库。目标数据库必须先由匹配版本的 DownloadTool 初始化。
 
-- `id`：报文逻辑 ID，例如 `main`、`aux`。
-- `canId`：原始 CAN ID，例如 `0x181`、`0x18FF50E5`。
-- `frameFormat`：`standard` 或 `extended`。
-- `dlc`：数据长度。
-- `period`：期望周期，事件报文可填 `0`。
-- `fields[]`：字段解析定义。
+## 非通用产品
 
-`protocol: "can"` 下，DownloadTool 直接用 `canId` 匹配收到的 CAN 帧。
+下列情况不应继续扩展“创建新产品”表单，而应在保存后修改 JSON：
 
-### 2. 填写字段
+- PGN 不是通用 BJM/EJM。
+- 字段字节、位宽或编码不同。
+- 按钮不是 J1939 2-bit 编码。
+- 滚轮不是 6-bit 状态加 10-bit 位置。
+- 有额外报文、FNR、LED 或其他产品专用控制。
+- 画布布局需要产品专用设计。
 
-每个字段至少需要：
-
-```json
-{
-  "name": "xPos",
-  "startByte": 0,
-  "startBit": 0,
-  "bitLength": 16,
-  "type": "position",
-  "encoding": "raw_16bit",
-  "endian": "little"
-}
-```
-
-字段解析结果 key 固定为：
+修改时保持三层引用一致：
 
 ```text
-<message.id>.<field.name>
+can.messages[].id + fields[].name
+             -> components[].source/position/status
+             -> layout.grid.cells[].visualComponents[].bindingId
 ```
 
-例如 `main.xPos`、`main.buttons`。
-
-### 3. 填写组件
-
-`components[]` 手动引用字段 key：
-
-```json
-{
-  "id": "joystick_xy",
-  "type": "joystick",
-  "label": "XY轴",
-  "xAxis": { "position": "main.xPos", "status": "main.xStatus" },
-  "yAxis": { "position": "main.yPos", "status": "main.yStatus" }
-}
-```
-
-按钮组：
-
-```json
-{
-  "id": "buttons",
-  "type": "buttonGroup",
-  "label": "按钮",
-  "source": "main.buttons",
-  "count": 8
-}
-```
-
-FNR 独立字段：
-
-```json
-{
-  "id": "fnr",
-  "type": "fnrSwitch",
-  "label": "FNR",
-  "source": "main.fnr"
-}
-```
-
-FNR 按钮映射：
-
-```json
-{
-  "id": "fnr",
-  "type": "fnrSwitch",
-  "label": "FNR",
-  "buttonMapping": {
-    "source": "main.buttons",
-    "forward": 0,
-    "neutral": -1,
-    "reverse": 1
-  }
-}
-```
-
-### 4. 填写视觉绑定
-
-`layout.grid.cells[].visualComponents[].bindingId` 必须指向组件端点：
-
-- 按钮：`buttons.0`
-- 滚轮：`roller_x`
-- FNR：`fnr`
-
-所有运行时视觉组件都必须有合法 `bindingId`。
-
-### 5. 标记完成
-
-手动映射完成并通过校验后，修改：
-
-```json
-{
-  "editor": {
-    "manualMappingRequired": false,
-    "mappingStatus": "complete"
-  }
-}
-```
-
-## 两个工具的分工
-
-JoystickTool：
-
-- 创建产品 JSON 草稿。
-- 保存草稿时不强制校验 `messages/components/layout`。
-- 创建后自动打开 JSON，让用户手工填写映射。
-- 后续保存完整 JSON 时继续执行字段引用和视觉绑定校验。
-
-DownloadTool：
-
-- 支持 `product.protocol: "can"`。
-- 对 `protocol: "can"` 的产品按 `can.messages[].canId` 匹配原始 CAN ID。
-- 如果 `editor.manualMappingRequired` 为 `true`，产品视为未完成，不能作为 active product。
-- 当 `manualMappingRequired` 为 `false` 且校验通过时，按现有 `DynamicDataParser` 和 `PixelCanvas` 运行。
+保存非草稿配置前，JoystickTool 会校验报文、字段引用、组件数量和视觉绑定。手工映射尚未完成时，应保留 `manualMappingRequired: true`，避免 DownloadTool 把半成品当成有效产品。
 
 ## 验收项
 
-1. JoystickTool 新建产品后生成 `protocol: "can"` 草稿。
-2. 新建完成后系统自动打开该产品 JSON。
-3. 草稿能保存到 DownloadTool 的 `products` 目录。
-4. DownloadTool 扫描草稿时标记为无效，不会误加载。
-5. 用户补完 `can.messages[]`、`components[]`、`layout` 并关闭 `manualMappingRequired` 后，DownloadTool 能按 `canId` 匹配并解析。
-6. JoystickTool 和 DownloadTool 构建、启动 smoke 均通过。
+1. 客户框既能选择已有客户，也能输入新客户。
+2. 新产品默认生成 J1939 扩展帧、BJM、EJM 和地址声明解析。
+3. 选择的按钮数量同步到 BJM 字段、按钮组件和按钮视觉绑定。
+4. 选择的滚轮数量同步到 EJM 字段、滚轮组件和滚轮视觉绑定。
+5. 新版本仍保留当前版本的定制 JSON，不被通用模板覆盖。
+6. 生成的 JSON 通过 `validateProductConfig()`，并能同步到生产目录数据库。
