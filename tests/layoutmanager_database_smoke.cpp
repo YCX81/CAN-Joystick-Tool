@@ -51,7 +51,9 @@ bool createCanonicalDatabase(const QString &databasePath)
         db.setDatabaseName(databasePath);
         if (db.open()) {
             const QStringList schema = {
-                QStringLiteral("CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, migration_name TEXT NOT NULL)"),
+                QStringLiteral(
+                    "CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, migration_name TEXT NOT NULL, "
+                    "application_version TEXT NOT NULL DEFAULT '', applied_at TEXT)"),
                 QStringLiteral(
                     "CREATE TABLE products (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE, "
                     "protocol TEXT NOT NULL DEFAULT 'j1939', status TEXT NOT NULL DEFAULT 'active', "
@@ -70,7 +72,8 @@ bool createCanonicalDatabase(const QString &databasePath)
                     "product_id INTEGER NOT NULL, customer_id INTEGER NOT NULL, "
                     "is_default INTEGER NOT NULL DEFAULT 0, updated_at TEXT, UNIQUE(product_id, customer_id))"),
                 QStringLiteral("INSERT INTO schema_migrations (version, migration_name) VALUES (1, 'core-event-schema-v1')"),
-                QStringLiteral("PRAGMA user_version = 1")
+                QStringLiteral("INSERT INTO schema_migrations (version, migration_name) VALUES (2, 'functional-device-bindings-v2')"),
+                QStringLiteral("PRAGMA user_version = 2")
             };
             success = true;
             for (const QString &statement : schema) {

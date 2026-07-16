@@ -22,7 +22,7 @@
 
 namespace {
 
-constexpr int kSupportedProductionDatabaseVersion = 1;
+constexpr int kSupportedProductionDatabaseVersion = 2;
 
 QJsonDocument readJsonFileQuiet(const QString &path)
 {
