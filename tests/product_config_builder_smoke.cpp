@@ -292,6 +292,67 @@ bool verifyGenericConfig(LayoutManager &manager,
     return ok;
 }
 
+bool verifySparseButtonConfig(LayoutManager &manager, const QJsonObject &config)
+{
+    bool ok = true;
+    const QJsonArray messages = config.value(QStringLiteral("can")).toObject()
+                                    .value(QStringLiteral("messages")).toArray();
+    const QJsonObject bjm = findObject(messages, QStringLiteral("id"), QStringLiteral("bjm"));
+    const QJsonObject buttonField = findObject(
+        bjm.value(QStringLiteral("fields")).toArray(),
+        QStringLiteral("name"),
+        QStringLiteral("buttons"));
+    ok &= expect(buttonField.value(QStringLiteral("buttonCount")).toInt() == 8,
+                 QStringLiteral("buttons 2/3/8 require decoding through physical button 8"));
+    ok &= expect(buttonField.value(QStringLiteral("bitLength")).toInt() == 16,
+                 QStringLiteral("buttons 2/3/8 require two J1939 button bytes"));
+
+    const QJsonObject buttons = findObject(
+        config.value(QStringLiteral("components")).toArray(),
+        QStringLiteral("id"),
+        QStringLiteral("buttons"));
+    ok &= expect(buttons.value(QStringLiteral("count")).toInt() == 8,
+                 QStringLiteral("button component must retain the decoded physical range"));
+    ok &= expect(buttons.value(QStringLiteral("visibleButtonIndices")).toArray()
+                     == QJsonArray{1, 2, 7},
+                 QStringLiteral("button component must expose only physical buttons 2/3/8"));
+
+    const QJsonObject editor = config.value(QStringLiteral("editor")).toObject();
+    ok &= expect(editor.value(QStringLiteral("buttonCount")).toInt() == 3,
+                 QStringLiteral("editor buttonCount must remain the number of fitted buttons"));
+    ok &= expect(editor.value(QStringLiteral("buttonNumbers")).toArray()
+                     == QJsonArray{2, 3, 8},
+                 QStringLiteral("editor must preserve the selected one-based button numbers"));
+
+    const QJsonArray cells = config.value(QStringLiteral("layout")).toObject()
+                                 .value(QStringLiteral("grid")).toObject()
+                                 .value(QStringLiteral("cells")).toArray();
+    const QJsonArray visuals = findCell(cells, 0, 0)
+                                   .value(QStringLiteral("visualComponents")).toArray();
+    QStringList bindings;
+    QStringList labels;
+    for (const QJsonValue &entry : visuals) {
+        const QJsonObject visual = entry.toObject();
+        bindings.append(visual.value(QStringLiteral("bindingId")).toString());
+        labels.append(visual.value(QStringLiteral("config")).toObject()
+                          .value(QStringLiteral("label")).toString());
+    }
+    ok &= expect(bindings == QStringList{QStringLiteral("buttons.1"),
+                                         QStringLiteral("buttons.2"),
+                                         QStringLiteral("buttons.7")},
+                 QStringLiteral("canvas must bind only physical buttons 2/3/8"));
+    ok &= expect(labels == QStringList{QStringLiteral("2"),
+                                       QStringLiteral("3"),
+                                       QStringLiteral("8")},
+                 QStringLiteral("canvas labels must use physical button numbers"));
+
+    const QJsonObject validation = manager.validateProductConfig(config);
+    ok &= expect(validation.value(QStringLiteral("ok")).toBool(),
+                 QStringLiteral("sparse button config did not pass validation: %1")
+                     .arg(QString::fromUtf8(QJsonDocument(validation).toJson(QJsonDocument::Compact))));
+    return ok;
+}
+
 } // namespace
 
 int main(int argc, char *argv[])
@@ -319,6 +380,14 @@ int main(int argc, char *argv[])
         {QStringLiteral("rollerCount"), 99}
     });
     ok &= verifyGenericConfig(manager, boundedConfig, 12, 4, QString());
+
+    const QJsonObject sparseButtonConfig = manager.buildStandardProductConfig(QJsonObject{
+        {QStringLiteral("model"), QStringLiteral("GENERIC-SPARSE-BUTTONS")},
+        {QStringLiteral("buttonCount"), 3},
+        {QStringLiteral("buttonNumbers"), QJsonArray{2, 3, 8}},
+        {QStringLiteral("rollerCount"), 0}
+    });
+    ok &= verifySparseButtonConfig(manager, sparseButtonConfig);
 
     const QJsonObject emptyConfig = manager.buildStandardProductConfig(QJsonObject{
         {QStringLiteral("model"), QStringLiteral("GENERIC-EMPTY")},

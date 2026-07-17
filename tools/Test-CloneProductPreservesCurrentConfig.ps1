@@ -70,6 +70,10 @@ if ($body -notmatch 'buttonCount\s*:\s*cloneButtonCountBox\.value') {
     throw 'New products must pass the selected button count to the generic J1939 builder.'
 }
 
+if ($body -notmatch 'buttonNumbers\s*:\s*parsedCloneButtonNumbers\(\)\.numbers') {
+    throw 'New products must pass the selected physical button numbers to the generic J1939 builder.'
+}
+
 if ($body -notmatch 'rollerCount\s*:\s*cloneRollerCountBox\.value') {
     throw 'New products must pass the selected roller count to the generic J1939 builder.'
 }
@@ -104,6 +108,9 @@ if (-not $customerNameMatch.Success -or $customerNameMatch.Groups['body'].Value 
 if ($content -notmatch 'id:\s*cloneButtonCountBox') {
     throw 'The new-product form must expose a button count control.'
 }
+if ($content -notmatch 'id:\s*cloneButtonNumbersField') {
+    throw 'The new-product form must expose an optional physical button-number control.'
+}
 if ($content -notmatch 'id:\s*cloneRollerCountBox') {
     throw 'The new-product form must expose a roller count control.'
 }
@@ -114,8 +121,8 @@ if ($layoutManagerContent -notmatch 'boundedJsonInt\(spec,\s*QStringLiteral\("bu
 if ($layoutManagerContent -notmatch 'boundedJsonInt\(spec,\s*QStringLiteral\("rollerCount"\),\s*4,\s*0,\s*4\)') {
     throw 'The generic J1939 builder must default to 4 rollers and clamp to 0..4.'
 }
-if ($layoutManagerContent -notmatch 'j1939BjmFields\(buttonCount') {
-    throw 'The generic J1939 builder must generate BJM fields from buttonCount.'
+if ($layoutManagerContent -notmatch 'j1939BjmFields\(decoderButtonCount') {
+    throw 'The generic J1939 builder must decode through the highest physical button number.'
 }
 if ($layoutManagerContent -notmatch 'j1939EjmFields\(rollerCount') {
     throw 'The generic J1939 builder must generate EJM fields from rollerCount.'

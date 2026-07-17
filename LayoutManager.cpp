@@ -715,7 +715,47 @@ QJsonValue rollerStatusRef(const QString &protocol, int index)
     }
 }
 
-QJsonObject makeButtonComponent(int buttonCount, const QString &source)
+QJsonArray normalizedButtonNumbers(const QJsonObject &spec, int fallbackCount)
+{
+    QJsonArray buttonNumbers;
+    QSet<int> seen;
+    const QJsonArray requestedNumbers = spec.value(QStringLiteral("buttonNumbers")).toArray();
+    for (const QJsonValue &value : requestedNumbers) {
+        const int number = value.toInt(-1);
+        if (number >= 1 && number <= 12 && !seen.contains(number)) {
+            seen.insert(number);
+            buttonNumbers.append(number);
+        }
+    }
+
+    if (buttonNumbers.isEmpty() && fallbackCount > 0) {
+        for (int number = 1; number <= fallbackCount; ++number) {
+            buttonNumbers.append(number);
+        }
+    }
+    return buttonNumbers;
+}
+
+QJsonArray zeroBasedButtonIndices(const QJsonArray &buttonNumbers)
+{
+    QJsonArray indices;
+    for (const QJsonValue &value : buttonNumbers) {
+        indices.append(value.toInt() - 1);
+    }
+    return indices;
+}
+
+int decodedButtonCount(const QJsonArray &buttonNumbers)
+{
+    int count = 0;
+    for (const QJsonValue &value : buttonNumbers) {
+        count = qMax(count, value.toInt());
+    }
+    return count;
+}
+
+QJsonObject makeButtonComponent(int buttonCount, const QString &source,
+                                const QJsonArray &visibleButtonIndices)
 {
     QJsonObject component;
     component.insert(QStringLiteral("id"), QStringLiteral("buttons"));
@@ -723,9 +763,11 @@ QJsonObject makeButtonComponent(int buttonCount, const QString &source)
     component.insert(QStringLiteral("label"), QStringLiteral("按钮"));
     component.insert(QStringLiteral("source"), source);
     component.insert(QStringLiteral("count"), buttonCount);
+    component.insert(QStringLiteral("visibleButtonIndices"), visibleButtonIndices);
+    const int visibleButtonCount = visibleButtonIndices.size();
     component.insert(QStringLiteral("layout"), QJsonObject{
-        {QStringLiteral("columns"), qMin(4, qMax(1, buttonCount))},
-        {QStringLiteral("rows"), qMax(1, (buttonCount + 3) / 4)}
+        {QStringLiteral("columns"), qMin(4, qMax(1, visibleButtonCount))},
+        {QStringLiteral("rows"), qMax(1, (visibleButtonCount + 3) / 4)}
     });
     return component;
 }
@@ -742,24 +784,25 @@ QJsonObject makeVisualComponent(const QString &type, const QString &bindingId,
     return visual;
 }
 
-QJsonArray makeButtonVisuals(int buttonCount)
+QJsonArray makeButtonVisuals(const QJsonArray &buttonNumbers)
 {
     QJsonArray visuals;
     constexpr int buttonWidth = 56;
     constexpr int xGap = 8;
     constexpr int yGap = 2;
-    const int columns = qMin(5, qMax(1, buttonCount));
-    for (int i = 0; i < buttonCount; ++i) {
+    const int columns = qMin(5, qMax(1, buttonNumbers.size()));
+    for (int i = 0; i < buttonNumbers.size(); ++i) {
+        const int buttonNumber = buttonNumbers.at(i).toInt();
         visuals.append(makeVisualComponent(
             QStringLiteral("ButtonRed"),
-            QStringLiteral("buttons.%1").arg(i),
+            QStringLiteral("buttons.%1").arg(buttonNumber - 1),
             4 + (i % columns) * (buttonWidth + xGap),
             4 + (i / columns) * (88 + yGap),
             QJsonObject{
                 {QStringLiteral("variant"), QStringLiteral("red")},
                 {QStringLiteral("bezelSize"), 56},
                 {QStringLiteral("capSize"), 40},
-                {QStringLiteral("label"), QString::number(i + 1)}
+                {QStringLiteral("label"), QString::number(buttonNumber)}
             }));
     }
     return visuals;
@@ -1503,6 +1546,9 @@ QJsonObject LayoutManager::buildStandardProductConfig(const QJsonObject &spec) c
     const QString calibrationMode = spec.value(QStringLiteral("calibrationMode")).toString(QStringLiteral("centerOnly")).trimmed();
     const int baudRate = boundedJsonInt(spec, QStringLiteral("baudRate"), 250, 10, 1000);
     const int buttonCount = boundedJsonInt(spec, QStringLiteral("buttonCount"), 10, 0, 12);
+    const QJsonArray buttonNumbers = normalizedButtonNumbers(spec, buttonCount);
+    const QJsonArray visibleButtonIndices = zeroBasedButtonIndices(buttonNumbers);
+    const int decoderButtonCount = decodedButtonCount(buttonNumbers);
     const int rollerCount = boundedJsonInt(spec, QStringLiteral("rollerCount"), 4, 0, 4);
 
     QJsonObject product;
@@ -1536,7 +1582,7 @@ QJsonObject LayoutManager::buildStandardProductConfig(const QJsonObject &spec) c
         QStringLiteral("基本摇杆报文 BJM1"),
         QStringLiteral("pgn"),
         QStringLiteral("0xFDD6"),
-        j1939BjmFields(buttonCount)));
+        j1939BjmFields(decoderButtonCount)));
     if (rollerCount > 0) {
         messages.append(makeMessage(
             QStringLiteral("ejm"),
@@ -1570,8 +1616,9 @@ QJsonObject LayoutManager::buildStandardProductConfig(const QJsonObject &spec) c
     components.append(joystick);
 
     QJsonArray buttonCellComponents;
-    if (buttonCount > 0) {
-        components.append(makeButtonComponent(buttonCount, QStringLiteral("bjm.buttons")));
+    if (decoderButtonCount > 0) {
+        components.append(makeButtonComponent(decoderButtonCount, QStringLiteral("bjm.buttons"),
+                                              visibleButtonIndices));
         buttonCellComponents.append(QStringLiteral("buttons"));
     }
 
@@ -1604,7 +1651,7 @@ QJsonObject LayoutManager::buildStandardProductConfig(const QJsonObject &spec) c
 
     QJsonArray cells;
     cells.append(makeGridCell(0, 0, QStringLiteral("正面"), QStringLiteral("canvas"),
-                              buttonCellComponents, makeButtonVisuals(buttonCount)));
+                              buttonCellComponents, makeButtonVisuals(buttonNumbers)));
     cells.append(makeGridCell(0, 1, QStringLiteral("总线统计"), QStringLiteral("busStats"),
                               QJsonArray{QStringLiteral("busStats")}));
     cells.append(makeGridCell(1, 0, QStringLiteral("背面"), QStringLiteral("canvas"),
@@ -1627,7 +1674,8 @@ QJsonObject LayoutManager::buildStandardProductConfig(const QJsonObject &spec) c
     editor.insert(QStringLiteral("creationFlow"), QStringLiteral("genericJ1939"));
     editor.insert(QStringLiteral("manualMappingRequired"), false);
     editor.insert(QStringLiteral("mappingStatus"), QStringLiteral("complete"));
-    editor.insert(QStringLiteral("buttonCount"), buttonCount);
+    editor.insert(QStringLiteral("buttonCount"), buttonNumbers.size());
+    editor.insert(QStringLiteral("buttonNumbers"), buttonNumbers);
     editor.insert(QStringLiteral("rollerCount"), rollerCount);
     editor.insert(QStringLiteral("fnrEnabled"), false);
 

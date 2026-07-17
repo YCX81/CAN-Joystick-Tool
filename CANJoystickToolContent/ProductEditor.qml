@@ -797,6 +797,7 @@ Item {
         if (cloneBaudRateBox.currentIndex < 0 && cloneBaudRateModel.count > 0)
             cloneBaudRateBox.currentIndex = 0
         cloneButtonCountBox.value = 10
+        cloneButtonNumbersField.text = ""
         cloneRollerCountBox.value = 4
         cloneProductError = ""
         cloneProductPopup.open()
@@ -846,7 +847,40 @@ Item {
             return "版本文件已存在：" + model + "_" + versionCode + ".json"
         if (currentCloneBaudRate() <= 0)
             return "CAN波特率必须大于0"
+        if (!cloneProductCreatesVersion) {
+            var buttonNumberResult = parsedCloneButtonNumbers()
+            if (!buttonNumberResult.ok)
+                return buttonNumberResult.error
+            if (buttonNumberResult.numbers.length !== cloneButtonCountBox.value)
+                return "按钮编号数量必须与按钮数量一致"
+        }
         return ""
+    }
+
+    function parsedCloneButtonNumbers() {
+        var text = String(cloneButtonNumbersField.text || "").trim()
+        var numbers = []
+        if (text.length === 0) {
+            for (var fallbackNumber = 1; fallbackNumber <= cloneButtonCountBox.value; ++fallbackNumber)
+                numbers.push(fallbackNumber)
+            return { ok: true, numbers: numbers, error: "" }
+        }
+
+        var tokens = text.replace(/[，;；\s]+/g, ",").split(",")
+        var seen = {}
+        for (var index = 0; index < tokens.length; ++index) {
+            if (tokens[index].length === 0)
+                continue
+            var number = Number(tokens[index])
+            if (!Number.isInteger(number) || number < 1 || number > 12)
+                return { ok: false, numbers: [], error: "按钮编号必须是1到12的整数" }
+            if (seen[number])
+                return { ok: false, numbers: [], error: "按钮编号不能重复" }
+            seen[number] = true
+            numbers.push(number)
+        }
+        numbers.sort(function(a, b) { return a - b })
+        return { ok: true, numbers: numbers, error: "" }
     }
 
     function buildClonedProductConfig() {
@@ -869,6 +903,7 @@ Item {
             calibrationMode: calibrationMode,
             baudRate: currentCloneBaudRate(),
             buttonCount: cloneButtonCountBox.value,
+            buttonNumbers: parsedCloneButtonNumbers().numbers,
             rollerCount: cloneRollerCountBox.value
         }
         if (layoutManager && layoutManager.buildStandardProductConfig)
@@ -2531,6 +2566,21 @@ Item {
                     visible: !cloneProductCreatesVersion
                     font.pixelSize: 11
                     onValueChanged: root.cloneProductError = ""
+                }
+
+                Label {
+                    text: "按钮编号"
+                    color: dtText
+                    font.pixelSize: 11
+                    visible: !cloneProductCreatesVersion
+                }
+                TextField {
+                    id: cloneButtonNumbersField
+                    Layout.fillWidth: true
+                    placeholderText: "留空为1到按钮数量；例如 2,3,8"
+                    visible: !cloneProductCreatesVersion
+                    font.pixelSize: 11
+                    onTextChanged: root.cloneProductError = ""
                 }
 
                 Label {
