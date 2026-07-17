@@ -28,6 +28,7 @@ AluminumPanel {
     signal selectionChanged(var selected)
     signal layoutModified()
     signal canvasPressed()
+    signal fnrMappingRequested(var component)
 
     // 唯一ID
     property int nextComponentId: 1
@@ -157,12 +158,19 @@ AluminumPanel {
                 }
 
                 ContextMenuItem {
-                    text: contextMenu.targetComponent && contextMenu.targetComponent.bindingId
-                          ? ("Binding: " + contextMenu.targetComponent.bindingId) : "Set Binding..."
+                    text: contextMenu.targetComponent
+                          && getBindCategory(contextMenu.targetComponent.componentType) === "fnr"
+                          ? "设置FNR按钮..."
+                          : (contextMenu.targetComponent && contextMenu.targetComponent.bindingId
+                             ? ("Binding: " + contextMenu.targetComponent.bindingId) : "Set Binding...")
                     height: 30
                     onTriggered: {
                         contextMenu.close()
-                        showBindingEditor(contextMenu.targetComponent)
+                        if (contextMenu.targetComponent
+                                && getBindCategory(contextMenu.targetComponent.componentType) === "fnr")
+                            root.fnrMappingRequested(contextMenu.targetComponent)
+                        else
+                            showBindingEditor(contextMenu.targetComponent)
                     }
                 }
 

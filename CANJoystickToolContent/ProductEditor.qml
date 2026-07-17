@@ -3,6 +3,7 @@ import QtQuick.Controls 6.5
 import QtQuick.Layouts 6.5
 import QtQuick.Effects
 import CANJoystickTool
+import "../CANJoystickTool/FnrMapping.js" as FnrMapping
 
 Item {
     id: root
@@ -424,6 +425,7 @@ Item {
         refreshCurrentVersionDisplay()
         currentFilePath = path
         currentConfig = layoutManager.loadProductConfig(currentFilePath)
+        migrateLegacyFnrBindings()
         saveProductMessage = ""
         saveProductMessageIsError = false
         hasUnsavedChanges = false
@@ -960,6 +962,228 @@ Item {
         return result
     }
 
+    function isFnrVisualType(type) {
+        return type === "FNRSwitch" || type === "HorizontalFNR" || type === "HorizontalFNRRight"
+    }
+
+    function componentIndexById(components, id) {
+        for (var i = 0; i < components.length; i++) {
+            if (String(components[i].id || "") === String(id || ""))
+                return i
+        }
+        return -1
+    }
+
+    function buttonGroupById(components, id) {
+        for (var i = 0; i < components.length; i++) {
+            var component = components[i]
+            if (component.type === "buttonGroup" && String(component.id || "") === String(id || ""))
+                return component
+        }
+        return null
+    }
+
+    function buttonGroupForMapping(components, mapping) {
+        var source = mapping ? String(mapping.source || "") : ""
+        var fallback = null
+        for (var i = 0; i < components.length; i++) {
+            var component = components[i]
+            if (component.type !== "buttonGroup")
+                continue
+            if (!fallback)
+                fallback = component
+            if (source.length > 0
+                    && (String(component.source || "") === source || String(component.id || "") === source))
+                return component
+        }
+        return fallback
+    }
+
+    function uniqueFnrId(components) {
+        var candidate = "fnr"
+        var suffix = 2
+        while (componentIndexById(components, candidate) >= 0)
+            candidate = "fnr" + suffix++
+        return candidate
+    }
+
+    function migrateLegacyFnrBindings() {
+        if (!currentConfig)
+            return false
+        var components = currentConfig.components || []
+        var cells = (((currentConfig.layout || {}).grid || {}).cells) || []
+        var changed = false
+        for (var i = 0; i < cells.length; i++) {
+            var visuals = cells[i].visualComponents || []
+            for (var j = 0; j < visuals.length; j++) {
+                var visual = visuals[j]
+                if (!isFnrVisualType(visual.type))
+                    continue
+                var legacy = FnrMapping.parseLegacyBinding(visual.bindingId)
+                if (!legacy)
+                    continue
+                var group = buttonGroupById(components, legacy.sourceId)
+                if (!group)
+                    continue
+                var fnrId = uniqueFnrId(components)
+                components.push({
+                    id: fnrId,
+                    type: "fnrSwitch",
+                    label: "FNR",
+                    buttonMapping: FnrMapping.buildButtonMapping(
+                        group.source || group.id,
+                        legacy.forward,
+                        legacy.neutral === undefined ? -1 : legacy.neutral,
+                        legacy.reverse)
+                })
+                // Only replace the binding. The legacy visual type, x/y and config stay untouched.
+                visual.bindingId = fnrId
+                changed = true
+            }
+        }
+        if (changed)
+            currentConfig.components = components
+        return changed
+    }
+
+    function fnrComponentForWrapper(wrapper, components) {
+        var bindingId = wrapper ? String(wrapper.bindingId || "") : ""
+        var index = componentIndexById(components, bindingId)
+        if (index >= 0 && components[index].type === "fnrSwitch")
+            return components[index]
+        var onlyFnr = null
+        for (var i = 0; i < components.length; i++) {
+            if (components[i].type !== "fnrSwitch")
+                continue
+            if (onlyFnr)
+                return null
+            onlyFnr = components[i]
+        }
+        return onlyFnr
+    }
+
+    function appendMappingIndex(indexes, value) {
+        var index = Number(value)
+        if (index >= 0 && indexes.indexOf(index) < 0)
+            indexes.push(index)
+    }
+
+    function optionIndex(options, buttonIndex, fallback) {
+        for (var i = 0; i < options.length; i++) {
+            if (Number(options[i].index) === Number(buttonIndex))
+                return i
+        }
+        return fallback
+    }
+
+    function openFnrMappingEditor(wrapper) {
+        if (!wrapper || !currentConfig)
+            return
+        var components = currentConfig.components || []
+        var fnr = fnrComponentForWrapper(wrapper, components)
+        var legacy = FnrMapping.parseLegacyBinding(wrapper.bindingId)
+        var mapping = fnr ? (fnr.buttonMapping || {}) : (legacy || {})
+        var group = legacy ? buttonGroupById(components, legacy.sourceId)
+                           : buttonGroupForMapping(components, mapping)
+
+        fnrMappingPopup.targetWrapper = wrapper
+        fnrMappingPopup.targetFnrId = fnr ? String(fnr.id || "") : ""
+        fnrMappingPopup.targetButtonGroup = group
+        fnrMappingPopup.errorText = group ? "" : "当前产品没有可用于FNR映射的按钮组。"
+
+        var indexes = group && group.visibleButtonIndices ? group.visibleButtonIndices.slice(0) : []
+        appendMappingIndex(indexes, mapping.forward)
+        appendMappingIndex(indexes, mapping.neutral)
+        appendMappingIndex(indexes, mapping.reverse)
+        fnrMappingPopup.requiredOptions = FnrMapping.buttonOptions(indexes, group ? group.count : 0, false)
+        fnrMappingPopup.neutralOptions = FnrMapping.buttonOptions(indexes, group ? group.count : 0, true)
+
+        fnrForwardBox.currentIndex = optionIndex(fnrMappingPopup.requiredOptions, mapping.forward, -1)
+        fnrNeutralBox.currentIndex = optionIndex(fnrMappingPopup.neutralOptions,
+                                                 mapping.neutral === undefined ? -1 : mapping.neutral, 0)
+        fnrReverseBox.currentIndex = optionIndex(fnrMappingPopup.requiredOptions, mapping.reverse, -1)
+        fnrMappingPopup.open()
+    }
+
+    function removeMappedButtonVisuals(groupId, mappedIndexes, fnrWrapper) {
+        for (var i = 0; i < cellRepeater.count; i++) {
+            var cell = cellRepeater.itemAt(i)
+            if (!cell || cell.cellType !== "canvas" || !cell.canvasItem)
+                continue
+            var canvasComponents = cell.canvasItem.components || []
+            for (var j = canvasComponents.length - 1; j >= 0; j--) {
+                var component = canvasComponents[j]
+                if (component === fnrWrapper || String(component.componentType || "").indexOf("Button") !== 0)
+                    continue
+                for (var k = 0; k < mappedIndexes.length; k++) {
+                    if (String(component.bindingId || "") === groupId + "." + mappedIndexes[k]) {
+                        cell.canvasItem.removeComponent(component)
+                        break
+                    }
+                }
+            }
+        }
+    }
+
+    function applyFnrMapping() {
+        var group = fnrMappingPopup.targetButtonGroup
+        var wrapper = fnrMappingPopup.targetWrapper
+        if (!group || !wrapper)
+            return
+        var forward = Number(fnrForwardBox.currentValue)
+        var neutral = Number(fnrNeutralBox.currentValue)
+        var reverse = Number(fnrReverseBox.currentValue)
+        var error = FnrMapping.validateSelection(forward, neutral, reverse)
+        if (error.length > 0) {
+            fnrMappingPopup.errorText = error
+            return
+        }
+
+        var components = currentConfig.components || []
+        var fnrId = fnrMappingPopup.targetFnrId
+        var index = componentIndexById(components, fnrId)
+        var updated = index >= 0 ? components[index] : {}
+        if (!fnrId)
+            fnrId = uniqueFnrId(components)
+        updated.id = fnrId
+        updated.type = "fnrSwitch"
+        updated.label = updated.label || "FNR"
+        updated.buttonMapping = FnrMapping.buildButtonMapping(
+                    group.source || group.id, forward, neutral, reverse)
+        if (index >= 0)
+            components[index] = updated
+        else
+            components.push(updated)
+        currentConfig.components = components
+        wrapper.bindingId = fnrId
+
+        var mappedIndexes = [forward, reverse]
+        if (neutral >= 0)
+            mappedIndexes.push(neutral)
+        removeMappedButtonVisuals(String(group.id || ""), mappedIndexes, wrapper)
+        fnrMappingPopup.close()
+        hasUnsavedChanges = true
+        refreshBindingStatus()
+    }
+
+    function fnrComponentIdForButton(buttonGroup, buttonIndex, components) {
+        var source = String(buttonGroup.source || buttonGroup.id || "")
+        for (var i = 0; i < components.length; i++) {
+            var component = components[i]
+            if (component.type !== "fnrSwitch")
+                continue
+            var mapping = component.buttonMapping || {}
+            if (String(mapping.source || "") !== source
+                    && String(mapping.source || "") !== String(buttonGroup.id || ""))
+                continue
+            if (Number(mapping.forward) === buttonIndex
+                    || Number(mapping.neutral) === buttonIndex
+                    || Number(mapping.reverse) === buttonIndex)
+                return String(component.id || "fnr")
+        }
+        return ""
+    }
+
     // Guess cell type from component list
     function detectCellType(compIds) {
         if (!compIds || compIds.length === 0) return "empty"
@@ -1173,12 +1397,12 @@ Item {
         return result
     }
 
-    function canvasComponentIdsFromVisualComponents(visualComponents, fallbackComponents) {
+    function canvasComponentIdsFromVisualComponents(visualComponents, fallbackComponents, allowFallback) {
         var result = []
         var visuals = visualComponents || []
         for (var i = 0; i < visuals.length; i++)
             appendCanvasComponentId(result, bindingComponentId(visuals[i].bindingId))
-        if (result.length > 0)
+        if (result.length > 0 || allowFallback === false)
             return result
         return sanitizedCanvasComponentIds(fallbackComponents || [])
     }
@@ -1253,11 +1477,13 @@ Item {
             // Map old types to new unified types
             var oldType = c.cellType || detectCellType(c.components)
             if (oldType === "buttons" || oldType === "ejm") oldType = "canvas"
-            var visualComponents = c.visualComponents || []
+            var hasSavedVisualLayout = c.visualComponents !== undefined && c.visualComponents !== null
+            var visualComponents = hasSavedVisualLayout ? c.visualComponents : []
             cell.cellTitle = loadedCellTitle(i, oldType, c.title)
             cell.cellType = oldType
             cell.cellCompIds = oldType === "canvas"
-                    ? canvasComponentIdsFromVisualComponents(visualComponents, c.components || [])
+                    ? canvasComponentIdsFromVisualComponents(visualComponents, c.components || [],
+                                                             !hasSavedVisualLayout)
                     : componentsForCellType(oldType, c.components || [])
             var canvasMeta = normalizedCanvasMeta(c.canvas)
             var savedCanvasMeta = sourceCanvasMeta(c.canvas)
@@ -1276,7 +1502,7 @@ Item {
                     for (var j = 0; j < vis.length; j++) {
                         addVisualComponent(cell.canvasItem, vis[j], savedCanvasMeta)
                     }
-                } else if (c.components && c.components.length > 0) {
+                } else if (!hasSavedVisualLayout && c.components && c.components.length > 0) {
                     // Auto-populate from component definitions
                     populateCanvas(cell.canvasItem, c.components)
                 }
@@ -1323,7 +1549,7 @@ Item {
                 }
                 cd.visualComponents = []
                 var comps = canvasData.components || []
-                cd.components = canvasComponentIdsFromVisualComponents(comps, cell.cellCompIds)
+                cd.components = canvasComponentIdsFromVisualComponents(comps, cell.cellCompIds, false)
                 for (var j = 0; j < comps.length; j++)
                     cd.visualComponents.push({ type: comps[j].type, x: comps[j].x, y: comps[j].y, config: comps[j].config, bindingId: comps[j].bindingId || "" })
             }
@@ -1393,8 +1619,13 @@ Item {
                 var count = comp.count || 8
                 for (var b = 0; b < count; b++) {
                     var btnId = comp.id + "." + b
-                    var btnBound = usedBindings.indexOf(btnId) >= 0
-                    bindingStatusModel.append({ compId: "BTN" + (b+1), bound: btnBound, boundTo: btnBound ? btnId : "" })
+                    var fnrBinding = fnrComponentIdForButton(comp, b, allComps)
+                    var btnBound = usedBindings.indexOf(btnId) >= 0 || fnrBinding.length > 0
+                    bindingStatusModel.append({
+                        compId: "BTN" + (b+1),
+                        bound: btnBound,
+                        boundTo: fnrBinding.length > 0 ? fnrBinding : (btnBound ? btnId : "")
+                    })
                 }
             } else {
                 // Single component
@@ -2359,6 +2590,10 @@ Item {
                                                         hasUnsavedChanges = true
                                                     root.refreshBindingStatus()
                                                 }
+                                                onFnrMappingRequested: function(component) {
+                                                    root.activeCellIndex = index
+                                                    root.openFnrMappingEditor(component)
+                                                }
                                             }
                                         }
                                     }
@@ -2475,6 +2710,127 @@ Item {
             }
         }
 
+    }
+
+    Popup {
+        id: fnrMappingPopup
+        parent: root
+        width: Math.min(430, root.width - 32)
+        height: fnrMappingContent.implicitHeight + 32
+        x: Math.max(16, (root.width - width) / 2)
+        y: Math.max(16, (root.height - height) / 2)
+        padding: 16
+        modal: true
+        focus: true
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        z: 10000
+
+        property var targetWrapper: null
+        property var targetButtonGroup: null
+        property string targetFnrId: ""
+        property var requiredOptions: []
+        property var neutralOptions: []
+        property string errorText: ""
+
+        background: Rectangle {
+            radius: 8
+            color: "white"
+            border.width: 1
+            border.color: dtBorder
+        }
+
+        contentItem: ColumnLayout {
+            id: fnrMappingContent
+            spacing: 10
+
+            Label {
+                text: "FNR按钮映射"
+                color: dtText
+                font.pixelSize: 14
+                font.bold: true
+            }
+            Label {
+                Layout.fillWidth: true
+                text: "从创建产品时选择的物理按钮中指定F、N、R；保存不会改变FNR控件的位置和方向。"
+                color: dtTextSec
+                font.pixelSize: 10
+                wrapMode: Text.WordWrap
+            }
+
+            GridLayout {
+                Layout.fillWidth: true
+                columns: 2
+                columnSpacing: 10
+                rowSpacing: 8
+
+                Label { text: "F 按钮"; color: dtText; font.pixelSize: 11 }
+                ComboBox {
+                    id: fnrForwardBox
+                    Layout.fillWidth: true
+                    model: fnrMappingPopup.requiredOptions
+                    textRole: "label"
+                    valueRole: "index"
+                    font.pixelSize: 11
+                    onActivated: fnrMappingPopup.errorText = ""
+                }
+
+                Label { text: "N 按钮"; color: dtText; font.pixelSize: 11 }
+                ComboBox {
+                    id: fnrNeutralBox
+                    Layout.fillWidth: true
+                    model: fnrMappingPopup.neutralOptions
+                    textRole: "label"
+                    valueRole: "index"
+                    font.pixelSize: 11
+                    onActivated: fnrMappingPopup.errorText = ""
+                }
+
+                Label { text: "R 按钮"; color: dtText; font.pixelSize: 11 }
+                ComboBox {
+                    id: fnrReverseBox
+                    Layout.fillWidth: true
+                    model: fnrMappingPopup.requiredOptions
+                    textRole: "label"
+                    valueRole: "index"
+                    font.pixelSize: 11
+                    onActivated: fnrMappingPopup.errorText = ""
+                }
+            }
+
+            Label {
+                Layout.fillWidth: true
+                text: "N选择“未接线（F/R均松开为N）”时，JSON中不会写入neutral按钮。"
+                color: dtTextSec
+                font.pixelSize: 10
+                wrapMode: Text.WordWrap
+            }
+            Label {
+                Layout.fillWidth: true
+                visible: fnrMappingPopup.errorText.length > 0
+                text: fnrMappingPopup.errorText
+                color: "#d70015"
+                font.pixelSize: 11
+                wrapMode: Text.WordWrap
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                Item { Layout.fillWidth: true }
+                Button {
+                    text: "取消"
+                    font.pixelSize: 11
+                    onClicked: fnrMappingPopup.close()
+                }
+                Button {
+                    text: "应用映射"
+                    enabled: !!fnrMappingPopup.targetButtonGroup
+                    font.pixelSize: 11
+                    palette.button: dtAccent
+                    palette.buttonText: "white"
+                    onClicked: root.applyFnrMapping()
+                }
+            }
+        }
     }
 
     Popup {

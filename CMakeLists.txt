@@ -44,6 +44,7 @@ qt_add_qml_module(CANJoystickTool
         CANJoystickTool/Constants.qml
         CANJoystickTool/ComponentRegistry.qml
         CANJoystickTool/CardTemplateManager.qml
+        CANJoystickTool/FnrMapping.js
         # 基础组件
         CANJoystickTool/AluminumPanel.qml
         CANJoystickTool/AxisValueBar.qml
@@ -138,6 +139,15 @@ if(BUILD_TESTING)
         Qt6::Sql
     )
     add_qt_runtime_test(layoutmanager_database_smoke layoutmanager_database_smoke)
+
+    add_executable(fnr_mapping_smoke
+        tests/fnr_mapping_smoke.cpp
+    )
+    target_compile_definitions(fnr_mapping_smoke PRIVATE
+        FNR_MAPPING_SOURCE="${CMAKE_CURRENT_SOURCE_DIR}/CANJoystickTool/FnrMapping.js"
+    )
+    target_link_libraries(fnr_mapping_smoke PRIVATE Qt6::Quick)
+    add_qt_runtime_test(fnr_mapping_smoke fnr_mapping_smoke)
 endif()
 
 if(WIN32 AND EXISTS "${QT_SQLITE_DRIVER}")
