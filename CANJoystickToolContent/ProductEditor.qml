@@ -866,7 +866,7 @@ Item {
             return { ok: true, numbers: numbers, error: "" }
         }
 
-        var tokens = text.replace(/[，;；\s]+/g, ",").split(",")
+        var tokens = text.replace(/[，、;；\s]+/g, ",").split(",")
         var seen = {}
         for (var index = 0; index < tokens.length; ++index) {
             if (tokens[index].length === 0)

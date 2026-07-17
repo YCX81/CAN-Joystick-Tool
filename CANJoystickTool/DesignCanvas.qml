@@ -494,7 +494,7 @@ AluminumPanel {
         if (result.length === 0) {
             for (var j = 0; j < allComps.length; j++) {
                 var c = allComps[j]
-                if (c.type === "joystick") continue
+                if (c.type === "joystick" || c.type === "buttonGroup") continue
                 result.push({ bindId: c.id, desc: c.label || c.type, color: "#007aff" })
             }
         }

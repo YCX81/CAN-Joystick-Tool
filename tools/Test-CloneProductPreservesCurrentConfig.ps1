@@ -1,6 +1,7 @@
 param(
     [string]$ProductEditorPath = (Join-Path $PSScriptRoot '..\CANJoystickToolContent\ProductEditor.qml'),
-    [string]$LayoutManagerPath = (Join-Path $PSScriptRoot '..\LayoutManager.cpp')
+    [string]$LayoutManagerPath = (Join-Path $PSScriptRoot '..\LayoutManager.cpp'),
+    [string]$DesignCanvasPath = (Join-Path $PSScriptRoot '..\CANJoystickTool\DesignCanvas.qml')
 )
 
 $ErrorActionPreference = 'Stop'
@@ -11,9 +12,13 @@ if (-not (Test-Path -LiteralPath $ProductEditorPath)) {
 if (-not (Test-Path -LiteralPath $LayoutManagerPath)) {
     throw "LayoutManager.cpp not found: $LayoutManagerPath"
 }
+if (-not (Test-Path -LiteralPath $DesignCanvasPath)) {
+    throw "DesignCanvas.qml not found: $DesignCanvasPath"
+}
 
 $content = Get-Content -Raw -LiteralPath $ProductEditorPath
 $layoutManagerContent = Get-Content -Raw -LiteralPath $LayoutManagerPath
+$designCanvasContent = Get-Content -Raw -LiteralPath $DesignCanvasPath
 
 if ($content -notmatch '(?s)function\s+applyCloneMetadata\s*\([^)]*\).*?function\s+saveCloneProduct\s*\(') {
     throw 'Missing applyCloneMetadata helper before saveCloneProduct().'
@@ -72,6 +77,14 @@ if ($body -notmatch 'buttonCount\s*:\s*cloneButtonCountBox\.value') {
 
 if ($body -notmatch 'buttonNumbers\s*:\s*parsedCloneButtonNumbers\(\)\.numbers') {
     throw 'New products must pass the selected physical button numbers to the generic J1939 builder.'
+}
+
+if (-not $content.Contains('text.replace(/[，、;；\s]+/g, ",")')) {
+    throw 'Physical button-number parsing must accept the Chinese enumeration comma.'
+}
+
+if (-not $designCanvasContent.Contains('if (c.type === "joystick" || c.type === "buttonGroup") continue')) {
+    throw 'The internal buttonGroup base binding must not appear as a direct visual binding option.'
 }
 
 if ($body -notmatch 'rollerCount\s*:\s*cloneRollerCountBox\.value') {
