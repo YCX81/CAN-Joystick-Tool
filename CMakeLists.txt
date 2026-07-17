@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 
-project(CANJoystickTool VERSION 1.0 LANGUAGES CXX)
+project(CANJoystickTool VERSION 0.3.5 LANGUAGES CXX)
 
 include(CTest)
 
@@ -34,7 +34,7 @@ set_source_files_properties(CANJoystickTool/CardTemplateManager.qml
 
 qt_add_qml_module(CANJoystickTool
     URI CANJoystickTool
-    VERSION 1.0
+    VERSION 0.3.5
     RESOURCE_PREFIX /qt/qml
     SOURCES
         LayoutManager.h
