@@ -21,6 +21,7 @@ Item {
     property int productMetadataRevision: 0
     property string cloneProductError: ""
     property bool cloneProductCreatesVersion: false
+    property bool cloneProductUsesBlankTemplate: false
     property string saveProductMessage: ""
     property bool saveProductMessageIsError: false
     readonly property int defaultCanvasWidth: Constants.homeCardDesignSize
@@ -739,7 +740,9 @@ Item {
     }
 
     function setVersionMetadata(config, versionCode) {
-        var firmware = config.firmware || {}
+        if (!config.firmware)
+            return config
+        var firmware = config.firmware
         firmware.version_code = versionCode
         firmware.display_version = versionCode
         firmware.variant_code = versionCode
@@ -760,37 +763,57 @@ Item {
         return config
     }
 
-    function applyCloneMetadata(config, model, description, calibrationMode, customerName, baudRate, versionCode) {
+    function applyCloneMetadata(config, model, description, versionCode) {
         var clonedConfig = deepCopyConfig(config)
         var product = clonedConfig.product || {}
         product.name = model
         product.description = description
         clonedConfig.product = product
 
-        var calibration = clonedConfig.calibration || {}
-        calibration.mode = calibrationMode
-        clonedConfig.calibration = calibration
+        if (clonedConfig.firmware) {
+            var firmware = clonedConfig.firmware
+            firmware.description = description
+            clonedConfig.firmware = firmware
+        }
 
-        var can = clonedConfig.can || {}
-        can.defaultBaudRate = baudRate
-        clonedConfig.can = can
-
-        var firmware = clonedConfig.firmware || {}
-        firmware.description = description
-        clonedConfig.firmware = firmware
-
-        clonedConfig = setProductCustomerBinding(clonedConfig, customerName)
         return setVersionMetadata(clonedConfig, versionCode)
     }
 
     function openCloneProductPopup() {
+        if (!currentConfig || !currentConfig.product) {
+            openBlankProductPopup()
+            return
+        }
+
         cloneProductCreatesVersion = false
+        cloneProductUsesBlankTemplate = false
         var templateConfig = productTemplateConfig()
         var product = templateConfig.product || {}
+        var calibration = templateConfig.calibration || {}
         var model = product.name || ""
+        var baudRate = Number((templateConfig.can || {}).defaultBaudRate || 250)
 
         rebuildCloneOptionModels()
         cloneModelField.text = model ? (productBaseNameFromVersionedName(model) + "-NEW") : ""
+        cloneVersionField.text = "V1"
+        cloneDescriptionArea.text = product.description || ""
+        selectComboValue(cloneCustomerBox, cloneCustomerModel, firstConfiguredCustomerName())
+        cloneCalibrationModeBox.currentIndex = calibrationModeIndex(calibration.mode)
+        selectComboValue(cloneBaudRateBox, cloneBaudRateModel, baudRate)
+        if (cloneBaudRateBox.currentIndex < 0 && cloneBaudRateModel.count > 0)
+            cloneBaudRateBox.currentIndex = 0
+        cloneProductError = ""
+        cloneProductPopup.open()
+        cloneModelField.forceActiveFocus()
+        cloneModelField.selectAll()
+    }
+
+    function openBlankProductPopup() {
+        cloneProductCreatesVersion = false
+        cloneProductUsesBlankTemplate = true
+
+        rebuildCloneOptionModels()
+        cloneModelField.text = ""
         cloneVersionField.text = "V1"
         cloneDescriptionArea.text = ""
         selectComboValue(cloneCustomerBox, cloneCustomerModel, "")
@@ -804,7 +827,6 @@ Item {
         cloneProductError = ""
         cloneProductPopup.open()
         cloneModelField.forceActiveFocus()
-        cloneModelField.selectAll()
     }
 
     function openCloneProductVersionPopup() {
@@ -812,6 +834,7 @@ Item {
             return
 
         cloneProductCreatesVersion = true
+        cloneProductUsesBlankTemplate = false
         var entry = productEntryAt(productList.currentIndex)
         var templateConfig = productTemplateConfig()
         var product = templateConfig.product || {}
@@ -847,9 +870,9 @@ Item {
         if (layoutManager && layoutManager.productConfigVersionExists
                 && layoutManager.productConfigVersionExists(model, versionCode))
             return "版本文件已存在：" + model + "_" + versionCode + ".json"
-        if (currentCloneBaudRate() <= 0)
+        if (cloneProductUsesBlankTemplate && currentCloneBaudRate() <= 0)
             return "CAN波特率必须大于0"
-        if (!cloneProductCreatesVersion) {
+        if (cloneProductUsesBlankTemplate) {
             var buttonNumberResult = parsedCloneButtonNumbers()
             if (!buttonNumberResult.ok)
                 return buttonNumberResult.error
@@ -888,21 +911,18 @@ Item {
     function buildClonedProductConfig() {
         var model = sanitizeProductModel(cloneModelField.text)
         var versionCode = normalizedCloneVersionCode()
-        var calibrationMode = currentCloneCalibrationMode()
-        var customerName = currentCloneCustomerName()
         var description = String(cloneDescriptionArea.text || "").trim()
 
-        if (cloneProductCreatesVersion) {
+        if (!cloneProductUsesBlankTemplate) {
             var config = deepCopyConfig(productTemplateConfig())
-            return applyCloneMetadata(config, model, description, calibrationMode, customerName,
-                                      currentCloneBaudRate(), versionCode)
+            return applyCloneMetadata(config, model, description, versionCode)
         }
 
         var spec = {
             model: model,
             description: description,
-            customerName: customerName,
-            calibrationMode: calibrationMode,
+            customerName: currentCloneCustomerName(),
+            calibrationMode: currentCloneCalibrationMode(),
             baudRate: currentCloneBaudRate(),
             buttonCount: cloneButtonCountBox.value,
             buttonNumbers: parsedCloneButtonNumbers().numbers,
@@ -911,8 +931,7 @@ Item {
         if (layoutManager && layoutManager.buildStandardProductConfig)
             return setVersionMetadata(layoutManager.buildStandardProductConfig(spec), versionCode)
 
-        return applyCloneMetadata(defaultProductConfig(), model, description, calibrationMode,
-                                  customerName, currentCloneBaudRate(), versionCode)
+        return applyCloneMetadata(defaultProductConfig(), model, description, versionCode)
     }
 
     function saveCloneProduct() {
@@ -920,7 +939,7 @@ Item {
         if (cloneProductError.length > 0)
             return
 
-        if (cloneProductCreatesVersion && currentConfig && currentConfig.product)
+        if (!cloneProductUsesBlankTemplate && currentConfig && currentConfig.product)
             syncCurrentLayoutFromCells()
         var model = sanitizeProductModel(cloneModelField.text)
         var versionCode = normalizedCloneVersionCode()
@@ -1713,10 +1732,20 @@ Item {
                 onClicked: openCurrentProductConfig()
             }
             Button {
-                text: "创建新产品"
+                text: "基于当前产品创建"
+                enabled: currentFilePath !== "" && !!currentConfig.product
+                font.pixelSize: 11
+                ToolTip.visible: hovered
+                ToolTip.text: "完整复制当前产品，只修改型号、版本和描述"
+                onClicked: openCloneProductPopup()
+            }
+            Button {
+                text: "空白新产品"
                 enabled: true
                 font.pixelSize: 11
-                onClicked: openCloneProductPopup()
+                ToolTip.visible: hovered
+                ToolTip.text: "从通用 J1939 模板创建无固件测试产品"
+                onClicked: openBlankProductPopup()
             }
             Button {
                 text: "创建新版本"
@@ -2892,7 +2921,12 @@ Item {
                     font.pixelSize: 11
                 }
 
-                Label { text: "客户"; color: dtText; font.pixelSize: 11 }
+                Label {
+                    text: "客户"
+                    color: dtText
+                    font.pixelSize: 11
+                    visible: cloneProductUsesBlankTemplate
+                }
                 ComboBox {
                     id: cloneCustomerBox
                     Layout.fillWidth: true
@@ -2902,6 +2936,7 @@ Item {
                     editable: true
                     currentIndex: -1
                     font.pixelSize: 11
+                    visible: cloneProductUsesBlankTemplate
                     onActivated: root.cloneProductError = ""
                     onEditTextChanged: root.cloneProductError = ""
                 }
@@ -2910,7 +2945,7 @@ Item {
                     text: "按钮数量"
                     color: dtText
                     font.pixelSize: 11
-                    visible: !cloneProductCreatesVersion
+                    visible: cloneProductUsesBlankTemplate
                 }
                 SpinBox {
                     id: cloneButtonCountBox
@@ -2919,7 +2954,7 @@ Item {
                     to: 12
                     value: 10
                     editable: true
-                    visible: !cloneProductCreatesVersion
+                    visible: cloneProductUsesBlankTemplate
                     font.pixelSize: 11
                     onValueChanged: root.cloneProductError = ""
                 }
@@ -2928,13 +2963,13 @@ Item {
                     text: "按钮编号"
                     color: dtText
                     font.pixelSize: 11
-                    visible: !cloneProductCreatesVersion
+                    visible: cloneProductUsesBlankTemplate
                 }
                 TextField {
                     id: cloneButtonNumbersField
                     Layout.fillWidth: true
                     placeholderText: "留空为1到按钮数量；例如 2,3,8"
-                    visible: !cloneProductCreatesVersion
+                    visible: cloneProductUsesBlankTemplate
                     font.pixelSize: 11
                     onTextChanged: root.cloneProductError = ""
                 }
@@ -2943,7 +2978,7 @@ Item {
                     text: "滚轮数量"
                     color: dtText
                     font.pixelSize: 11
-                    visible: !cloneProductCreatesVersion
+                    visible: cloneProductUsesBlankTemplate
                 }
                 SpinBox {
                     id: cloneRollerCountBox
@@ -2952,12 +2987,17 @@ Item {
                     to: 4
                     value: 4
                     editable: true
-                    visible: !cloneProductCreatesVersion
+                    visible: cloneProductUsesBlankTemplate
                     font.pixelSize: 11
                     onValueChanged: root.cloneProductError = ""
                 }
 
-                Label { text: "校准模式"; color: dtText; font.pixelSize: 11 }
+                Label {
+                    text: "校准模式"
+                    color: dtText
+                    font.pixelSize: 11
+                    visible: cloneProductUsesBlankTemplate
+                }
                 ComboBox {
                     id: cloneCalibrationModeBox
                     Layout.fillWidth: true
@@ -2965,9 +3005,15 @@ Item {
                     textRole: "label"
                     valueRole: "value"
                     font.pixelSize: 11
+                    visible: cloneProductUsesBlankTemplate
                 }
 
-                Label { text: "CAN波特率"; color: root.dtText; font.pixelSize: 11 }
+                Label {
+                    text: "CAN波特率"
+                    color: root.dtText
+                    font.pixelSize: 11
+                    visible: cloneProductUsesBlankTemplate
+                }
                 ComboBox {
                     id: cloneBaudRateBox
                     Layout.fillWidth: true
@@ -2975,15 +3021,18 @@ Item {
                     textRole: "label"
                     valueRole: "value"
                     font.pixelSize: 11
+                    visible: cloneProductUsesBlankTemplate
                     onActivated: root.cloneProductError = ""
                 }
 
                 Label {
                     Layout.columnSpan: 2
                     Layout.fillWidth: true
-                    text: cloneProductCreatesVersion
-                          ? "新版本会完整保留当前产品的报文解析、组件和布局。"
-                          : "默认生成 J1939 通用解析：BJM 轴/按钮、EJM 滚轮和地址声明；非通用报文保存后直接修改 JSON。"
+                    text: cloneProductUsesBlankTemplate
+                          ? "从 J1939 通用模板创建无固件测试产品，可配置按钮、滚轮和基础 CAN 参数。"
+                          : (cloneProductCreatesVersion
+                             ? "新版本会完整保留当前产品，只修改版本和描述。"
+                             : "新产品会完整保留当前产品的协议、报文、组件、灯光测试和卡片布局，只修改型号、版本和描述。")
                     color: root.dtTextSec
                     font.pixelSize: 11
                     wrapMode: Text.WordWrap
