@@ -8,7 +8,9 @@
   "required": [
     "schemaVersion",
     "product",
+    "lifecycle",
     "operation",
+    "calibration",
     "protocol",
     "bus",
     "messages",
@@ -29,8 +31,17 @@
     "product": {
       "$ref": "#/definitions/product"
     },
+    "lifecycle": {
+      "$ref": "#/definitions/lifecycle"
+    },
     "operation": {
       "$ref": "#/definitions/operation"
+    },
+    "calibration": {
+      "$ref": "#/definitions/calibration"
+    },
+    "identityPolicy": {
+      "$ref": "#/definitions/identityPolicy"
     },
     "protocol": {
       "enum": [
@@ -121,6 +132,9 @@
         }
       },
       "then": {
+        "required": [
+          "identityPolicy"
+        ],
         "properties": {
           "bus": {
             "allOf": [
@@ -143,7 +157,17 @@
             "items": {
               "$ref": "#/definitions/canMessage"
             }
+          },
+          "identityPolicy": {
+            "$ref": "#/definitions/identityPolicy"
           }
+        }
+      },
+      "else": {
+        "not": {
+          "required": [
+            "identityPolicy"
+          ]
         }
       }
     },
@@ -213,6 +237,132 @@
         }
       }
     },
+    "lifecycle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "active",
+            "deprecated"
+          ]
+        }
+      }
+    },
+    "calibration": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode",
+            "transport",
+            "allowedInNormalModeReadOnly"
+          ],
+          "properties": {
+            "mode": {
+              "enum": [
+                "centerOnly",
+                "minCenterMax"
+              ]
+            },
+            "transport": {
+              "enum": [
+                "j1939VendorPgn",
+                "canopenSdo"
+              ]
+            },
+            "allowedInNormalModeReadOnly": {
+              "type": "boolean"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode",
+            "reason"
+          ],
+          "properties": {
+            "mode": {
+              "const": "disabled"
+            },
+            "reason": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      ]
+    },
+    "deviceInfo": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "vendorId",
+        "productCode",
+        "revisionNumber"
+      ],
+      "properties": {
+        "vendorId": {
+          "type": "string",
+          "pattern": "^0x[0-9A-F]{8}$"
+        },
+        "productCode": {
+          "type": "string",
+          "pattern": "^0x[0-9A-F]{8}$"
+        },
+        "revisionNumber": {
+          "type": "string",
+          "pattern": "^0x[0-9A-F]{8}$"
+        },
+        "serialNumber": {
+          "type": "string",
+          "pattern": "^0x[0-9A-F]{8}$"
+        }
+      }
+    },
+    "identityPolicy": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode",
+            "deviceInfo"
+          ],
+          "properties": {
+            "mode": {
+              "const": "required"
+            },
+            "deviceInfo": {
+              "$ref": "#/definitions/deviceInfo"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode",
+            "reason"
+          ],
+          "properties": {
+            "mode": {
+              "const": "disabled"
+            },
+            "reason": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      ]
+    },
     "operation": {
       "oneOf": [
         {
@@ -265,7 +415,7 @@
                 },
                 "version": {
                   "type": "string",
-                  "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+                  "pattern": "^[1-9][0-9]*(?:\\.[0-9]+\\.[0-9]+)?$"
                 },
                 "artifact": {
                   "type": "string",
@@ -394,9 +544,12 @@
             "position",
             "status",
             "button",
+            "packedButtons",
             "counter",
             "identity",
-            "numeric"
+            "numeric",
+            "crc",
+            "selfCheck"
           ]
         },
         "source": {
@@ -436,8 +589,23 @@
               ]
             },
             "encoding": {
-              "type": "string",
-              "minLength": 1
+              "enum": [
+                "unsigned",
+                "signed",
+                "boolean",
+                "raw_16bit",
+                "j1939_axis_status",
+                "j1939_2bit",
+                "canopen_1bit",
+                "gessmann_8bit",
+                "gessmann_2bit",
+                "signed_percent",
+                "crc8_atm",
+                "detent_2bit",
+                "counter",
+                "selfCheck",
+                "identity"
+              ]
             }
           }
         }
@@ -511,6 +679,8 @@
           "required": [
             "id",
             "type",
+            "role",
+            "inputMode",
             "label",
             "topology",
             "axis"
@@ -521,6 +691,52 @@
             },
             "type": {
               "const": "axis"
+            },
+            "role": {
+              "enum": [
+                "joystick",
+                "roller",
+                "potentiometer",
+                "auxiliary"
+              ]
+            },
+            "inputMode": {
+              "enum": [
+                "centered",
+                "signed",
+                "unipolar"
+              ]
+            },
+            "zeroAsNeutral": {
+              "type": "boolean"
+            },
+            "display": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "valueMin",
+                "valueMax",
+                "angleMinDegrees",
+                "angleMaxDegrees",
+                "unit"
+              ],
+              "properties": {
+                "valueMin": {
+                  "type": "number"
+                },
+                "valueMax": {
+                  "type": "number"
+                },
+                "angleMinDegrees": {
+                  "type": "number"
+                },
+                "angleMaxDegrees": {
+                  "type": "number"
+                },
+                "unit": {
+                  "type": "string"
+                }
+              }
             },
             "label": {
               "type": "string",
@@ -548,7 +764,23 @@
             "axis": {
               "$ref": "#/definitions/axisBinding"
             }
-          }
+          },
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "role": {
+                    "const": "potentiometer"
+                  }
+                }
+              },
+              "then": {
+                "required": [
+                  "display"
+                ]
+              }
+            }
+          ]
         },
         {
           "type": "object",
@@ -603,7 +835,8 @@
             "id",
             "type",
             "label",
-            "signalId"
+            "signalId",
+            "position"
           ],
           "properties": {
             "id": {
@@ -618,6 +851,194 @@
             },
             "signalId": {
               "$ref": "#/definitions/id"
+            },
+            "position": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "type",
+            "label",
+            "signalId",
+            "positions"
+          ],
+          "properties": {
+            "id": {
+              "$ref": "#/definitions/id"
+            },
+            "type": {
+              "const": "fnr"
+            },
+            "label": {
+              "type": "string",
+              "minLength": 1
+            },
+            "signalId": {
+              "$ref": "#/definitions/id"
+            },
+            "positions": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "neutralMode",
+                    "forward",
+                    "neutral",
+                    "reverse"
+                  ],
+                  "properties": {
+                    "neutralMode": {
+                      "const": "signal"
+                    },
+                    "forward": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "neutral": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "reverse": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "neutralMode",
+                    "forward",
+                    "reverse"
+                  ],
+                  "properties": {
+                    "neutralMode": {
+                      "const": "inferred"
+                    },
+                    "forward": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "reverse": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "type",
+            "label",
+            "signalId",
+            "format"
+          ],
+          "properties": {
+            "id": {
+              "$ref": "#/definitions/id"
+            },
+            "type": {
+              "const": "numericDisplay"
+            },
+            "label": {
+              "type": "string",
+              "minLength": 1
+            },
+            "signalId": {
+              "$ref": "#/definitions/id"
+            },
+            "format": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "decimals"
+              ],
+              "properties": {
+                "decimals": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 6
+                },
+                "unit": {
+                  "type": "string"
+                },
+                "prefix": {
+                  "type": "string"
+                },
+                "suffix": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "type",
+            "label",
+            "signalId",
+            "states"
+          ],
+          "properties": {
+            "id": {
+              "$ref": "#/definitions/id"
+            },
+            "type": {
+              "const": "indicator"
+            },
+            "label": {
+              "type": "string",
+              "minLength": 1
+            },
+            "signalId": {
+              "$ref": "#/definitions/id"
+            },
+            "states": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "value",
+                  "label",
+                  "color"
+                ],
+                "properties": {
+                  "value": {
+                    "type": [
+                      "boolean",
+                      "number",
+                      "string"
+                    ]
+                  },
+                  "label": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "color": {
+                    "type": "string",
+                    "pattern": "^#[0-9A-F]{6}$"
+                  }
+                }
+              }
             }
           }
         },
@@ -923,12 +1344,332 @@
         }
       }
     },
+    "layoutElementProperties": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "orientation": {
+          "enum": [
+            "horizontal",
+            "vertical"
+          ]
+        },
+        "showLabel": {
+          "type": "boolean"
+        },
+        "showValue": {
+          "type": "boolean"
+        },
+        "compact": {
+          "type": "boolean"
+        },
+        "decimals": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 6
+        },
+        "unit": {
+          "type": "string"
+        },
+        "columns": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "rows": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "activeColor": {
+          "type": "string",
+          "pattern": "^#[0-9A-F]{6}$"
+        },
+        "inactiveColor": {
+          "type": "string",
+          "pattern": "^#[0-9A-F]{6}$"
+        },
+        "labelPosition": {
+          "enum": [
+            "top",
+            "bottom",
+            "left",
+            "right"
+          ]
+        }
+      }
+    },
+    "layoutElement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "controlId",
+        "renderer",
+        "x",
+        "y",
+        "width",
+        "height"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/id"
+        },
+        "controlId": {
+          "$ref": "#/definitions/id"
+        },
+        "renderer": {
+          "enum": [
+            "singleAxisGauge",
+            "joystickPad",
+            "button",
+            "roller",
+            "potentiometer",
+            "fnr",
+            "numericDisplay",
+            "indicator",
+            "binaryOutput"
+          ]
+        },
+        "x": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "y": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "properties": {
+          "$ref": "#/definitions/layoutElementProperties"
+        }
+      }
+    },
+    "cardGrid": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "row",
+        "column",
+        "rowSpan",
+        "columnSpan"
+      ],
+      "properties": {
+        "row": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "column": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "rowSpan": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "columnSpan": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "contentCanvas": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "width",
+        "height",
+        "scaleMode"
+      ],
+      "properties": {
+        "width": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "scaleMode": {
+          "enum": [
+            "uniform",
+            "stretch",
+            "none"
+          ]
+        }
+      }
+    },
+    "controlCard": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind",
+        "title",
+        "grid",
+        "contentCanvas",
+        "elements"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/id"
+        },
+        "kind": {
+          "const": "controls"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "grid": {
+          "$ref": "#/definitions/cardGrid"
+        },
+        "contentCanvas": {
+          "$ref": "#/definitions/contentCanvas"
+        },
+        "elements": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/layoutElement"
+          }
+        }
+      }
+    },
+    "systemCardProperties": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "refreshMs": {
+          "type": "integer",
+          "minimum": 50
+        },
+        "maxRows": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "showTimestamp": {
+          "type": "boolean"
+        },
+        "showChannel": {
+          "type": "boolean"
+        },
+        "showDirection": {
+          "type": "boolean"
+        },
+        "showOperator": {
+          "type": "boolean"
+        },
+        "showSerialNumber": {
+          "type": "boolean"
+        }
+      }
+    },
+    "systemCard": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind",
+        "title",
+        "grid",
+        "systemType"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/id"
+        },
+        "kind": {
+          "const": "system"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "grid": {
+          "$ref": "#/definitions/cardGrid"
+        },
+        "systemType": {
+          "enum": [
+            "busStats",
+            "rawFrames",
+            "recordInfo"
+          ]
+        },
+        "properties": {
+          "$ref": "#/definitions/systemCardProperties"
+        }
+      }
+    },
+    "emptyCard": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind",
+        "title",
+        "grid"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/id"
+        },
+        "kind": {
+          "const": "empty"
+        },
+        "title": {
+          "type": "string"
+        },
+        "grid": {
+          "$ref": "#/definitions/cardGrid"
+        }
+      }
+    },
+    "leftRegionCard": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind",
+        "title",
+        "grid",
+        "controlId",
+        "widthRatio"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/id"
+        },
+        "kind": {
+          "const": "leftRegion"
+        },
+        "title": {
+          "type": "string"
+        },
+        "grid": {
+          "$ref": "#/definitions/cardGrid"
+        },
+        "controlId": {
+          "$ref": "#/definitions/id"
+        },
+        "widthRatio": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "exclusiveMaximum": 1
+        }
+      }
+    },
     "layout": {
       "type": "object",
       "additionalProperties": false,
       "required": [
         "mode",
         "canvas",
+        "grid",
         "cards"
       ],
       "properties": {
@@ -953,59 +1694,42 @@
             }
           }
         },
+        "grid": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "rows",
+            "columns"
+          ],
+          "properties": {
+            "rows": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "columns": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        },
         "cards": {
           "type": "array",
           "minItems": 1,
           "items": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": [
-              "id",
-              "title",
-              "x",
-              "y",
-              "width",
-              "height",
-              "renderer",
-              "controlIds"
-            ],
-            "properties": {
-              "id": {
-                "$ref": "#/definitions/id"
+            "oneOf": [
+              {
+                "$ref": "#/definitions/controlCard"
               },
-              "title": {
-                "type": "string",
-                "minLength": 1
+              {
+                "$ref": "#/definitions/systemCard"
               },
-              "x": {
-                "type": "integer",
-                "minimum": 0
+              {
+                "$ref": "#/definitions/emptyCard"
               },
-              "y": {
-                "type": "integer",
-                "minimum": 0
-              },
-              "width": {
-                "type": "integer",
-                "minimum": 1
-              },
-              "height": {
-                "type": "integer",
-                "minimum": 1
-              },
-              "renderer": {
-                "type": "string",
-                "minLength": 1
-              },
-              "controlIds": {
-                "type": "array",
-                "minItems": 1,
-                "uniqueItems": true,
-                "items": {
-                  "$ref": "#/definitions/id"
-                }
+              {
+                "$ref": "#/definitions/leftRegionCard"
               }
-            }
+            ]
           }
         }
       }

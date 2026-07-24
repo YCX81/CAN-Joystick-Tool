@@ -100,6 +100,15 @@ function Assert-Semantics {
             'button' {
                 Assert-ReferenceExists $signalIds ([string]$control.signalId) "$Path control '$($control.id)'"
             }
+            'fnr' {
+                Assert-ReferenceExists $signalIds ([string]$control.signalId) "$Path control '$($control.id)'"
+            }
+            'numericDisplay' {
+                Assert-ReferenceExists $signalIds ([string]$control.signalId) "$Path control '$($control.id)'"
+            }
+            'indicator' {
+                Assert-ReferenceExists $signalIds ([string]$control.signalId) "$Path control '$($control.id)'"
+            }
             'binaryOutput' {
                 Assert-ReferenceExists $commandIds ([string]$control.onCommandId) "$Path control '$($control.id)' onCommandId"
                 Assert-ReferenceExists $commandIds ([string]$control.offCommandId) "$Path control '$($control.id)' offCommandId"
@@ -108,8 +117,11 @@ function Assert-Semantics {
     }
 
     foreach ($card in @($Config.layout.cards)) {
-        foreach ($controlId in @($card.controlIds)) {
-            Assert-ReferenceExists $controlIds ([string]$controlId) "$Path layout card '$($card.id)'"
+        if ([string]$card.kind -ne 'controls') {
+            continue
+        }
+        foreach ($element in @($card.elements)) {
+            Assert-ReferenceExists $controlIds ([string]$element.controlId) "$Path layout card '$($card.id)'"
         }
     }
 
@@ -183,6 +195,9 @@ function Repair-NamedInvalidFixture {
                 source = 'external'
             }
         }
+        'invalid-canopen-identity-policy.json' {
+            $repaired.identityPolicy | Add-Member -NotePropertyName reason -NotePropertyValue '设备身份未固化'
+        }
         default {
             throw "No named repair is defined for invalid fixture: $FixtureName"
         }
@@ -238,6 +253,70 @@ Assert-SemanticsRejects $invalidVersionMapping 'semantic-invalid-product-firmwar
 $invalidSignalReference = Copy-JsonObject $validatedConfigs[0]
 $invalidSignalReference.signals[0].source.messageId = 'missingMessage'
 Assert-SemanticsRejects $invalidSignalReference 'semantic-invalid-signal-reference'
+
+$migrationConfig = @($validatedConfigs | Where-Object { $_.product.code -eq 'V3-CONTROL-COVERAGE' })[0]
+Assert-True ($null -ne $migrationConfig) 'Valid examples must cover migration controls and system cards.'
+Assert-True (@($migrationConfig.layout.cards | Where-Object kind -eq 'leftRegion').Count -eq 1) `
+    'Migration example must preserve an explicit leftRegion card.'
+Assert-True (@($migrationConfig.layout.cards | Where-Object kind -eq 'empty').Count -eq 1) `
+    'Migration example must preserve an explicit empty grid cell.'
+$blankCanvas = @($migrationConfig.layout.cards | Where-Object id -eq 'blankCanvasCard')[0]
+Assert-True ($null -ne $blankCanvas -and @($blankCanvas.elements).Count -eq 0) `
+    'A controls card with an explicit empty elements array must remain valid.'
+
+$missingContentCanvas = Copy-JsonObject $migrationConfig
+$missingContentCanvas.layout.cards[1].PSObject.Properties.Remove('contentCanvas')
+$missingContentCanvasJson = $missingContentCanvas | ConvertTo-Json -Depth 100
+Assert-True (-not (Test-Json -Json $missingContentCanvasJson -SchemaFile $SchemaPath -ErrorAction SilentlyContinue)) `
+    'Controls cards must declare their own contentCanvas.'
+
+$unknownElementProperty = Copy-JsonObject $migrationConfig
+$unknownElementProperty.layout.cards[1].elements[0].properties |
+    Add-Member -NotePropertyName arbitraryPatch -NotePropertyValue $true
+$unknownElementPropertyJson = $unknownElementProperty | ConvertTo-Json -Depth 100
+Assert-True (-not (Test-Json -Json $unknownElementPropertyJson -SchemaFile $SchemaPath -ErrorAction SilentlyContinue)) `
+    'Layout element properties must reject unknown patch fields.'
+
+$systemCardWithControls = Copy-JsonObject $migrationConfig
+$systemCardWithControls.layout.cards[4] |
+    Add-Member -NotePropertyName controlIds -NotePropertyValue @('rollerAxis')
+$systemCardWithControlsJson = $systemCardWithControls | ConvertTo-Json -Depth 100
+Assert-True (-not (Test-Json -Json $systemCardWithControlsJson -SchemaFile $SchemaPath -ErrorAction SilentlyContinue)) `
+    'System cards must not accept controlIds.'
+
+$invalidLifecycle = Copy-JsonObject $migrationConfig
+$invalidLifecycle.lifecycle.status = 'retired'
+$invalidLifecycleJson = $invalidLifecycle | ConvertTo-Json -Depth 100
+Assert-True (-not (Test-Json -Json $invalidLifecycleJson -SchemaFile $SchemaPath -ErrorAction SilentlyContinue)) `
+    'Lifecycle status must be active or deprecated.'
+
+$branchFirmwareConfig = Copy-JsonObject $bundledConfig
+$branchFirmwareConfig.product.version = 'V4'
+$branchFirmwareConfig.operation.firmware.version = '4'
+$branchFirmwareConfig.operation.firmware.artifact = 'JC6000-AR000003_V4.elf'
+$branchFirmwareJson = $branchFirmwareConfig | ConvertTo-Json -Depth 100
+Assert-True (Test-Json -Json $branchFirmwareJson -SchemaFile $SchemaPath -ErrorAction SilentlyContinue) `
+    'Branch-only bundled firmware version 4 must map to product version V4.'
+
+$unknownEncoding = Copy-JsonObject $migrationConfig
+$unknownEncoding.signals[0].source.encoding = 'patched_decoder'
+$unknownEncodingJson = $unknownEncoding | ConvertTo-Json -Depth 100
+Assert-True (-not (Test-Json -Json $unknownEncodingJson -SchemaFile $SchemaPath -ErrorAction SilentlyContinue)) `
+    'Unknown signal encodings must be rejected instead of accepted as patch fields.'
+
+$unknownCalibrationField = Copy-JsonObject $migrationConfig
+$unknownCalibrationField.calibration |
+    Add-Member -NotePropertyName legacyPatch -NotePropertyValue $true
+$unknownCalibrationJson = $unknownCalibrationField | ConvertTo-Json -Depth 100
+Assert-True (-not (Test-Json -Json $unknownCalibrationJson -SchemaFile $SchemaPath -ErrorAction SilentlyContinue)) `
+    'Calibration must reject unknown patch fields.'
+
+$databaseBindingInJson = Copy-JsonObject $migrationConfig
+$databaseBindingInJson |
+    Add-Member -NotePropertyName customerBinding -NotePropertyValue 'database-owned'
+$databaseBindingJson = $databaseBindingInJson | ConvertTo-Json -Depth 100
+Assert-True (-not (Test-Json -Json $databaseBindingJson -SchemaFile $SchemaPath -ErrorAction SilentlyContinue)) `
+    'Customer binding is database-owned and must not become an unknown product JSON field.'
 
 $branchVersionConfig = Copy-JsonObject $validatedConfigs[0]
 $branchVersionConfig.product.version = 'V2'

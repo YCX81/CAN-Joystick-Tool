@@ -6,11 +6,18 @@
     "version": "V1",
     "description": "无固件单轴纯测试产品"
   },
+  "lifecycle": {
+    "status": "active"
+  },
   "operation": {
     "mode": "test_only",
     "firmware": {
       "source": "external"
     }
+  },
+  "calibration": {
+    "mode": "disabled",
+    "reason": "该纯测试产品没有校准指令"
   },
   "protocol": "j1939",
   "bus": {
@@ -42,7 +49,7 @@
     },
     {
       "id": "button1",
-      "kind": "button",
+      "kind": "packedButtons",
       "source": {
         "messageId": "bjm",
         "startByte": 5,
@@ -57,6 +64,8 @@
     {
       "id": "mainAxis",
       "type": "axis",
+      "role": "joystick",
+      "inputMode": "centered",
       "label": "主轴",
       "topology": {
         "kind": "singleAxis",
@@ -81,7 +90,8 @@
       "id": "button1",
       "type": "button",
       "label": "按钮 1",
-      "signalId": "button1"
+      "signalId": "button1",
+      "position": 0
     }
   ],
   "commands": [],
@@ -92,29 +102,63 @@
       "width": 1280,
       "height": 720
     },
+    "grid": {
+      "rows": 1,
+      "columns": 2
+    },
     "cards": [
       {
         "id": "mainAxisCard",
+        "kind": "controls",
         "title": "主轴",
-        "x": 24,
-        "y": 24,
-        "width": 580,
-        "height": 300,
-        "renderer": "singleAxisGauge",
-        "controlIds": [
-          "mainAxis"
+        "grid": {
+          "row": 0,
+          "column": 0,
+          "rowSpan": 1,
+          "columnSpan": 1
+        },
+        "contentCanvas": {
+          "width": 580,
+          "height": 300,
+          "scaleMode": "uniform"
+        },
+        "elements": [
+          {
+            "id": "mainAxisElement",
+            "controlId": "mainAxis",
+            "renderer": "singleAxisGauge",
+            "x": 0,
+            "y": 0,
+            "width": 580,
+            "height": 300
+          }
         ]
       },
       {
         "id": "buttonsCard",
+        "kind": "controls",
         "title": "按钮",
-        "x": 628,
-        "y": 24,
-        "width": 300,
-        "height": 300,
-        "renderer": "buttonGrid",
-        "controlIds": [
-          "button1"
+        "grid": {
+          "row": 0,
+          "column": 1,
+          "rowSpan": 1,
+          "columnSpan": 1
+        },
+        "contentCanvas": {
+          "width": 300,
+          "height": 300,
+          "scaleMode": "uniform"
+        },
+        "elements": [
+          {
+            "id": "button1Element",
+            "controlId": "button1",
+            "renderer": "button",
+            "x": 0,
+            "y": 0,
+            "width": 300,
+            "height": 300
+          }
         ]
       }
     ]

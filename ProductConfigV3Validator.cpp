@@ -12,7 +12,7 @@ namespace {
 const QRegularExpression productVersionPattern(
     QStringLiteral("^V[1-9][0-9]*(?:\\.[0-9]+\\.[0-9]+)?$"));
 const QRegularExpression firmwareVersionPattern(
-    QStringLiteral("^[0-9]+\\.[0-9]+\\.[0-9]+$"));
+    QStringLiteral("^[1-9][0-9]*(?:\\.[0-9]+\\.[0-9]+)?$"));
 const QRegularExpression payloadPattern(
     QStringLiteral("^(?:[0-9A-F]{2})(?: [0-9A-F]{2})*$"));
 const QRegularExpression idPattern(
@@ -23,12 +23,33 @@ class Validator
 public:
     ProductConfigV3Validator::Result run(const QJsonObject &config)
     {
+        rejectUnknownKeys(
+            config,
+            {QStringLiteral("$schema"),
+             QStringLiteral("schemaVersion"),
+             QStringLiteral("product"),
+             QStringLiteral("lifecycle"),
+             QStringLiteral("operation"),
+             QStringLiteral("calibration"),
+             QStringLiteral("identityPolicy"),
+             QStringLiteral("protocol"),
+             QStringLiteral("bus"),
+             QStringLiteral("messages"),
+             QStringLiteral("signals"),
+             QStringLiteral("controls"),
+             QStringLiteral("commands"),
+             QStringLiteral("tests"),
+             QStringLiteral("layout")},
+            QStringLiteral("top-level config"));
         validateSchemaVersion(config);
         const QString productVersion = validateProduct(config);
         validateLegacyRevision(config);
+        validateLifecycle(config);
         validateOperation(config, productVersion);
 
         const QString protocol = validateProtocol(config);
+        validateCalibration(config, protocol);
+        validateIdentityPolicy(config, protocol);
         validateBus(config, protocol);
 
         const QSet<QString> messageIds = validateMessages(config, protocol);
@@ -46,6 +67,18 @@ private:
     void addError(const QString &message)
     {
         m_errors.append(message);
+    }
+
+    void rejectUnknownKeys(const QJsonObject &object,
+                           const QSet<QString> &allowedKeys,
+                           const QString &path)
+    {
+        for (auto iterator = object.constBegin(); iterator != object.constEnd(); ++iterator) {
+            if (!allowedKeys.contains(iterator.key())) {
+                addError(QStringLiteral("%1 property '%2' is not allowed")
+                             .arg(path, iterator.key()));
+            }
+        }
     }
 
     QJsonObject requiredObject(const QJsonObject &parent,
@@ -134,6 +167,53 @@ private:
         return value.toDouble();
     }
 
+    int packedBitsPerPosition(const QString &encoding) const
+    {
+        if (encoding == QStringLiteral("canopen_1bit")) {
+            return 1;
+        }
+        if (encoding == QStringLiteral("j1939_2bit")
+            || encoding == QStringLiteral("gessmann_2bit")
+            || encoding == QStringLiteral("detent_2bit")) {
+            return 2;
+        }
+        return 0;
+    }
+
+    bool validateSignalReference(const QString &signalId,
+                                 const QString &path,
+                                 const QSet<QString> &signalIds)
+    {
+        if (signalId.isEmpty()) {
+            return false;
+        }
+        if (!signalIds.contains(signalId)) {
+            addError(path + QStringLiteral(" references missing signal"));
+            return false;
+        }
+        return true;
+    }
+
+    bool validatePackedPosition(const QString &signalId,
+                                int position,
+                                const QString &path)
+    {
+        if (m_signalKinds.value(signalId) != QStringLiteral("packedButtons")) {
+            addError(path + QStringLiteral(" requires a packedButtons signal"));
+            return false;
+        }
+        const int bitsPerPosition =
+            packedBitsPerPosition(m_signalEncodings.value(signalId));
+        const int bitLength = m_signalBitLengths.value(signalId);
+        if (bitsPerPosition <= 0
+            || position < 0
+            || position >= bitLength / bitsPerPosition) {
+            addError(path + QStringLiteral(" position is outside the packed signal"));
+            return false;
+        }
+        return true;
+    }
+
     bool isCanonicalHex(const QJsonValue &value, int digits, const QString &path)
     {
         if (!value.isString()) {
@@ -176,6 +256,12 @@ private:
     {
         const QJsonObject product =
             requiredObject(config, QStringLiteral("product"), QStringLiteral("product"));
+        rejectUnknownKeys(product,
+                          {QStringLiteral("code"),
+                           QStringLiteral("version"),
+                           QStringLiteral("description"),
+                           QStringLiteral("aliases")},
+                          QStringLiteral("product"));
         requiredString(product, QStringLiteral("code"), QStringLiteral("product.code"));
         const QString version =
             requiredString(product, QStringLiteral("version"), QStringLiteral("product.version"));
@@ -199,14 +285,39 @@ private:
         }
     }
 
+    void validateLifecycle(const QJsonObject &config)
+    {
+        const QJsonObject lifecycle =
+            requiredObject(config, QStringLiteral("lifecycle"), QStringLiteral("lifecycle"));
+        rejectUnknownKeys(lifecycle,
+                          {QStringLiteral("status")},
+                          QStringLiteral("lifecycle"));
+        const QString status =
+            requiredString(lifecycle, QStringLiteral("status"),
+                           QStringLiteral("lifecycle.status"));
+        if (status != QStringLiteral("active")
+            && status != QStringLiteral("deprecated")) {
+            addError(QStringLiteral(
+                "lifecycle.status must be active or deprecated"));
+        }
+    }
+
     void validateOperation(const QJsonObject &config, const QString &productVersion)
     {
         const QJsonObject operation =
             requiredObject(config, QStringLiteral("operation"), QStringLiteral("operation"));
+        rejectUnknownKeys(operation,
+                          {QStringLiteral("mode"), QStringLiteral("firmware")},
+                          QStringLiteral("operation"));
         const QString mode =
             requiredString(operation, QStringLiteral("mode"), QStringLiteral("operation.mode"));
         const QJsonObject firmware =
             requiredObject(operation, QStringLiteral("firmware"), QStringLiteral("operation.firmware"));
+        rejectUnknownKeys(firmware,
+                          {QStringLiteral("source"),
+                           QStringLiteral("version"),
+                           QStringLiteral("artifact")},
+                          QStringLiteral("operation.firmware"));
         const QString source =
             requiredString(firmware, QStringLiteral("source"),
                            QStringLiteral("operation.firmware.source"));
@@ -238,7 +349,7 @@ private:
         if (!firmwareVersion.isEmpty()
             && !firmwareVersionPattern.match(firmwareVersion).hasMatch()) {
             addError(QStringLiteral(
-                "operation.firmware.version must use major.minor.patch"));
+                "operation.firmware.version must use major or major.minor.patch"));
         }
 
         if (!firmwareVersion.isEmpty()
@@ -281,10 +392,118 @@ private:
         return protocol;
     }
 
+    void validateCalibration(const QJsonObject &config, const QString &protocol)
+    {
+        const QJsonObject calibration =
+            requiredObject(config, QStringLiteral("calibration"),
+                           QStringLiteral("calibration"));
+        const QString mode =
+            requiredString(calibration, QStringLiteral("mode"),
+                           QStringLiteral("calibration.mode"));
+        if (mode == QStringLiteral("disabled")) {
+            rejectUnknownKeys(calibration,
+                              {QStringLiteral("mode"), QStringLiteral("reason")},
+                              QStringLiteral("calibration"));
+            requiredString(calibration, QStringLiteral("reason"),
+                           QStringLiteral("calibration.reason"));
+            return;
+        }
+
+        rejectUnknownKeys(calibration,
+                          {QStringLiteral("mode"),
+                           QStringLiteral("transport"),
+                           QStringLiteral("allowedInNormalModeReadOnly")},
+                          QStringLiteral("calibration"));
+        if (mode != QStringLiteral("centerOnly")
+            && mode != QStringLiteral("minCenterMax")) {
+            addError(QStringLiteral(
+                "calibration.mode must be centerOnly, minCenterMax, or disabled"));
+        }
+        const QString transport =
+            requiredString(calibration, QStringLiteral("transport"),
+                           QStringLiteral("calibration.transport"));
+        if (transport != QStringLiteral("j1939VendorPgn")
+            && transport != QStringLiteral("canopenSdo")) {
+            addError(QStringLiteral("calibration.transport is unsupported"));
+        }
+        if (protocol == QStringLiteral("j1939")
+            && transport != QStringLiteral("j1939VendorPgn")) {
+            addError(QStringLiteral("J1939 calibration must use j1939VendorPgn"));
+        } else if (protocol == QStringLiteral("canopen")
+                   && transport != QStringLiteral("canopenSdo")) {
+            addError(QStringLiteral("CANopen calibration must use canopenSdo"));
+        } else if (protocol == QStringLiteral("raw_can")) {
+            addError(QStringLiteral("raw_can calibration must be explicitly disabled"));
+        }
+        if (!calibration.value(QStringLiteral("allowedInNormalModeReadOnly")).isBool()) {
+            addError(QStringLiteral(
+                "calibration.allowedInNormalModeReadOnly must be a boolean"));
+        }
+    }
+
+    void validateIdentityPolicy(const QJsonObject &config, const QString &protocol)
+    {
+        if (protocol != QStringLiteral("canopen")) {
+            if (config.contains(QStringLiteral("identityPolicy"))) {
+                addError(QStringLiteral(
+                    "identityPolicy is only allowed for CANopen products"));
+            }
+            return;
+        }
+
+        const QJsonObject policy =
+            requiredObject(config, QStringLiteral("identityPolicy"),
+                           QStringLiteral("identityPolicy"));
+        const QString mode =
+            requiredString(policy, QStringLiteral("mode"),
+                           QStringLiteral("identityPolicy.mode"));
+        if (mode == QStringLiteral("disabled")) {
+            rejectUnknownKeys(policy,
+                              {QStringLiteral("mode"), QStringLiteral("reason")},
+                              QStringLiteral("identityPolicy"));
+            requiredString(policy, QStringLiteral("reason"),
+                           QStringLiteral("identityPolicy.reason"));
+            return;
+        }
+
+        rejectUnknownKeys(policy,
+                          {QStringLiteral("mode"), QStringLiteral("deviceInfo")},
+                          QStringLiteral("identityPolicy"));
+        if (mode != QStringLiteral("required")) {
+            addError(QStringLiteral(
+                "identityPolicy.mode must be required or disabled"));
+        }
+        const QJsonObject deviceInfo =
+            requiredObject(policy, QStringLiteral("deviceInfo"),
+                           QStringLiteral("identityPolicy.deviceInfo"));
+        rejectUnknownKeys(deviceInfo,
+                          {QStringLiteral("vendorId"),
+                           QStringLiteral("productCode"),
+                           QStringLiteral("revisionNumber"),
+                           QStringLiteral("serialNumber")},
+                          QStringLiteral("identityPolicy.deviceInfo"));
+        for (const QString &key : {QStringLiteral("vendorId"),
+                                   QStringLiteral("productCode"),
+                                   QStringLiteral("revisionNumber")}) {
+            isCanonicalHex(deviceInfo.value(key), 8,
+                           QStringLiteral("identityPolicy.deviceInfo.%1 hex").arg(key));
+        }
+        if (deviceInfo.contains(QStringLiteral("serialNumber"))) {
+            isCanonicalHex(deviceInfo.value(QStringLiteral("serialNumber")), 8,
+                           QStringLiteral("identityPolicy.deviceInfo.serialNumber hex"));
+        }
+    }
+
     void validateBus(const QJsonObject &config, const QString &protocol)
     {
         const QJsonObject bus =
             requiredObject(config, QStringLiteral("bus"), QStringLiteral("bus"));
+        rejectUnknownKeys(bus,
+                          {QStringLiteral("bitrateKbps"),
+                           QStringLiteral("frameFormat"),
+                           QStringLiteral("sourceAddress"),
+                           QStringLiteral("nodeId")},
+                          QStringLiteral("bus"));
         const QString frameFormat =
             requiredString(bus, QStringLiteral("frameFormat"), QStringLiteral("bus.frameFormat"));
 
@@ -317,6 +536,26 @@ private:
             }
             const QJsonObject message = messages.at(index).toObject();
             const QString path = QStringLiteral("messages[%1]").arg(index);
+            if (protocol == QStringLiteral("j1939")) {
+                rejectUnknownKeys(message,
+                                  {QStringLiteral("id"),
+                                   QStringLiteral("name"),
+                                   QStringLiteral("pgn"),
+                                   QStringLiteral("priority"),
+                                   QStringLiteral("sourceAddress"),
+                                   QStringLiteral("destinationAddress"),
+                                   QStringLiteral("dlc"),
+                                   QStringLiteral("periodMs")},
+                                  path);
+            } else {
+                rejectUnknownKeys(message,
+                                  {QStringLiteral("id"),
+                                   QStringLiteral("name"),
+                                   QStringLiteral("canId"),
+                                   QStringLiteral("dlc"),
+                                   QStringLiteral("periodMs")},
+                                  path);
+            }
             const QString id = requiredString(message, QStringLiteral("id"), path + QStringLiteral(".id"));
             if (!id.isEmpty()) {
                 if (!idPattern.match(id).hasMatch()) {
@@ -366,6 +605,11 @@ private:
             }
             const QJsonObject signal = signalArray.at(index).toObject();
             const QString path = QStringLiteral("signals[%1]").arg(index);
+            rejectUnknownKeys(signal,
+                              {QStringLiteral("id"),
+                               QStringLiteral("kind"),
+                               QStringLiteral("source")},
+                              path);
             const QString id = requiredString(signal, QStringLiteral("id"), path + QStringLiteral(".id"));
             if (!id.isEmpty()) {
                 if (ids.contains(id)) {
@@ -373,9 +617,33 @@ private:
                 }
                 ids.insert(id);
             }
+            const QString kind =
+                requiredString(signal, QStringLiteral("kind"), path + QStringLiteral(".kind"));
+            static const QSet<QString> allowedKinds{
+                QStringLiteral("position"),
+                QStringLiteral("status"),
+                QStringLiteral("button"),
+                QStringLiteral("packedButtons"),
+                QStringLiteral("counter"),
+                QStringLiteral("identity"),
+                QStringLiteral("numeric"),
+                QStringLiteral("crc"),
+                QStringLiteral("selfCheck")
+            };
+            if (!kind.isEmpty() && !allowedKinds.contains(kind)) {
+                addError(path + QStringLiteral(".kind is unsupported"));
+            }
 
             const QJsonObject source =
                 requiredObject(signal, QStringLiteral("source"), path + QStringLiteral(".source"));
+            rejectUnknownKeys(source,
+                              {QStringLiteral("messageId"),
+                               QStringLiteral("startByte"),
+                               QStringLiteral("startBit"),
+                               QStringLiteral("bitLength"),
+                               QStringLiteral("endian"),
+                               QStringLiteral("encoding")},
+                              path + QStringLiteral(".source"));
             const QString messageId =
                 requiredString(source, QStringLiteral("messageId"),
                                path + QStringLiteral(".source.messageId"));
@@ -392,10 +660,46 @@ private:
             const int bitLength =
                 requiredInteger(source, QStringLiteral("bitLength"),
                                 path + QStringLiteral(".source.bitLength"));
+            const QString encoding =
+                requiredString(source, QStringLiteral("encoding"),
+                               path + QStringLiteral(".source.encoding"));
+            static const QSet<QString> allowedEncodings{
+                QStringLiteral("unsigned"),
+                QStringLiteral("signed"),
+                QStringLiteral("boolean"),
+                QStringLiteral("raw_16bit"),
+                QStringLiteral("j1939_axis_status"),
+                QStringLiteral("j1939_2bit"),
+                QStringLiteral("canopen_1bit"),
+                QStringLiteral("gessmann_8bit"),
+                QStringLiteral("gessmann_2bit"),
+                QStringLiteral("signed_percent"),
+                QStringLiteral("crc8_atm"),
+                QStringLiteral("detent_2bit"),
+                QStringLiteral("counter"),
+                QStringLiteral("selfCheck"),
+                QStringLiteral("identity")
+            };
+            if (!encoding.isEmpty() && !allowedEncodings.contains(encoding)) {
+                addError(path + QStringLiteral(".source.encoding is unsupported"));
+            }
             if (startByte < 0 || startBit < 0 || startBit > 7 || bitLength <= 0) {
                 addError(path + QStringLiteral(
                     ".source bit range requires startByte >= 0, startBit 0..7, bitLength > 0"));
                 continue;
+            }
+
+            if (!id.isEmpty()) {
+                m_signalKinds.insert(id, kind);
+                m_signalBitLengths.insert(id, bitLength);
+                m_signalEncodings.insert(id, encoding);
+            }
+            if (kind == QStringLiteral("packedButtons")) {
+                const int bitsPerPosition = packedBitsPerPosition(encoding);
+                if (bitsPerPosition <= 0 || bitLength % bitsPerPosition != 0) {
+                    addError(path + QStringLiteral(
+                        " packedButtons bitLength must align with its packed encoding"));
+                }
             }
 
             if (!messageId.isEmpty() && m_messageDlc.contains(messageId)) {
@@ -431,6 +735,12 @@ private:
             }
             const QJsonObject command = commands.at(index).toObject();
             const QString path = QStringLiteral("commands[%1]").arg(index);
+            rejectUnknownKeys(command,
+                              {QStringLiteral("id"),
+                               QStringLiteral("label"),
+                               QStringLiteral("transport"),
+                               QStringLiteral("frame")},
+                              path);
             const QString id = requiredString(command, QStringLiteral("id"), path + QStringLiteral(".id"));
             if (!id.isEmpty()) {
                 if (ids.contains(id)) {
@@ -443,6 +753,22 @@ private:
                                path + QStringLiteral(".transport"));
             const QJsonObject frame =
                 requiredObject(command, QStringLiteral("frame"), path + QStringLiteral(".frame"));
+            if (transport == QStringLiteral("j1939")) {
+                rejectUnknownKeys(frame,
+                                  {QStringLiteral("priority"),
+                                   QStringLiteral("pgn"),
+                                   QStringLiteral("sourceAddress"),
+                                   QStringLiteral("destinationAddress"),
+                                   QStringLiteral("dlc"),
+                                   QStringLiteral("data")},
+                                  path + QStringLiteral(".frame"));
+            } else {
+                rejectUnknownKeys(frame,
+                                  {QStringLiteral("canId"),
+                                   QStringLiteral("dlc"),
+                                   QStringLiteral("data")},
+                                  path + QStringLiteral(".frame"));
+            }
             const int dlc = requiredDlc(frame, path + QStringLiteral(".frame"));
             const QJsonValue payloadValue = frame.value(QStringLiteral("data"));
             const QString payload = payloadValue.toString();
@@ -542,6 +868,80 @@ private:
             const QString type =
                 requiredString(control, QStringLiteral("type"), path + QStringLiteral(".type"));
             if (type == QStringLiteral("axis")) {
+                rejectUnknownKeys(control,
+                                  {QStringLiteral("id"),
+                                   QStringLiteral("type"),
+                                   QStringLiteral("role"),
+                                   QStringLiteral("inputMode"),
+                                   QStringLiteral("zeroAsNeutral"),
+                                   QStringLiteral("display"),
+                                   QStringLiteral("label"),
+                                   QStringLiteral("topology"),
+                                   QStringLiteral("axis")},
+                                  path);
+                const QString role =
+                    requiredString(control, QStringLiteral("role"), path + QStringLiteral(".role"));
+                if (role != QStringLiteral("joystick")
+                    && role != QStringLiteral("roller")
+                    && role != QStringLiteral("potentiometer")
+                    && role != QStringLiteral("auxiliary")) {
+                    addError(path + QStringLiteral(".role is unsupported"));
+                }
+                const QString inputMode =
+                    requiredString(control, QStringLiteral("inputMode"),
+                                   path + QStringLiteral(".inputMode"));
+                if (inputMode != QStringLiteral("centered")
+                    && inputMode != QStringLiteral("signed")
+                    && inputMode != QStringLiteral("unipolar")) {
+                    addError(path + QStringLiteral(".inputMode is unsupported"));
+                }
+                if (control.contains(QStringLiteral("zeroAsNeutral"))
+                    && !control.value(QStringLiteral("zeroAsNeutral")).isBool()) {
+                    addError(path + QStringLiteral(".zeroAsNeutral must be boolean"));
+                }
+                if (role == QStringLiteral("potentiometer")
+                    || control.contains(QStringLiteral("display"))) {
+                    const QJsonObject display =
+                        requiredObject(control, QStringLiteral("display"),
+                                       path + QStringLiteral(".display"));
+                    rejectUnknownKeys(display,
+                                      {QStringLiteral("valueMin"),
+                                       QStringLiteral("valueMax"),
+                                       QStringLiteral("angleMinDegrees"),
+                                       QStringLiteral("angleMaxDegrees"),
+                                       QStringLiteral("unit")},
+                                      path + QStringLiteral(".display"));
+                    bool valueMinValid = false;
+                    bool valueMaxValid = false;
+                    bool angleMinValid = false;
+                    bool angleMaxValid = false;
+                    const double valueMin =
+                        requiredNumber(display, QStringLiteral("valueMin"),
+                                       path + QStringLiteral(".display.valueMin"),
+                                       &valueMinValid);
+                    const double valueMax =
+                        requiredNumber(display, QStringLiteral("valueMax"),
+                                       path + QStringLiteral(".display.valueMax"),
+                                       &valueMaxValid);
+                    const double angleMin =
+                        requiredNumber(display, QStringLiteral("angleMinDegrees"),
+                                       path + QStringLiteral(".display.angleMinDegrees"),
+                                       &angleMinValid);
+                    const double angleMax =
+                        requiredNumber(display, QStringLiteral("angleMaxDegrees"),
+                                       path + QStringLiteral(".display.angleMaxDegrees"),
+                                       &angleMaxValid);
+                    requiredString(display, QStringLiteral("unit"),
+                                   path + QStringLiteral(".display.unit"));
+                    if (valueMinValid && valueMaxValid && !(valueMin < valueMax)) {
+                        addError(path + QStringLiteral(
+                            ".display must satisfy valueMin < valueMax"));
+                    }
+                    if (angleMinValid && angleMaxValid && !(angleMin < angleMax)) {
+                        addError(path + QStringLiteral(
+                            ".display must satisfy angleMinDegrees < angleMaxDegrees"));
+                    }
+                }
                 const QJsonObject topology =
                     requiredObject(control, QStringLiteral("topology"),
                                    path + QStringLiteral(".topology"));
@@ -561,6 +961,14 @@ private:
                                     path + QStringLiteral(".axis"),
                                     signalIds);
             } else if (type == QStringLiteral("joystick")) {
+                rejectUnknownKeys(control,
+                                  {QStringLiteral("id"),
+                                   QStringLiteral("type"),
+                                   QStringLiteral("label"),
+                                   QStringLiteral("topology"),
+                                   QStringLiteral("xAxis"),
+                                   QStringLiteral("yAxis")},
+                                  path);
                 const QJsonObject topology =
                     requiredObject(control, QStringLiteral("topology"),
                                    path + QStringLiteral(".topology"));
@@ -581,13 +989,181 @@ private:
                                     path + QStringLiteral(".yAxis"),
                                     signalIds);
             } else if (type == QStringLiteral("button")) {
+                rejectUnknownKeys(control,
+                                  {QStringLiteral("id"),
+                                   QStringLiteral("type"),
+                                   QStringLiteral("label"),
+                                   QStringLiteral("signalId"),
+                                   QStringLiteral("position")},
+                                  path);
                 const QString signalId =
                     requiredString(control, QStringLiteral("signalId"),
                                    path + QStringLiteral(".signalId"));
-                if (!signalId.isEmpty() && !signalIds.contains(signalId)) {
-                    addError(path + QStringLiteral(".signalId references missing signal"));
+                const int position =
+                    requiredInteger(control, QStringLiteral("position"),
+                                    path + QStringLiteral(".position"));
+                if (validateSignalReference(signalId,
+                                            path + QStringLiteral(".signalId"),
+                                            signalIds)) {
+                    validatePackedPosition(signalId,
+                                           position,
+                                           path + QStringLiteral(".position"));
+                }
+            } else if (type == QStringLiteral("fnr")) {
+                rejectUnknownKeys(control,
+                                  {QStringLiteral("id"),
+                                   QStringLiteral("type"),
+                                   QStringLiteral("label"),
+                                   QStringLiteral("signalId"),
+                                   QStringLiteral("positions")},
+                                  path);
+                const QString signalId =
+                    requiredString(control, QStringLiteral("signalId"),
+                                   path + QStringLiteral(".signalId"));
+                const bool hasSignal =
+                    validateSignalReference(signalId,
+                                            path + QStringLiteral(".signalId"),
+                                            signalIds);
+                if (hasSignal
+                    && m_signalKinds.value(signalId) != QStringLiteral("packedButtons")) {
+                    addError(path + QStringLiteral(
+                        ".signalId for FNR must reference packedButtons"));
+                }
+                const QJsonObject positions =
+                    requiredObject(control, QStringLiteral("positions"),
+                                   path + QStringLiteral(".positions"));
+                const QString neutralMode =
+                    requiredString(positions, QStringLiteral("neutralMode"),
+                                   path + QStringLiteral(".positions.neutralMode"));
+                QSet<QString> allowedPositionKeys{
+                    QStringLiteral("neutralMode"),
+                    QStringLiteral("forward"),
+                    QStringLiteral("reverse")
+                };
+                if (neutralMode == QStringLiteral("signal")) {
+                    allowedPositionKeys.insert(QStringLiteral("neutral"));
+                } else if (neutralMode != QStringLiteral("inferred")) {
+                    addError(path + QStringLiteral(
+                        ".positions.neutralMode must be signal or inferred"));
+                }
+                rejectUnknownKeys(positions,
+                                  allowedPositionKeys,
+                                  path + QStringLiteral(".positions"));
+                const int forward =
+                    requiredInteger(positions, QStringLiteral("forward"),
+                                    path + QStringLiteral(".positions.forward"));
+                const int reverse =
+                    requiredInteger(positions, QStringLiteral("reverse"),
+                                    path + QStringLiteral(".positions.reverse"));
+                int neutral = -1;
+                if (neutralMode == QStringLiteral("signal")) {
+                    neutral =
+                        requiredInteger(positions, QStringLiteral("neutral"),
+                                        path + QStringLiteral(".positions.neutral"));
+                }
+                if (forward == reverse
+                    || (neutral >= 0 && (neutral == forward || neutral == reverse))) {
+                    addError(path + QStringLiteral(
+                        ".positions forward/neutral/reverse must be distinct"));
+                }
+                if (hasSignal) {
+                    validatePackedPosition(signalId,
+                                           forward,
+                                           path + QStringLiteral(".positions.forward"));
+                    validatePackedPosition(signalId,
+                                           reverse,
+                                           path + QStringLiteral(".positions.reverse"));
+                    if (neutral >= 0) {
+                        validatePackedPosition(signalId,
+                                               neutral,
+                                               path + QStringLiteral(".positions.neutral"));
+                    }
+                }
+            } else if (type == QStringLiteral("numericDisplay")) {
+                rejectUnknownKeys(control,
+                                  {QStringLiteral("id"),
+                                   QStringLiteral("type"),
+                                   QStringLiteral("label"),
+                                   QStringLiteral("signalId"),
+                                   QStringLiteral("format")},
+                                  path);
+                const QString signalId =
+                    requiredString(control, QStringLiteral("signalId"),
+                                   path + QStringLiteral(".signalId"));
+                validateSignalReference(signalId,
+                                        path + QStringLiteral(".signalId"),
+                                        signalIds);
+                const QJsonObject format =
+                    requiredObject(control, QStringLiteral("format"),
+                                   path + QStringLiteral(".format"));
+                rejectUnknownKeys(format,
+                                  {QStringLiteral("decimals"),
+                                   QStringLiteral("unit"),
+                                   QStringLiteral("prefix"),
+                                   QStringLiteral("suffix")},
+                                  path + QStringLiteral(".format"));
+                const int decimals =
+                    requiredInteger(format, QStringLiteral("decimals"),
+                                    path + QStringLiteral(".format.decimals"));
+                if (decimals < 0 || decimals > 6) {
+                    addError(path + QStringLiteral(".format.decimals must be 0..6"));
+                }
+            } else if (type == QStringLiteral("indicator")) {
+                rejectUnknownKeys(control,
+                                  {QStringLiteral("id"),
+                                   QStringLiteral("type"),
+                                   QStringLiteral("label"),
+                                   QStringLiteral("signalId"),
+                                   QStringLiteral("states")},
+                                  path);
+                const QString signalId =
+                    requiredString(control, QStringLiteral("signalId"),
+                                   path + QStringLiteral(".signalId"));
+                validateSignalReference(signalId,
+                                        path + QStringLiteral(".signalId"),
+                                        signalIds);
+                const QJsonArray states =
+                    requiredArray(control, QStringLiteral("states"),
+                                  path + QStringLiteral(".states"), false);
+                for (qsizetype stateIndex = 0; stateIndex < states.size(); ++stateIndex) {
+                    const QString statePath =
+                        path + QStringLiteral(".states[%1]").arg(stateIndex);
+                    if (!states.at(stateIndex).isObject()) {
+                        addError(statePath + QStringLiteral(" must be an object"));
+                        continue;
+                    }
+                    const QJsonObject state = states.at(stateIndex).toObject();
+                    rejectUnknownKeys(state,
+                                      {QStringLiteral("value"),
+                                       QStringLiteral("label"),
+                                       QStringLiteral("color")},
+                                      statePath);
+                    const QJsonValue value = state.value(QStringLiteral("value"));
+                    if (!value.isBool() && !value.isDouble() && !value.isString()) {
+                        addError(statePath + QStringLiteral(
+                            ".value must be boolean, number, or string"));
+                    }
+                    requiredString(state, QStringLiteral("label"),
+                                   statePath + QStringLiteral(".label"));
+                    const QString color =
+                        requiredString(state, QStringLiteral("color"),
+                                       statePath + QStringLiteral(".color"));
+                    static const QRegularExpression colorPattern(
+                        QStringLiteral("^#[0-9A-F]{6}$"));
+                    if (!color.isEmpty() && !colorPattern.match(color).hasMatch()) {
+                        addError(statePath + QStringLiteral(
+                            ".color must be uppercase #RRGGBB"));
+                    }
                 }
             } else if (type == QStringLiteral("binaryOutput")) {
+                rejectUnknownKeys(control,
+                                  {QStringLiteral("id"),
+                                   QStringLiteral("type"),
+                                   QStringLiteral("label"),
+                                   QStringLiteral("onCommandId"),
+                                   QStringLiteral("offCommandId"),
+                                   QStringLiteral("activeLow")},
+                                  path);
                 for (const QString &key : {QStringLiteral("onCommandId"),
                                            QStringLiteral("offCommandId")}) {
                     const QString commandId =
@@ -608,11 +1184,20 @@ private:
     {
         const QJsonObject layout =
             requiredObject(config, QStringLiteral("layout"), QStringLiteral("layout"));
+        rejectUnknownKeys(layout,
+                          {QStringLiteral("mode"),
+                           QStringLiteral("canvas"),
+                           QStringLiteral("grid"),
+                           QStringLiteral("cards")},
+                          QStringLiteral("layout"));
         if (layout.value(QStringLiteral("mode")).toString() != QStringLiteral("designed")) {
             addError(QStringLiteral("layout.mode must be designed"));
         }
         const QJsonObject canvas =
             requiredObject(layout, QStringLiteral("canvas"), QStringLiteral("layout.canvas"));
+        rejectUnknownKeys(canvas,
+                          {QStringLiteral("width"), QStringLiteral("height")},
+                          QStringLiteral("layout.canvas"));
         const int canvasWidth =
             requiredInteger(canvas, QStringLiteral("width"), QStringLiteral("layout.canvas.width"));
         const int canvasHeight =
@@ -620,10 +1205,24 @@ private:
         if (canvasWidth <= 0 || canvasHeight <= 0) {
             addError(QStringLiteral("layout.canvas width/height must be positive"));
         }
+        const QJsonObject layoutGrid =
+            requiredObject(layout, QStringLiteral("grid"), QStringLiteral("layout.grid"));
+        rejectUnknownKeys(layoutGrid,
+                          {QStringLiteral("rows"), QStringLiteral("columns")},
+                          QStringLiteral("layout.grid"));
+        const int gridRows =
+            requiredInteger(layoutGrid, QStringLiteral("rows"), QStringLiteral("layout.grid.rows"));
+        const int gridColumns =
+            requiredInteger(layoutGrid, QStringLiteral("columns"),
+                            QStringLiteral("layout.grid.columns"));
+        if (gridRows <= 0 || gridColumns <= 0) {
+            addError(QStringLiteral("layout.grid rows/columns must be positive"));
+        }
 
         const QJsonArray cards =
             requiredArray(layout, QStringLiteral("cards"), QStringLiteral("layout.cards"), false);
         QSet<QString> cardIds;
+        QSet<QString> elementIds;
         for (qsizetype index = 0; index < cards.size(); ++index) {
             if (!cards.at(index).isObject()) {
                 addError(QStringLiteral("layout.cards[%1] must be an object").arg(index));
@@ -631,6 +1230,46 @@ private:
             }
             const QJsonObject card = cards.at(index).toObject();
             const QString path = QStringLiteral("layout.cards[%1]").arg(index);
+            const QString kind =
+                requiredString(card, QStringLiteral("kind"), path + QStringLiteral(".kind"));
+            if (kind == QStringLiteral("controls")) {
+                rejectUnknownKeys(card,
+                                  {QStringLiteral("id"),
+                                   QStringLiteral("kind"),
+                                   QStringLiteral("title"),
+                                   QStringLiteral("grid"),
+                                   QStringLiteral("contentCanvas"),
+                                   QStringLiteral("elements")},
+                                  path);
+            } else if (kind == QStringLiteral("system")) {
+                rejectUnknownKeys(card,
+                                  {QStringLiteral("id"),
+                                   QStringLiteral("kind"),
+                                   QStringLiteral("title"),
+                                   QStringLiteral("grid"),
+                                   QStringLiteral("systemType"),
+                                   QStringLiteral("properties")},
+                                  path + QStringLiteral(" system card"));
+            } else if (kind == QStringLiteral("empty")) {
+                rejectUnknownKeys(card,
+                                  {QStringLiteral("id"),
+                                   QStringLiteral("kind"),
+                                   QStringLiteral("title"),
+                                   QStringLiteral("grid")},
+                                  path + QStringLiteral(" empty card"));
+            } else if (kind == QStringLiteral("leftRegion")) {
+                rejectUnknownKeys(card,
+                                  {QStringLiteral("id"),
+                                   QStringLiteral("kind"),
+                                   QStringLiteral("title"),
+                                   QStringLiteral("grid"),
+                                   QStringLiteral("controlId"),
+                                   QStringLiteral("widthRatio")},
+                                  path + QStringLiteral(" left-region card"));
+            } else {
+                addError(path + QStringLiteral(
+                    ".kind must be controls, system, empty, or leftRegion"));
+            }
             const QString id =
                 requiredString(card, QStringLiteral("id"), path + QStringLiteral(".id"));
             if (!id.isEmpty()) {
@@ -639,32 +1278,212 @@ private:
                 }
                 cardIds.insert(id);
             }
-
-            const int x = requiredInteger(card, QStringLiteral("x"), path + QStringLiteral(".x"));
-            const int y = requiredInteger(card, QStringLiteral("y"), path + QStringLiteral(".y"));
-            const int width =
-                requiredInteger(card, QStringLiteral("width"), path + QStringLiteral(".width"));
-            const int height =
-                requiredInteger(card, QStringLiteral("height"), path + QStringLiteral(".height"));
-            if (x < 0 || y < 0) {
-                addError(path + QStringLiteral(".x/y must be non-negative"));
-            }
-            if (width <= 0 || height <= 0) {
-                addError(path + QStringLiteral(".width/height must be positive"));
-            }
-            if (canvasWidth > 0 && canvasHeight > 0
-                && x >= 0 && y >= 0 && width > 0 && height > 0
-                && (static_cast<qint64>(x) + width > canvasWidth
-                    || static_cast<qint64>(y) + height > canvasHeight)) {
-                addError(path + QStringLiteral(" must remain inside layout.canvas"));
+            if (kind == QStringLiteral("controls") || kind == QStringLiteral("system")) {
+                requiredString(card, QStringLiteral("title"), path + QStringLiteral(".title"));
+            } else if (!card.value(QStringLiteral("title")).isString()) {
+                addError(path + QStringLiteral(".title must be a string"));
             }
 
-            const QJsonArray references =
-                requiredArray(card, QStringLiteral("controlIds"),
-                              path + QStringLiteral(".controlIds"), false);
-            for (const QJsonValue &reference : references) {
-                if (!reference.isString() || !controlIds.contains(reference.toString())) {
-                    addError(path + QStringLiteral(".controlIds references missing control"));
+            const QJsonObject cardGrid =
+                requiredObject(card, QStringLiteral("grid"), path + QStringLiteral(".grid"));
+            rejectUnknownKeys(cardGrid,
+                              {QStringLiteral("row"),
+                               QStringLiteral("column"),
+                               QStringLiteral("rowSpan"),
+                               QStringLiteral("columnSpan")},
+                              path + QStringLiteral(".grid"));
+            const int row =
+                requiredInteger(cardGrid, QStringLiteral("row"),
+                                path + QStringLiteral(".grid.row"));
+            const int column =
+                requiredInteger(cardGrid, QStringLiteral("column"),
+                                path + QStringLiteral(".grid.column"));
+            const int rowSpan =
+                requiredInteger(cardGrid, QStringLiteral("rowSpan"),
+                                path + QStringLiteral(".grid.rowSpan"));
+            const int columnSpan =
+                requiredInteger(cardGrid, QStringLiteral("columnSpan"),
+                                path + QStringLiteral(".grid.columnSpan"));
+            if (row < 0 || column < 0) {
+                addError(path + QStringLiteral(".grid row/column must be non-negative"));
+            }
+            if (rowSpan <= 0 || columnSpan <= 0) {
+                addError(path + QStringLiteral(".grid spans must be positive"));
+            }
+            if (gridRows > 0 && gridColumns > 0
+                && row >= 0 && column >= 0 && rowSpan > 0 && columnSpan > 0
+                && (static_cast<qint64>(row) + rowSpan > gridRows
+                    || static_cast<qint64>(column) + columnSpan > gridColumns)) {
+                addError(path + QStringLiteral(" must remain inside layout.grid"));
+            }
+
+            if (kind == QStringLiteral("controls")) {
+                const QJsonObject contentCanvas =
+                    requiredObject(card, QStringLiteral("contentCanvas"),
+                                   path + QStringLiteral(".contentCanvas"));
+                rejectUnknownKeys(contentCanvas,
+                                  {QStringLiteral("width"),
+                                   QStringLiteral("height"),
+                                   QStringLiteral("scaleMode")},
+                                  path + QStringLiteral(".contentCanvas"));
+                const int contentWidth =
+                    requiredInteger(contentCanvas, QStringLiteral("width"),
+                                    path + QStringLiteral(".contentCanvas.width"));
+                const int contentHeight =
+                    requiredInteger(contentCanvas, QStringLiteral("height"),
+                                    path + QStringLiteral(".contentCanvas.height"));
+                const QString scaleMode =
+                    requiredString(contentCanvas, QStringLiteral("scaleMode"),
+                                   path + QStringLiteral(".contentCanvas.scaleMode"));
+                if (contentWidth <= 0 || contentHeight <= 0) {
+                    addError(path + QStringLiteral(
+                        ".contentCanvas width/height must be positive"));
+                }
+                if (scaleMode != QStringLiteral("uniform")
+                    && scaleMode != QStringLiteral("stretch")
+                    && scaleMode != QStringLiteral("none")) {
+                    addError(path + QStringLiteral(".contentCanvas.scaleMode is unsupported"));
+                }
+                const QJsonArray elements =
+                    requiredArray(card, QStringLiteral("elements"),
+                                  path + QStringLiteral(".elements"), true);
+                static const QSet<QString> renderers{
+                    QStringLiteral("singleAxisGauge"),
+                    QStringLiteral("joystickPad"),
+                    QStringLiteral("button"),
+                    QStringLiteral("roller"),
+                    QStringLiteral("potentiometer"),
+                    QStringLiteral("fnr"),
+                    QStringLiteral("numericDisplay"),
+                    QStringLiteral("indicator"),
+                    QStringLiteral("binaryOutput")
+                };
+                for (qsizetype elementIndex = 0;
+                     elementIndex < elements.size();
+                     ++elementIndex) {
+                    const QString elementPath =
+                        path + QStringLiteral(".elements[%1]").arg(elementIndex);
+                    if (!elements.at(elementIndex).isObject()) {
+                        addError(elementPath + QStringLiteral(" must be an object"));
+                        continue;
+                    }
+                    const QJsonObject element = elements.at(elementIndex).toObject();
+                    rejectUnknownKeys(element,
+                                      {QStringLiteral("id"),
+                                       QStringLiteral("controlId"),
+                                       QStringLiteral("renderer"),
+                                       QStringLiteral("x"),
+                                       QStringLiteral("y"),
+                                       QStringLiteral("width"),
+                                       QStringLiteral("height"),
+                                       QStringLiteral("properties")},
+                                      elementPath);
+                    const QString elementId =
+                        requiredString(element, QStringLiteral("id"),
+                                       elementPath + QStringLiteral(".id"));
+                    if (!elementId.isEmpty()) {
+                        if (elementIds.contains(elementId)) {
+                            addError(elementPath + QStringLiteral(".id is duplicated"));
+                        }
+                        elementIds.insert(elementId);
+                    }
+                    const QString controlId =
+                        requiredString(element, QStringLiteral("controlId"),
+                                       elementPath + QStringLiteral(".controlId"));
+                    if (!controlId.isEmpty() && !controlIds.contains(controlId)) {
+                        addError(elementPath + QStringLiteral(
+                            ".controlId references missing control"));
+                    }
+                    const QString renderer =
+                        requiredString(element, QStringLiteral("renderer"),
+                                       elementPath + QStringLiteral(".renderer"));
+                    if (!renderer.isEmpty() && !renderers.contains(renderer)) {
+                        addError(elementPath + QStringLiteral(".renderer is unsupported"));
+                    }
+                    const int elementX =
+                        requiredInteger(element, QStringLiteral("x"),
+                                        elementPath + QStringLiteral(".x"));
+                    const int elementY =
+                        requiredInteger(element, QStringLiteral("y"),
+                                        elementPath + QStringLiteral(".y"));
+                    const int elementWidth =
+                        requiredInteger(element, QStringLiteral("width"),
+                                        elementPath + QStringLiteral(".width"));
+                    const int elementHeight =
+                        requiredInteger(element, QStringLiteral("height"),
+                                        elementPath + QStringLiteral(".height"));
+                    if (elementX < 0 || elementY < 0) {
+                        addError(elementPath + QStringLiteral(".x/y must be non-negative"));
+                    }
+                    if (elementWidth <= 0 || elementHeight <= 0) {
+                        addError(elementPath + QStringLiteral(
+                            ".width/height must be positive"));
+                    }
+                    if (contentWidth > 0 && contentHeight > 0
+                        && elementX >= 0 && elementY >= 0
+                        && elementWidth > 0 && elementHeight > 0
+                        && (static_cast<qint64>(elementX) + elementWidth > contentWidth
+                            || static_cast<qint64>(elementY) + elementHeight > contentHeight)) {
+                        addError(elementPath + QStringLiteral(
+                            " must remain inside its contentCanvas"));
+                    }
+                    if (element.contains(QStringLiteral("properties"))) {
+                        const QJsonObject properties =
+                            requiredObject(element, QStringLiteral("properties"),
+                                           elementPath + QStringLiteral(".properties"));
+                        rejectUnknownKeys(
+                            properties,
+                            {QStringLiteral("orientation"),
+                             QStringLiteral("showLabel"),
+                             QStringLiteral("showValue"),
+                             QStringLiteral("compact"),
+                             QStringLiteral("decimals"),
+                             QStringLiteral("unit"),
+                             QStringLiteral("columns"),
+                             QStringLiteral("rows"),
+                             QStringLiteral("activeColor"),
+                             QStringLiteral("inactiveColor"),
+                             QStringLiteral("labelPosition")},
+                            elementPath + QStringLiteral(".properties"));
+                    }
+                }
+            } else if (kind == QStringLiteral("system")) {
+                const QString systemType =
+                    requiredString(card, QStringLiteral("systemType"),
+                                   path + QStringLiteral(".systemType"));
+                if (systemType != QStringLiteral("busStats")
+                    && systemType != QStringLiteral("rawFrames")
+                    && systemType != QStringLiteral("recordInfo")) {
+                    addError(path + QStringLiteral(".systemType is unsupported"));
+                }
+                if (card.contains(QStringLiteral("properties"))) {
+                    const QJsonObject properties =
+                        requiredObject(card, QStringLiteral("properties"),
+                                       path + QStringLiteral(".properties"));
+                    rejectUnknownKeys(
+                        properties,
+                        {QStringLiteral("refreshMs"),
+                         QStringLiteral("maxRows"),
+                         QStringLiteral("showTimestamp"),
+                         QStringLiteral("showChannel"),
+                         QStringLiteral("showDirection"),
+                         QStringLiteral("showOperator"),
+                         QStringLiteral("showSerialNumber")},
+                        path + QStringLiteral(".properties"));
+                }
+            } else if (kind == QStringLiteral("leftRegion")) {
+                const QString controlId =
+                    requiredString(card, QStringLiteral("controlId"),
+                                   path + QStringLiteral(".controlId"));
+                if (!controlId.isEmpty() && !controlIds.contains(controlId)) {
+                    addError(path + QStringLiteral(
+                        ".controlId references missing control"));
+                }
+                const double widthRatio =
+                    requiredNumber(card, QStringLiteral("widthRatio"),
+                                   path + QStringLiteral(".widthRatio"));
+                if (widthRatio <= 0.0 || widthRatio >= 1.0) {
+                    addError(path + QStringLiteral(".widthRatio must be between 0 and 1"));
                 }
             }
         }
@@ -825,6 +1644,9 @@ private:
 
     QStringList m_errors;
     QHash<QString, int> m_messageDlc;
+    QHash<QString, QString> m_signalKinds;
+    QHash<QString, int> m_signalBitLengths;
+    QHash<QString, QString> m_signalEncodings;
 };
 
 } // namespace

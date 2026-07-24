@@ -6,11 +6,19 @@
     "version": "V1",
     "description": "无固件纯测试产品，包含工作灯检查"
   },
+  "lifecycle": {
+    "status": "active"
+  },
   "operation": {
     "mode": "test_only",
     "firmware": {
       "source": "external"
     }
+  },
+  "calibration": {
+    "mode": "centerOnly",
+    "transport": "j1939VendorPgn",
+    "allowedInNormalModeReadOnly": true
   },
   "protocol": "j1939",
   "bus": {
@@ -45,6 +53,8 @@
     {
       "id": "mainAxis",
       "type": "axis",
+      "role": "joystick",
+      "inputMode": "centered",
       "label": "主轴",
       "topology": {
         "kind": "singleAxis",
@@ -142,29 +152,63 @@
       "width": 1280,
       "height": 720
     },
+    "grid": {
+      "rows": 1,
+      "columns": 2
+    },
     "cards": [
       {
         "id": "mainAxisCard",
+        "kind": "controls",
         "title": "主轴",
-        "x": 24,
-        "y": 24,
-        "width": 580,
-        "height": 360,
-        "renderer": "singleAxisGauge",
-        "controlIds": [
-          "mainAxis"
+        "grid": {
+          "row": 0,
+          "column": 0,
+          "rowSpan": 1,
+          "columnSpan": 1
+        },
+        "contentCanvas": {
+          "width": 580,
+          "height": 360,
+          "scaleMode": "uniform"
+        },
+        "elements": [
+          {
+            "id": "mainAxisElement",
+            "controlId": "mainAxis",
+            "renderer": "singleAxisGauge",
+            "x": 0,
+            "y": 0,
+            "width": 580,
+            "height": 360
+          }
         ]
       },
       {
         "id": "workLightCard",
+        "kind": "controls",
         "title": "工作灯",
-        "x": 628,
-        "y": 24,
-        "width": 300,
-        "height": 240,
-        "renderer": "binaryOutput",
-        "controlIds": [
-          "workLight"
+        "grid": {
+          "row": 0,
+          "column": 1,
+          "rowSpan": 1,
+          "columnSpan": 1
+        },
+        "contentCanvas": {
+          "width": 300,
+          "height": 240,
+          "scaleMode": "uniform"
+        },
+        "elements": [
+          {
+            "id": "workLightElement",
+            "controlId": "workLight",
+            "renderer": "binaryOutput",
+            "x": 0,
+            "y": 0,
+            "width": 300,
+            "height": 240
+          }
         ]
       }
     ]

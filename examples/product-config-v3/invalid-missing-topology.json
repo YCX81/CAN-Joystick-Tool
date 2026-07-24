@@ -6,11 +6,18 @@
     "version": "V1",
     "description": "轴控件必须显式声明拓扑"
   },
+  "lifecycle": {
+    "status": "active"
+  },
   "operation": {
     "mode": "test_only",
     "firmware": {
       "source": "external"
     }
+  },
+  "calibration": {
+    "mode": "disabled",
+    "reason": "本例只验证缺少轴拓扑"
   },
   "protocol": "j1939",
   "bus": {
@@ -45,6 +52,8 @@
     {
       "id": "mainAxis",
       "type": "axis",
+      "role": "joystick",
+      "inputMode": "centered",
       "label": "主轴",
       "axis": {
         "signalId": "axisX",
@@ -70,17 +79,36 @@
       "width": 1280,
       "height": 720
     },
+    "grid": {
+      "rows": 1,
+      "columns": 1
+    },
     "cards": [
       {
         "id": "mainAxisCard",
+        "kind": "controls",
         "title": "主轴",
-        "x": 24,
-        "y": 24,
-        "width": 580,
-        "height": 300,
-        "renderer": "singleAxisGauge",
-        "controlIds": [
-          "mainAxis"
+        "grid": {
+          "row": 0,
+          "column": 0,
+          "rowSpan": 1,
+          "columnSpan": 1
+        },
+        "contentCanvas": {
+          "width": 580,
+          "height": 300,
+          "scaleMode": "uniform"
+        },
+        "elements": [
+          {
+            "id": "mainAxisElement",
+            "controlId": "mainAxis",
+            "renderer": "singleAxisGauge",
+            "x": 0,
+            "y": 0,
+            "width": 580,
+            "height": 300
+          }
         ]
       }
     ]
