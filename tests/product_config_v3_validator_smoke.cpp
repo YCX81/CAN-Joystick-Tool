@@ -337,6 +337,35 @@ bool verifyTopologyRules(const QJsonObject &singleAxis, const QJsonObject &cross
     ok &= expectInvalid(withControl(diagonalGate, 0, control),
                         QStringLiteral("cross2D non-cross gate"),
                         QStringLiteral("cross"));
+
+    QJsonObject omnidirectional = cross2d;
+    control = omnidirectional.value(QStringLiteral("controls")).toArray().first().toObject();
+    topology = QJsonObject{
+        {QStringLiteral("kind"), QStringLiteral("xy2D")},
+        {QStringLiteral("gate"), QStringLiteral("omnidirectional")}
+    };
+    control.insert(QStringLiteral("topology"), topology);
+    omnidirectional = withControl(omnidirectional, 0, control);
+    ok &= expectValid(omnidirectional,
+                      QStringLiteral("xy2D omnidirectional joystick"));
+
+    QJsonObject mismatchedXyGate = omnidirectional;
+    control = mismatchedXyGate.value(QStringLiteral("controls")).toArray().first().toObject();
+    topology = control.value(QStringLiteral("topology")).toObject();
+    topology.insert(QStringLiteral("gate"), QStringLiteral("cross"));
+    control.insert(QStringLiteral("topology"), topology);
+    ok &= expectInvalid(withControl(mismatchedXyGate, 0, control),
+                        QStringLiteral("xy2D cross gate"),
+                        QStringLiteral("omnidirectional"));
+
+    QJsonObject mismatchedCrossGate = cross2d;
+    control = mismatchedCrossGate.value(QStringLiteral("controls")).toArray().first().toObject();
+    topology = control.value(QStringLiteral("topology")).toObject();
+    topology.insert(QStringLiteral("gate"), QStringLiteral("omnidirectional"));
+    control.insert(QStringLiteral("topology"), topology);
+    ok &= expectInvalid(withControl(mismatchedCrossGate, 0, control),
+                        QStringLiteral("cross2D omnidirectional gate"),
+                        QStringLiteral("cross"));
     return ok;
 }
 

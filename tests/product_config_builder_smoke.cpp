@@ -272,9 +272,20 @@ bool verifyV3BuilderAndClone()
                      == QStringLiteral("0x33"),
                  QStringLiteral("V3 builder must use canonical hexadecimal J1939 addresses"));
     ok &= expect(basic.value(QStringLiteral("layout")).toObject()
-                     .value(QStringLiteral("mode")).toString()
-                     == QStringLiteral("designed"),
-                 QStringLiteral("V3 builder must generate designed layout"));
+                      .value(QStringLiteral("mode")).toString()
+                      == QStringLiteral("designed"),
+                  QStringLiteral("V3 builder must generate designed layout"));
+    const QJsonObject basicJoystick =
+        findObject(basic.value(QStringLiteral("controls")).toArray(),
+                   QStringLiteral("id"),
+                   QStringLiteral("joystickXY"));
+    ok &= expect(basicJoystick.value(QStringLiteral("topology")).toObject()
+                         == QJsonObject{
+                                {QStringLiteral("kind"), QStringLiteral("xy2D")},
+                                {QStringLiteral("gate"),
+                                 QStringLiteral("omnidirectional")}
+                            },
+                 QStringLiteral("V3 builder must default to an omnidirectional XY joystick"));
     const QJsonObject basicValidation = manager.validateProductConfig(basic);
     ok &= expect(basicValidation.value(QStringLiteral("ok")).toBool(),
                  QStringLiteral("V3 builder output failed validation: %1")
@@ -327,7 +338,26 @@ bool verifyV3BuilderAndClone()
                             == QStringLiteral("vertical"),
                  QStringLiteral("single-axis Y config must use a vertical single-axis topology"));
     ok &= expect(manager.validateProductConfig(singleY).value(QStringLiteral("ok")).toBool(),
-                 QStringLiteral("single-axis Y V3 output failed validation"));
+                  QStringLiteral("single-axis Y V3 output failed validation"));
+
+    const QJsonObject crossXY = manager.buildStandardProductConfigV3(QJsonObject{
+        {QStringLiteral("code"), QStringLiteral("JC6000-CROSS-XY")},
+        {QStringLiteral("joystickTopology"), QStringLiteral("crossXY")},
+        {QStringLiteral("buttonCount"), 0},
+        {QStringLiteral("rollerCount"), 0}
+    });
+    const QJsonObject crossJoystick =
+        findObject(crossXY.value(QStringLiteral("controls")).toArray(),
+                   QStringLiteral("id"),
+                   QStringLiteral("joystickXY"));
+    ok &= expect(crossJoystick.value(QStringLiteral("topology")).toObject()
+                         == QJsonObject{
+                                {QStringLiteral("kind"), QStringLiteral("cross2D")},
+                                {QStringLiteral("gate"), QStringLiteral("cross")}
+                            },
+                 QStringLiteral("explicit cross-XY config must retain cross2D topology"));
+    ok &= expect(manager.validateProductConfig(crossXY).value(QStringLiteral("ok")).toBool(),
+                 QStringLiteral("cross-XY V3 output failed validation"));
 
     const QJsonObject withLight = manager.buildStandardProductConfigV3(QJsonObject{
         {QStringLiteral("code"), QStringLiteral("JC6000-BGA-HM025")},

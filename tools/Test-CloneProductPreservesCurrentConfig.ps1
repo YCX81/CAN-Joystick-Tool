@@ -191,7 +191,19 @@ if ($content -notmatch 'id:\s*cloneRollerCountBox') {
     throw 'The new-product form must expose a roller count control.'
 }
 if ($content -notmatch 'id:\s*cloneJoystickTopologyBox') {
-    throw 'The new-product form must expose cross-XY, single-X, and single-Y joystick topology choices.'
+    throw 'The new-product form must expose joystick topology choices.'
+}
+if ($content -notmatch 'label:\s*"普通 XY 双轴"\s*,\s*value:\s*"xy2D"') {
+    throw 'The new-product form must expose ordinary XY as a distinct topology.'
+}
+if ($content -notmatch 'label:\s*"十字 XY 轴"\s*,\s*value:\s*"crossXY"') {
+    throw 'The new-product form must retain cross-XY as a distinct topology.'
+}
+if (($content -notmatch 'label:\s*"单轴 X"\s*,\s*value:\s*"singleAxisX"') -or ($content -notmatch 'label:\s*"单轴 Y"\s*,\s*value:\s*"singleAxisY"')) {
+    throw 'The new-product form must retain both single-axis topology choices.'
+}
+if ($content -notmatch '(?s)cloneJoystickTopologyOptions:\s*\[\s*\{\s*label:\s*"普通 XY 双轴"\s*,\s*value:\s*"xy2D"') {
+    throw 'Ordinary XY must be the default first topology choice.'
 }
 if ($content -notmatch 'id:\s*cloneHasWorkLightCheck') {
     throw 'The new-product form must expose a work-light option.'

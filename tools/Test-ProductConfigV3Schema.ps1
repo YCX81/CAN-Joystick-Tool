@@ -330,6 +330,23 @@ $partialFirmwareVersionJson = $partialFirmwareVersionConfig | ConvertTo-Json -De
 Assert-True (-not (Test-Json -Json $partialFirmwareVersionJson -SchemaFile $SchemaPath -ErrorAction SilentlyContinue)) `
     'Partial firmware product version V2.0 must be rejected; use V2 or a full V2.x.y release.'
 
+$xyTopologyConfig = Copy-JsonObject @(
+    $validatedConfigs |
+        Where-Object { @($_.controls | Where-Object { $_.type -eq 'joystick' }).Count -gt 0 }
+)[0]
+$xyTopologyControl = @($xyTopologyConfig.controls | Where-Object { $_.type -eq 'joystick' })[0]
+$xyTopologyControl.topology.kind = 'xy2D'
+$xyTopologyControl.topology.gate = 'omnidirectional'
+$xyTopologyJson = $xyTopologyConfig | ConvertTo-Json -Depth 100
+Assert-True (Test-Json -Json $xyTopologyJson -SchemaFile $SchemaPath -ErrorAction SilentlyContinue) `
+    'Schema must accept xy2D with an omnidirectional gate.'
+
+$mismatchedXyTopology = Copy-JsonObject $xyTopologyConfig
+@($mismatchedXyTopology.controls | Where-Object { $_.type -eq 'joystick' })[0].topology.gate = 'cross'
+$mismatchedXyTopologyJson = $mismatchedXyTopology | ConvertTo-Json -Depth 100
+Assert-True (-not (Test-Json -Json $mismatchedXyTopologyJson -SchemaFile $SchemaPath -ErrorAction SilentlyContinue)) `
+    'Schema must reject xy2D paired with a cross gate.'
+
 $modes = @($validatedConfigs | ForEach-Object { [string]$_.operation.mode } | Sort-Object -Unique)
 $topologies = @(
     $validatedConfigs |

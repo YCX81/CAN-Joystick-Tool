@@ -988,13 +988,23 @@ private:
                 const QJsonObject topology =
                     requiredObject(control, QStringLiteral("topology"),
                                    path + QStringLiteral(".topology"));
-                if (topology.value(QStringLiteral("kind")).toString()
-                    != QStringLiteral("cross2D")) {
-                    addError(path + QStringLiteral(".topology.kind must be cross2D"));
-                }
-                if (topology.value(QStringLiteral("gate")).toString()
-                    != QStringLiteral("cross")) {
-                    addError(path + QStringLiteral(".topology.gate for cross2D must be cross"));
+                const QString topologyKind =
+                    topology.value(QStringLiteral("kind")).toString();
+                const QString topologyGate =
+                    topology.value(QStringLiteral("gate")).toString();
+                if (topologyKind == QStringLiteral("cross2D")) {
+                    if (topologyGate != QStringLiteral("cross")) {
+                        addError(path + QStringLiteral(
+                            ".topology.gate for cross2D must be cross"));
+                    }
+                } else if (topologyKind == QStringLiteral("xy2D")) {
+                    if (topologyGate != QStringLiteral("omnidirectional")) {
+                        addError(path + QStringLiteral(
+                            ".topology.gate for xy2D must be omnidirectional"));
+                    }
+                } else {
+                    addError(path + QStringLiteral(
+                        ".topology.kind must be cross2D or xy2D"));
                 }
                 validateAxisBinding(control,
                                     QStringLiteral("xAxis"),

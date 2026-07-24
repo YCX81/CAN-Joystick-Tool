@@ -813,12 +813,40 @@
               ],
               "properties": {
                 "kind": {
-                  "const": "cross2D"
+                  "enum": [
+                    "xy2D",
+                    "cross2D"
+                  ]
                 },
                 "gate": {
-                  "const": "cross"
+                  "enum": [
+                    "omnidirectional",
+                    "cross"
+                  ]
                 }
-              }
+              },
+              "oneOf": [
+                {
+                  "properties": {
+                    "kind": {
+                      "const": "xy2D"
+                    },
+                    "gate": {
+                      "const": "omnidirectional"
+                    }
+                  }
+                },
+                {
+                  "properties": {
+                    "kind": {
+                      "const": "cross2D"
+                    },
+                    "gate": {
+                      "const": "cross"
+                    }
+                  }
+                }
+              ]
             },
             "xAxis": {
               "$ref": "#/definitions/axisBinding"

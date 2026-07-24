@@ -32,6 +32,7 @@ Item {
         { label: "最小/中心/最大", value: "minCenterMax" }
     ]
     readonly property var cloneJoystickTopologyOptions: [
+        { label: "普通 XY 双轴", value: "xy2D" },
         { label: "十字 XY 轴", value: "crossXY" },
         { label: "单轴 X", value: "singleAxisX" },
         { label: "单轴 Y", value: "singleAxisY" }
@@ -485,7 +486,7 @@ Item {
 
     function currentCloneJoystickTopology() {
         var item = cloneJoystickTopologyOptions[cloneJoystickTopologyBox.currentIndex]
-        return item ? item.value : "crossXY"
+        return item ? item.value : "xy2D"
     }
 
     function cloneOptionArray(value) {

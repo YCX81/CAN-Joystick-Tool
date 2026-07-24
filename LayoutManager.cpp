@@ -1889,10 +1889,12 @@ QJsonObject LayoutManager::buildStandardProductConfigV3(const QJsonObject &spec)
     const int rollerCount = boundedJsonInt(spec, QStringLiteral("rollerCount"), 4, 0, 4);
     const bool hasWorkLight = spec.value(QStringLiteral("hasWorkLight")).toBool(false);
     QString joystickTopology =
-        spec.value(QStringLiteral("joystickTopology")).toString(QStringLiteral("crossXY")).trimmed();
-    if (joystickTopology != QStringLiteral("singleAxisX")
+        spec.value(QStringLiteral("joystickTopology")).toString(QStringLiteral("xy2D")).trimmed();
+    if (joystickTopology != QStringLiteral("xy2D")
+        && joystickTopology != QStringLiteral("crossXY")
+        && joystickTopology != QStringLiteral("singleAxisX")
         && joystickTopology != QStringLiteral("singleAxisY")) {
-        joystickTopology = QStringLiteral("crossXY");
+        joystickTopology = QStringLiteral("xy2D");
     }
 
     const QJsonObject product{
@@ -2020,8 +2022,14 @@ QJsonObject LayoutManager::buildStandardProductConfigV3(const QJsonObject &spec)
             {QStringLiteral("label"), QStringLiteral("XY轴")},
             {QStringLiteral("topology"),
              QJsonObject{
-                 {QStringLiteral("kind"), QStringLiteral("cross2D")},
-                 {QStringLiteral("gate"), QStringLiteral("cross")}
+                 {QStringLiteral("kind"),
+                  joystickTopology == QStringLiteral("crossXY")
+                      ? QStringLiteral("cross2D")
+                      : QStringLiteral("xy2D")},
+                 {QStringLiteral("gate"),
+                  joystickTopology == QStringLiteral("crossXY")
+                      ? QStringLiteral("cross")
+                      : QStringLiteral("omnidirectional")}
              }},
             {QStringLiteral("xAxis"), makeV3AxisBinding(QStringLiteral("axisX"))},
             {QStringLiteral("yAxis"), makeV3AxisBinding(QStringLiteral("axisY"))}
