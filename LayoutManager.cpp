@@ -117,6 +117,10 @@ QString displayVersionFromProductConfig(const QJsonObject &configJson, const QFi
 QJsonObject configWithDefaultVersionMetadata(const QJsonObject &configJson, const QFileInfo &fileInfo)
 {
     QJsonObject normalized = configJson;
+    if (!normalized.value(QStringLiteral("firmware")).isObject()) {
+        return normalized;
+    }
+
     const QJsonObject product = normalized.value(QStringLiteral("product")).toObject();
     QJsonObject firmware = normalized.value(QStringLiteral("firmware")).toObject();
 

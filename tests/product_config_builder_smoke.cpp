@@ -3,6 +3,7 @@
 #include <QCoreApplication>
 #include <QDebug>
 #include <QDir>
+#include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -185,6 +186,17 @@ bool verifyTypedCustomerPersistence()
     }
 
     bool ok = expect(saved, QStringLiteral("generic config with a typed customer did not save"));
+    const QString savedConfigPath = QDir(productsDirectory).filePath(
+        productName + QLatin1Char('/') + productName + QStringLiteral("_V1.json"));
+    QFile savedConfigFile(savedConfigPath);
+    ok &= expect(savedConfigFile.open(QIODevice::ReadOnly),
+                 QStringLiteral("could not read persisted generic config"));
+    if (savedConfigFile.isOpen()) {
+        const QJsonObject persistedConfig =
+            QJsonDocument::fromJson(savedConfigFile.readAll()).object();
+        ok &= expect(!persistedConfig.contains(QStringLiteral("firmware")),
+                     QStringLiteral("test-only external products must not gain a synthetic firmware block"));
+    }
     ok &= expect(customerBindingCount(databasePath, customerName, productName) == 1,
                  QStringLiteral("typed customer was not created and bound to the product"));
     return ok;
