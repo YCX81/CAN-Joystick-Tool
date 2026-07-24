@@ -16,6 +16,8 @@ qt_add_executable(CANJoystickTool
     main.cpp
     LayoutManager.h
     LayoutManager.cpp
+    ProductConfigV3Validator.h
+    ProductConfigV3Validator.cpp
 )
 
 qt_add_resources(CANJoystickTool "app_icon"
@@ -116,6 +118,8 @@ if(BUILD_TESTING)
         tests/product_config_builder_smoke.cpp
         LayoutManager.h
         LayoutManager.cpp
+        ProductConfigV3Validator.h
+        ProductConfigV3Validator.cpp
     )
     target_include_directories(product_config_builder_smoke PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
     target_link_libraries(product_config_builder_smoke PRIVATE
@@ -130,6 +134,8 @@ if(BUILD_TESTING)
         tests/layoutmanager_database_smoke.cpp
         LayoutManager.h
         LayoutManager.cpp
+        ProductConfigV3Validator.h
+        ProductConfigV3Validator.cpp
     )
     target_include_directories(layoutmanager_database_smoke PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
     target_link_libraries(layoutmanager_database_smoke PRIVATE
@@ -148,6 +154,37 @@ if(BUILD_TESTING)
     )
     target_link_libraries(fnr_mapping_smoke PRIVATE Qt6::Quick)
     add_qt_runtime_test(fnr_mapping_smoke fnr_mapping_smoke)
+
+    add_executable(product_config_v3_validator_smoke
+        tests/product_config_v3_validator_smoke.cpp
+        ProductConfigV3Validator.h
+        ProductConfigV3Validator.cpp
+    )
+    target_include_directories(product_config_v3_validator_smoke PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    target_compile_definitions(product_config_v3_validator_smoke PRIVATE
+        PRODUCT_CONFIG_V3_EXAMPLES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/examples/product-config-v3"
+    )
+    target_link_libraries(product_config_v3_validator_smoke PRIVATE Qt6::Core)
+    add_qt_runtime_test(product_config_v3_validator_smoke product_config_v3_validator_smoke)
+
+    add_executable(layoutmanager_v3_validation_smoke
+        tests/layoutmanager_v3_validation_smoke.cpp
+        LayoutManager.h
+        LayoutManager.cpp
+        ProductConfigV3Validator.h
+        ProductConfigV3Validator.cpp
+    )
+    target_include_directories(layoutmanager_v3_validation_smoke PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    target_compile_definitions(layoutmanager_v3_validation_smoke PRIVATE
+        PRODUCT_CONFIG_V3_EXAMPLES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/examples/product-config-v3"
+    )
+    target_link_libraries(layoutmanager_v3_validation_smoke PRIVATE
+        Qt6::Quick
+        Qt6::QuickControls2
+        Qt6::Widgets
+        Qt6::Sql
+    )
+    add_qt_runtime_test(layoutmanager_v3_validation_smoke layoutmanager_v3_validation_smoke)
 endif()
 
 if(WIN32 AND EXISTS "${QT_SQLITE_DRIVER}")

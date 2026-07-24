@@ -1,4 +1,5 @@
 #include "LayoutManager.h"
+#include "ProductConfigV3Validator.h"
 #include <QCryptographicHash>
 #include <QDebug>
 #include <QFileInfo>
@@ -1318,6 +1319,20 @@ QJsonObject LayoutManager::loadProductConfig(const QString &filePath)
 
 QJsonObject LayoutManager::validateProductConfig(const QJsonObject &configJson) const
 {
+    if (configJson.value(QStringLiteral("schemaVersion")).toInt() == 3) {
+        const ProductConfigV3Validator::Result result =
+            ProductConfigV3Validator::validate(configJson);
+        QJsonArray errors;
+        for (const QString &error : result.errors) {
+            errors.append(error);
+        }
+        return QJsonObject{
+            {QStringLiteral("ok"), result.ok},
+            {QStringLiteral("errors"), errors},
+            {QStringLiteral("warnings"), QJsonArray{}}
+        };
+    }
+
     QJsonArray errors;
     QJsonArray warnings;
 
