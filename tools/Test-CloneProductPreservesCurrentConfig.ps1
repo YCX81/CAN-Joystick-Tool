@@ -67,8 +67,11 @@ if ($body -notmatch 'applyCloneMetadata\s*\(') {
     throw 'Source-based copies do not apply clone metadata through the shared helper.'
 }
 
-if ($body -notmatch 'buildStandardProductConfig\s*\(') {
-    throw 'The explicit blank-product path must keep the generic J1939 builder.'
+if ($body -notmatch 'buildStandardProductConfigV3\s*\(') {
+    throw 'The explicit blank-product path must create Product Config V3.'
+}
+if ($body -notmatch 'cloneProductConfigV3\s*\(') {
+    throw 'Source-based V3 products must use the semantic deep-clone helper.'
 }
 
 if ($body -notmatch 'buttonCount\s*:\s*cloneButtonCountBox\.value') {
@@ -89,6 +92,9 @@ if (-not $designCanvasContent.Contains('if (c.type === "joystick" || c.type === 
 
 if ($body -notmatch 'rollerCount\s*:\s*cloneRollerCountBox\.value') {
     throw 'New products must pass the selected roller count to the generic J1939 builder.'
+}
+if ($body -notmatch 'hasWorkLight\s*:\s*cloneHasWorkLightCheck\.checked') {
+    throw 'New products must pass the work-light selection to the V3 builder.'
 }
 
 $helperMatch = [regex]::Match($content, '(?s)function\s+applyCloneMetadata\s*\([^)]*\)\s*\{(?<body>.*?)\n\s*\}\s*\n\s*function\s+openCloneProductPopup\s*\(')
@@ -145,8 +151,8 @@ if (-not $saveMatch.Success) {
     throw 'Could not locate saveCloneProduct() body.'
 }
 $saveBody = $saveMatch.Groups['body'].Value
-if ($saveBody -notmatch 'if\s*\(\s*!cloneProductUsesBlankTemplate\s*&&\s*currentConfig\s*&&\s*currentConfig\.product\s*\)\s*\n\s*syncCurrentLayoutFromCells\(\)') {
-    throw 'Both source-based new products and new versions must sync live card layout before copying.'
+if ($saveBody -notmatch 'currentConfig\.schemaVersion\s*!==\s*3') {
+    throw 'V3 clones must not pass through the legacy layout.grid.cells serializer.'
 }
 
 $customerMatch = [regex]::Match(
@@ -174,6 +180,9 @@ if ($content -notmatch 'id:\s*cloneButtonNumbersField') {
 }
 if ($content -notmatch 'id:\s*cloneRollerCountBox') {
     throw 'The new-product form must expose a roller count control.'
+}
+if ($content -notmatch 'id:\s*cloneHasWorkLightCheck') {
+    throw 'The new-product form must expose a work-light option.'
 }
 
 if ($layoutManagerContent -notmatch 'boundedJsonInt\(spec,\s*QStringLiteral\("buttonCount"\),\s*10,\s*0,\s*12\)') {

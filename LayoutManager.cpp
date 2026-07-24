@@ -834,6 +834,130 @@ QJsonObject makeGridCell(int row, int col, const QString &title, const QString &
     return cell;
 }
 
+QJsonObject makeV3Signal(const QString &id,
+                         const QString &kind,
+                         const QString &messageId,
+                         int startByte,
+                         int startBit,
+                         int bitLength,
+                         const QString &encoding)
+{
+    return QJsonObject{
+        {QStringLiteral("id"), id},
+        {QStringLiteral("kind"), kind},
+        {QStringLiteral("source"),
+         QJsonObject{
+             {QStringLiteral("messageId"), messageId},
+             {QStringLiteral("startByte"), startByte},
+             {QStringLiteral("startBit"), startBit},
+             {QStringLiteral("bitLength"), bitLength},
+             {QStringLiteral("endian"), QStringLiteral("little")},
+             {QStringLiteral("encoding"), encoding}
+         }}
+    };
+}
+
+QJsonObject makeV3AxisBinding(const QString &signalId, bool invert = false)
+{
+    return QJsonObject{
+        {QStringLiteral("signalId"), signalId},
+        {QStringLiteral("transform"),
+         QJsonObject{
+             {QStringLiteral("rawMin"), 0},
+             {QStringLiteral("rawCenter"), 500},
+             {QStringLiteral("rawMax"), 1000},
+             {QStringLiteral("deadzone"), 20},
+             {QStringLiteral("invert"), invert},
+             {QStringLiteral("outputRange"), QJsonArray{-1, 1}}
+         }}
+    };
+}
+
+QJsonObject makeV3CardGrid(int row, int column, int rowSpan = 1, int columnSpan = 1)
+{
+    return QJsonObject{
+        {QStringLiteral("row"), row},
+        {QStringLiteral("column"), column},
+        {QStringLiteral("rowSpan"), rowSpan},
+        {QStringLiteral("columnSpan"), columnSpan}
+    };
+}
+
+QJsonObject makeV3LayoutElement(const QString &id,
+                                const QString &controlId,
+                                const QString &renderer,
+                                int x,
+                                int y,
+                                int width,
+                                int height)
+{
+    return QJsonObject{
+        {QStringLiteral("id"), id},
+        {QStringLiteral("controlId"), controlId},
+        {QStringLiteral("renderer"), renderer},
+        {QStringLiteral("x"), x},
+        {QStringLiteral("y"), y},
+        {QStringLiteral("width"), width},
+        {QStringLiteral("height"), height}
+    };
+}
+
+QJsonObject makeV3ControlCard(const QString &id,
+                              const QString &title,
+                              int row,
+                              int column,
+                              const QJsonArray &elements)
+{
+    return QJsonObject{
+        {QStringLiteral("id"), id},
+        {QStringLiteral("kind"), QStringLiteral("controls")},
+        {QStringLiteral("title"), title},
+        {QStringLiteral("grid"), makeV3CardGrid(row, column)},
+        {QStringLiteral("contentCanvas"),
+         QJsonObject{
+             {QStringLiteral("width"), 580},
+             {QStringLiteral("height"), 300},
+             {QStringLiteral("scaleMode"), QStringLiteral("uniform")}
+         }},
+        {QStringLiteral("elements"), elements}
+    };
+}
+
+QJsonObject makeV3SystemCard(const QString &id,
+                             const QString &title,
+                             const QString &systemType,
+                             int row,
+                             int column)
+{
+    return QJsonObject{
+        {QStringLiteral("id"), id},
+        {QStringLiteral("kind"), QStringLiteral("system")},
+        {QStringLiteral("title"), title},
+        {QStringLiteral("grid"), makeV3CardGrid(row, column)},
+        {QStringLiteral("systemType"), systemType}
+    };
+}
+
+QJsonObject makeWorkLightCommand(const QString &id,
+                                 const QString &label,
+                                 const QString &data)
+{
+    return QJsonObject{
+        {QStringLiteral("id"), id},
+        {QStringLiteral("label"), label},
+        {QStringLiteral("transport"), QStringLiteral("j1939")},
+        {QStringLiteral("frame"),
+         QJsonObject{
+             {QStringLiteral("priority"), 6},
+             {QStringLiteral("pgn"), QStringLiteral("0x00D000")},
+             {QStringLiteral("sourceAddress"), QStringLiteral("0x03")},
+             {QStringLiteral("destinationAddress"), QStringLiteral("0x33")},
+             {QStringLiteral("dlc"), 3},
+             {QStringLiteral("data"), data}
+         }}
+    };
+}
+
 bool isRuntimeVisualType(const QString &type)
 {
     return type.startsWith(QStringLiteral("Button"))
@@ -1708,6 +1832,336 @@ QJsonObject LayoutManager::buildStandardProductConfig(const QJsonObject &spec) c
     config.insert(QStringLiteral("layout"), layout);
     config.insert(QStringLiteral("editor"), editor);
     return config;
+}
+
+QJsonObject LayoutManager::buildStandardProductConfigV3(const QJsonObject &spec) const
+{
+    const QString productCode = sanitizeProductModel(
+        spec.value(QStringLiteral("code"))
+            .toString(spec.value(QStringLiteral("model")).toString()))
+                                    .toUpper();
+    const QString description = spec.value(QStringLiteral("description")).toString().trimmed();
+    const QString productVersion = normalizedVersionCode(
+        spec.value(QStringLiteral("version")).toString(QStringLiteral("V1")));
+    const QString calibrationMode =
+        spec.value(QStringLiteral("calibrationMode")).toString(QStringLiteral("centerOnly")).trimmed();
+    const int bitrateKbps = boundedJsonInt(spec, QStringLiteral("baudRate"), 250, 10, 1000);
+    const int buttonCount = boundedJsonInt(spec, QStringLiteral("buttonCount"), 10, 0, 12);
+    const QJsonArray buttonNumbers = normalizedButtonNumbers(spec, buttonCount);
+    const int decoderButtonCount = decodedButtonCount(buttonNumbers);
+    const int rollerCount = boundedJsonInt(spec, QStringLiteral("rollerCount"), 4, 0, 4);
+    const bool hasWorkLight = spec.value(QStringLiteral("hasWorkLight")).toBool(false);
+
+    const QJsonObject product{
+        {QStringLiteral("code"), productCode},
+        {QStringLiteral("version"), productVersion},
+        {QStringLiteral("description"), description}
+    };
+    const QJsonObject lifecycle{{QStringLiteral("status"), QStringLiteral("active")}};
+    const QJsonObject operation{
+        {QStringLiteral("mode"), QStringLiteral("test_only")},
+        {QStringLiteral("firmware"),
+         QJsonObject{{QStringLiteral("source"), QStringLiteral("external")}}}
+    };
+    const QJsonObject calibration = calibrationMode == QStringLiteral("disabled")
+        ? QJsonObject{
+              {QStringLiteral("mode"), QStringLiteral("disabled")},
+              {QStringLiteral("reason"), QStringLiteral("该纯测试产品没有校准指令")}
+          }
+        : QJsonObject{
+              {QStringLiteral("mode"),
+               calibrationMode == QStringLiteral("minCenterMax")
+                   ? QStringLiteral("minCenterMax")
+                   : QStringLiteral("centerOnly")},
+              {QStringLiteral("transport"), QStringLiteral("j1939VendorPgn")},
+              {QStringLiteral("allowedInNormalModeReadOnly"), true}
+          };
+
+    QJsonArray messages{
+        QJsonObject{
+            {QStringLiteral("id"), QStringLiteral("bjm")},
+            {QStringLiteral("name"), QStringLiteral("基本摇杆报文 BJM1")},
+            {QStringLiteral("pgn"), QStringLiteral("0x00FDD6")},
+            {QStringLiteral("dlc"), 8},
+            {QStringLiteral("periodMs"), 20}
+        }
+    };
+    if (rollerCount > 0) {
+        messages.append(QJsonObject{
+            {QStringLiteral("id"), QStringLiteral("ejm")},
+            {QStringLiteral("name"), QStringLiteral("扩展摇杆报文 EJM1")},
+            {QStringLiteral("pgn"), QStringLiteral("0x00FDD7")},
+            {QStringLiteral("dlc"), 8},
+            {QStringLiteral("periodMs"), 20}
+        });
+    }
+
+    QJsonArray signalDefinitions{
+        makeV3Signal(QStringLiteral("axisX"), QStringLiteral("position"),
+                     QStringLiteral("bjm"), 0, 6, 10, QStringLiteral("unsigned")),
+        makeV3Signal(QStringLiteral("axisY"), QStringLiteral("position"),
+                     QStringLiteral("bjm"), 2, 6, 10, QStringLiteral("unsigned"))
+    };
+    if (decoderButtonCount > 0) {
+        signalDefinitions.append(makeV3Signal(QStringLiteral("buttons"),
+                                              QStringLiteral("packedButtons"),
+                                              QStringLiteral("bjm"),
+                                              5,
+                                              0,
+                                              decoderButtonCount * 2,
+                                              QStringLiteral("j1939_2bit")));
+    }
+    for (int index = 0; index < rollerCount; ++index) {
+        signalDefinitions.append(
+            makeV3Signal(QStringLiteral("roller%1Position").arg(index + 1),
+                         QStringLiteral("position"),
+                         QStringLiteral("ejm"),
+                         index * 2,
+                         0,
+                         16,
+                         QStringLiteral("unsigned")));
+    }
+
+    QJsonArray controls{
+        QJsonObject{
+            {QStringLiteral("id"), QStringLiteral("joystickXY")},
+            {QStringLiteral("type"), QStringLiteral("joystick")},
+            {QStringLiteral("label"), QStringLiteral("XY轴")},
+            {QStringLiteral("topology"),
+             QJsonObject{
+                 {QStringLiteral("kind"), QStringLiteral("cross2D")},
+                 {QStringLiteral("gate"), QStringLiteral("cross")}
+             }},
+            {QStringLiteral("xAxis"), makeV3AxisBinding(QStringLiteral("axisX"))},
+            {QStringLiteral("yAxis"), makeV3AxisBinding(QStringLiteral("axisY"))}
+        }
+    };
+
+    QJsonArray buttonElements;
+    for (int index = 0; index < buttonNumbers.size(); ++index) {
+        const int buttonNumber = buttonNumbers.at(index).toInt();
+        const QString controlId = QStringLiteral("button%1").arg(buttonNumber);
+        controls.append(QJsonObject{
+            {QStringLiteral("id"), controlId},
+            {QStringLiteral("type"), QStringLiteral("button")},
+            {QStringLiteral("label"), QStringLiteral("按钮 %1").arg(buttonNumber)},
+            {QStringLiteral("signalId"), QStringLiteral("buttons")},
+            {QStringLiteral("position"), buttonNumber - 1}
+        });
+        buttonElements.append(makeV3LayoutElement(
+            controlId + QStringLiteral("Element"),
+            controlId,
+            QStringLiteral("button"),
+            (index % 4) * 135,
+            (index / 4) * 95,
+            120,
+            80));
+    }
+
+    QJsonArray rollerElements;
+    for (int index = 0; index < rollerCount; ++index) {
+        const QString controlId = QStringLiteral("roller%1").arg(index + 1);
+        controls.append(QJsonObject{
+            {QStringLiteral("id"), controlId},
+            {QStringLiteral("type"), QStringLiteral("axis")},
+            {QStringLiteral("role"), QStringLiteral("roller")},
+            {QStringLiteral("inputMode"), QStringLiteral("centered")},
+            {QStringLiteral("label"), QStringLiteral("滚轮%1").arg(index + 1)},
+            {QStringLiteral("topology"),
+             QJsonObject{
+                 {QStringLiteral("kind"), QStringLiteral("singleAxis")},
+                 {QStringLiteral("orientation"), QStringLiteral("vertical")}
+             }},
+            {QStringLiteral("axis"),
+             makeV3AxisBinding(QStringLiteral("roller%1Position").arg(index + 1))}
+        });
+        rollerElements.append(makeV3LayoutElement(
+            controlId + QStringLiteral("Element"),
+            controlId,
+            QStringLiteral("roller"),
+            index * 140,
+            0,
+            120,
+            280));
+    }
+
+    QJsonArray commands;
+    QJsonArray tests;
+    if (hasWorkLight) {
+        controls.append(QJsonObject{
+            {QStringLiteral("id"), QStringLiteral("workLight")},
+            {QStringLiteral("type"), QStringLiteral("binaryOutput")},
+            {QStringLiteral("label"), QStringLiteral("工作灯")},
+            {QStringLiteral("onCommandId"), QStringLiteral("workLightOn")},
+            {QStringLiteral("offCommandId"), QStringLiteral("workLightOff")},
+            {QStringLiteral("activeLow"), true}
+        });
+        commands.append(makeWorkLightCommand(QStringLiteral("workLightOn"),
+                                             QStringLiteral("工作灯开启"),
+                                             QStringLiteral("00 FA 00")));
+        commands.append(makeWorkLightCommand(QStringLiteral("workLightOff"),
+                                             QStringLiteral("工作灯关闭"),
+                                             QStringLiteral("00 00 00")));
+        tests.append(QJsonObject{
+            {QStringLiteral("id"), QStringLiteral("workLightCheck")},
+            {QStringLiteral("label"), QStringLiteral("工作灯检查")},
+            {QStringLiteral("steps"),
+             QJsonArray{
+                 QJsonObject{
+                     {QStringLiteral("type"), QStringLiteral("sendCommand")},
+                     {QStringLiteral("commandId"), QStringLiteral("workLightOn")}
+                 },
+                 QJsonObject{
+                     {QStringLiteral("type"), QStringLiteral("delay")},
+                     {QStringLiteral("milliseconds"), 300}
+                 },
+                 QJsonObject{
+                     {QStringLiteral("type"), QStringLiteral("operatorConfirm")},
+                     {QStringLiteral("prompt"), QStringLiteral("确认工作灯已点亮")}
+                 },
+                 QJsonObject{
+                     {QStringLiteral("type"), QStringLiteral("sendCommand")},
+                     {QStringLiteral("commandId"), QStringLiteral("workLightOff")}
+                 },
+                 QJsonObject{
+                     {QStringLiteral("type"), QStringLiteral("operatorConfirm")},
+                     {QStringLiteral("prompt"), QStringLiteral("确认工作灯已熄灭")}
+                 }
+             }},
+            {QStringLiteral("cleanup"),
+             QJsonArray{
+                 QJsonObject{
+                     {QStringLiteral("type"), QStringLiteral("sendCommand")},
+                     {QStringLiteral("commandId"), QStringLiteral("workLightOff")}
+                 }
+             }}
+        });
+        buttonElements.append(makeV3LayoutElement(QStringLiteral("workLightElement"),
+                                                  QStringLiteral("workLight"),
+                                                  QStringLiteral("binaryOutput"),
+                                                  405,
+                                                  190,
+                                                  150,
+                                                  90));
+    }
+
+    QJsonArray cards{
+        QJsonObject{
+            {QStringLiteral("id"), QStringLiteral("joystickCard")},
+            {QStringLiteral("kind"), QStringLiteral("leftRegion")},
+            {QStringLiteral("title"), QStringLiteral("摇杆")},
+            {QStringLiteral("grid"), makeV3CardGrid(0, 0)},
+            {QStringLiteral("controlId"), QStringLiteral("joystickXY")},
+            {QStringLiteral("widthRatio"), 0.52}
+        },
+        makeV3ControlCard(QStringLiteral("buttonsCard"),
+                          QStringLiteral("按钮与输出"),
+                          0,
+                          1,
+                          buttonElements),
+        rollerCount > 0
+            ? makeV3ControlCard(QStringLiteral("rollersCard"),
+                                QStringLiteral("滚轮"),
+                                1,
+                                0,
+                                rollerElements)
+            : QJsonObject{
+                  {QStringLiteral("id"), QStringLiteral("emptyCard")},
+                  {QStringLiteral("kind"), QStringLiteral("empty")},
+                  {QStringLiteral("title"), QString()},
+                  {QStringLiteral("grid"), makeV3CardGrid(1, 0)}
+              },
+        makeV3SystemCard(QStringLiteral("recordInfoCard"),
+                         QStringLiteral("记录信息"),
+                         QStringLiteral("recordInfo"),
+                         1,
+                         1)
+    };
+
+    return QJsonObject{
+        {QStringLiteral("$schema"), QStringLiteral("../../schemas/product-config-v3.schema.json")},
+        {QStringLiteral("schemaVersion"), 3},
+        {QStringLiteral("product"), product},
+        {QStringLiteral("lifecycle"), lifecycle},
+        {QStringLiteral("operation"), operation},
+        {QStringLiteral("calibration"), calibration},
+        {QStringLiteral("protocol"), QStringLiteral("j1939")},
+        {QStringLiteral("bus"),
+         QJsonObject{
+             {QStringLiteral("bitrateKbps"), bitrateKbps},
+             {QStringLiteral("frameFormat"), QStringLiteral("extended")},
+             {QStringLiteral("sourceAddress"), QStringLiteral("0x33")}
+         }},
+        {QStringLiteral("messages"), messages},
+        {QStringLiteral("signals"), signalDefinitions},
+        {QStringLiteral("controls"), controls},
+        {QStringLiteral("commands"), commands},
+        {QStringLiteral("tests"), tests},
+        {QStringLiteral("layout"),
+         QJsonObject{
+             {QStringLiteral("mode"), QStringLiteral("designed")},
+             {QStringLiteral("canvas"),
+              QJsonObject{
+                  {QStringLiteral("width"), 1280},
+                  {QStringLiteral("height"), 720}
+              }},
+             {QStringLiteral("grid"),
+              QJsonObject{
+                  {QStringLiteral("rows"), 2},
+                  {QStringLiteral("columns"), 2}
+              }},
+             {QStringLiteral("cards"), cards}
+         }}
+    };
+}
+
+QJsonObject LayoutManager::cloneProductConfigV3(const QJsonObject &sourceConfig,
+                                                const QString &productCode,
+                                                const QString &description) const
+{
+    if (sourceConfig.value(QStringLiteral("schemaVersion")).toInt() != 3
+        || !ProductConfigV3Validator::validate(sourceConfig).ok) {
+        return {};
+    }
+
+    const QString safeProductCode = sanitizeProductModel(productCode).toUpper();
+    if (safeProductCode.isEmpty()) {
+        return {};
+    }
+
+    QJsonObject cloned = sourceConfig;
+    QJsonObject product = cloned.value(QStringLiteral("product")).toObject();
+    product.insert(QStringLiteral("code"), safeProductCode);
+    product.insert(QStringLiteral("description"), description.trimmed());
+    cloned.insert(QStringLiteral("product"), product);
+
+    QJsonObject operation = cloned.value(QStringLiteral("operation")).toObject();
+    if (operation.value(QStringLiteral("mode")).toString()
+        == QStringLiteral("firmware-backed")) {
+        QJsonObject firmware = operation.value(QStringLiteral("firmware")).toObject();
+        const QFileInfo sourceArtifact(firmware.value(QStringLiteral("artifact")).toString());
+        const QString suffix = sourceArtifact.suffix().toLower();
+        if (suffix != QStringLiteral("elf")
+            && suffix != QStringLiteral("hex")
+            && suffix != QStringLiteral("bin")) {
+            return {};
+        }
+
+        const QString productVersion = product.value(QStringLiteral("version")).toString();
+        const QString targetArtifact =
+            QStringLiteral("%1_%2.%3").arg(safeProductCode, productVersion, suffix);
+        const QString targetPath =
+            QDir(QDir(m_productsDirectory).filePath(safeProductCode)).filePath(targetArtifact);
+        if (!QFileInfo::exists(targetPath) || !QFileInfo(targetPath).isFile()) {
+            return {};
+        }
+
+        firmware.insert(QStringLiteral("artifact"), targetArtifact);
+        operation.insert(QStringLiteral("firmware"), firmware);
+        cloned.insert(QStringLiteral("operation"), operation);
+    }
+
+    return ProductConfigV3Validator::validate(cloned).ok ? cloned : QJsonObject{};
 }
 
 bool LayoutManager::saveProductConfig(const QJsonObject &configJson, const QString &filePath)

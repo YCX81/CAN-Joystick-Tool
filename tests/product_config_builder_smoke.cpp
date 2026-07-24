@@ -24,6 +24,12 @@ bool expect(bool condition, const QString &message)
     return condition;
 }
 
+bool writeBytes(const QString &path, const QByteArray &bytes)
+{
+    QFile file(path);
+    return file.open(QIODevice::WriteOnly) && file.write(bytes) == bytes.size();
+}
+
 QJsonObject findObject(const QJsonArray &objects, const QString &key, const QString &value)
 {
     for (const QJsonValue &entry : objects) {
@@ -199,6 +205,161 @@ bool verifyTypedCustomerPersistence()
     }
     ok &= expect(customerBindingCount(databasePath, customerName, productName) == 1,
                  QStringLiteral("typed customer was not created and bound to the product"));
+    return ok;
+}
+
+QJsonObject workLightCommand(const QJsonObject &config, const QString &commandId)
+{
+    return findObject(config.value(QStringLiteral("commands")).toArray(),
+                      QStringLiteral("id"),
+                      commandId);
+}
+
+bool verifyV3BuilderAndClone()
+{
+    LayoutManager manager;
+    bool ok = true;
+
+    const QJsonObject basic = manager.buildStandardProductConfigV3(QJsonObject{
+        {QStringLiteral("code"), QStringLiteral("JC6000-BGA-C0009")},
+        {QStringLiteral("description"), QStringLiteral("无固件测试产品")},
+        {QStringLiteral("buttonCount"), 1},
+        {QStringLiteral("buttonNumbers"), QJsonArray{1}},
+        {QStringLiteral("rollerCount"), 0}
+    });
+    ok &= expect(basic.value(QStringLiteral("schemaVersion")).toInt() == 3,
+                 QStringLiteral("V3 builder did not set schemaVersion 3"));
+    const QJsonObject product = basic.value(QStringLiteral("product")).toObject();
+    ok &= expect(product.value(QStringLiteral("code")).toString()
+                     == QStringLiteral("JC6000-BGA-C0009"),
+                 QStringLiteral("V3 builder did not persist product.code"));
+    ok &= expect(product.value(QStringLiteral("version")).toString() == QStringLiteral("V1"),
+                 QStringLiteral("V3 builder must default product.version to V1"));
+    ok &= expect(basic.value(QStringLiteral("lifecycle")).toObject()
+                     .value(QStringLiteral("status")).toString()
+                     == QStringLiteral("active"),
+                 QStringLiteral("V3 builder must default lifecycle to active"));
+    const QJsonObject operation = basic.value(QStringLiteral("operation")).toObject();
+    ok &= expect(operation.value(QStringLiteral("mode")).toString()
+                     == QStringLiteral("test_only"),
+                 QStringLiteral("V3 builder must default to test_only"));
+    ok &= expect(operation.value(QStringLiteral("firmware")).toObject()
+                     == QJsonObject{{QStringLiteral("source"), QStringLiteral("external")}},
+                 QStringLiteral("V3 test_only builder must only declare external firmware"));
+    ok &= expect(basic.value(QStringLiteral("bus")).toObject()
+                     .value(QStringLiteral("sourceAddress")).toString()
+                     == QStringLiteral("0x33"),
+                 QStringLiteral("V3 builder must use canonical hexadecimal J1939 addresses"));
+    ok &= expect(basic.value(QStringLiteral("layout")).toObject()
+                     .value(QStringLiteral("mode")).toString()
+                     == QStringLiteral("designed"),
+                 QStringLiteral("V3 builder must generate designed layout"));
+    const QJsonObject basicValidation = manager.validateProductConfig(basic);
+    ok &= expect(basicValidation.value(QStringLiteral("ok")).toBool(),
+                 QStringLiteral("V3 builder output failed validation: %1")
+                     .arg(QString::fromUtf8(
+                         QJsonDocument(basicValidation).toJson(QJsonDocument::Compact))));
+    ok &= expect(workLightCommand(basic, QStringLiteral("workLightOn")).isEmpty(),
+                 QStringLiteral("V3 builder added work-light commands when disabled"));
+
+    const QJsonObject withLight = manager.buildStandardProductConfigV3(QJsonObject{
+        {QStringLiteral("code"), QStringLiteral("JC6000-BGA-HM025")},
+        {QStringLiteral("description"), QStringLiteral("带灯光测试")},
+        {QStringLiteral("buttonCount"), 1},
+        {QStringLiteral("buttonNumbers"), QJsonArray{1}},
+        {QStringLiteral("rollerCount"), 0},
+        {QStringLiteral("hasWorkLight"), true}
+    });
+    const QJsonObject lightOn =
+        workLightCommand(withLight, QStringLiteral("workLightOn"))
+            .value(QStringLiteral("frame")).toObject();
+    const QJsonObject lightOff =
+        workLightCommand(withLight, QStringLiteral("workLightOff"))
+            .value(QStringLiteral("frame")).toObject();
+    ok &= expect(lightOn.value(QStringLiteral("dlc")).toInt() == 3
+                     && lightOn.value(QStringLiteral("data")).toString()
+                            == QStringLiteral("00 FA 00"),
+                 QStringLiteral("workLightOn must use DLC 3 / 00 FA 00"));
+    ok &= expect(lightOff.value(QStringLiteral("dlc")).toInt() == 3
+                     && lightOff.value(QStringLiteral("data")).toString()
+                            == QStringLiteral("00 00 00"),
+                 QStringLiteral("workLightOff must use DLC 3 / 00 00 00"));
+    ok &= expect(!findObject(withLight.value(QStringLiteral("controls")).toArray(),
+                             QStringLiteral("id"),
+                             QStringLiteral("workLight")).isEmpty(),
+                 QStringLiteral("work-light builder did not add binaryOutput control"));
+    const QJsonObject lightValidation = manager.validateProductConfig(withLight);
+    ok &= expect(lightValidation.value(QStringLiteral("ok")).toBool(),
+                 QStringLiteral("work-light V3 output failed validation: %1")
+                     .arg(QString::fromUtf8(
+                         QJsonDocument(lightValidation).toJson(QJsonDocument::Compact))));
+
+    const QJsonObject cloned = manager.cloneProductConfigV3(
+        withLight,
+        QStringLiteral("JC6000-BGA-HM099"),
+        QStringLiteral("克隆产品"));
+    QJsonObject expected = withLight;
+    QJsonObject expectedProduct = expected.value(QStringLiteral("product")).toObject();
+    expectedProduct.insert(QStringLiteral("code"), QStringLiteral("JC6000-BGA-HM099"));
+    expectedProduct.insert(QStringLiteral("description"), QStringLiteral("克隆产品"));
+    expected.insert(QStringLiteral("product"), expectedProduct);
+    ok &= expect(cloned == expected,
+                 QStringLiteral("test_only V3 clone changed fields beyond code/description"));
+    ok &= expect(withLight.value(QStringLiteral("product")).toObject()
+                     .value(QStringLiteral("code")).toString()
+                     == QStringLiteral("JC6000-BGA-HM025"),
+                 QStringLiteral("V3 clone mutated the source config"));
+    ok &= expect(!cloned.value(QStringLiteral("layout")).toObject()
+                      .value(QStringLiteral("grid")).toObject()
+                      .contains(QStringLiteral("cells")),
+                 QStringLiteral("V3 clone injected legacy layout.grid.cells"));
+
+    QTemporaryDir firmwareRoot;
+    ok &= expect(firmwareRoot.isValid(),
+                 QStringLiteral("could not create firmware clone temp directory"));
+    manager.setProductsDirectory(firmwareRoot.path());
+    QJsonObject firmwareBacked = basic;
+    QJsonObject firmwareProduct = firmwareBacked.value(QStringLiteral("product")).toObject();
+    firmwareProduct.insert(QStringLiteral("code"), QStringLiteral("SOURCE-FIRMWARE"));
+    firmwareProduct.insert(QStringLiteral("version"), QStringLiteral("V2.0.2"));
+    firmwareBacked.insert(QStringLiteral("product"), firmwareProduct);
+    firmwareBacked.insert(
+        QStringLiteral("operation"),
+        QJsonObject{
+            {QStringLiteral("mode"), QStringLiteral("firmware-backed")},
+            {QStringLiteral("firmware"),
+             QJsonObject{
+                 {QStringLiteral("source"), QStringLiteral("bundled")},
+                 {QStringLiteral("version"), QStringLiteral("2.0.2")},
+                 {QStringLiteral("artifact"), QStringLiteral("SOURCE-FIRMWARE_V2.0.2.elf")}
+             }}
+        });
+
+    const QJsonObject missingArtifactClone = manager.cloneProductConfigV3(
+        firmwareBacked,
+        QStringLiteral("TARGET-FIRMWARE"),
+        QStringLiteral("目标固件产品"));
+    ok &= expect(missingArtifactClone.isEmpty(),
+                 QStringLiteral("firmware-backed clone succeeded without a real target artifact"));
+
+    const QString targetDirectory =
+        QDir(firmwareRoot.path()).filePath(QStringLiteral("TARGET-FIRMWARE"));
+    ok &= expect(QDir().mkpath(targetDirectory),
+                 QStringLiteral("could not create target firmware directory"));
+    const QString targetArtifact =
+        QDir(targetDirectory).filePath(QStringLiteral("TARGET-FIRMWARE_V2.0.2.elf"));
+    ok &= expect(writeBytes(targetArtifact, QByteArrayLiteral("firmware")),
+                 QStringLiteral("could not create target firmware artifact"));
+    const QJsonObject firmwareClone = manager.cloneProductConfigV3(
+        firmwareBacked,
+        QStringLiteral("TARGET-FIRMWARE"),
+        QStringLiteral("目标固件产品"));
+    ok &= expect(firmwareClone.value(QStringLiteral("operation")).toObject()
+                     .value(QStringLiteral("firmware")).toObject()
+                     .value(QStringLiteral("artifact")).toString()
+                     == QStringLiteral("TARGET-FIRMWARE_V2.0.2.elf"),
+                 QStringLiteral("firmware-backed clone did not bind the matching real artifact"));
+
     return ok;
 }
 
@@ -408,6 +569,7 @@ int main(int argc, char *argv[])
     });
     ok &= verifyGenericConfig(manager, emptyConfig, 0, 0, QString());
     ok &= verifyTypedCustomerPersistence();
+    ok &= verifyV3BuilderAndClone();
 
     if (!ok) {
         return 1;

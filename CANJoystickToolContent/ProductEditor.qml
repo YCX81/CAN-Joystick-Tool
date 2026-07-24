@@ -29,7 +29,7 @@ Item {
     readonly property real panelWidth: 320
     readonly property var cloneCalibrationModeOptions: [
         { label: "中心点", value: "centerOnly" },
-        { label: "五点行程", value: "fivePointTravel" }
+        { label: "最小/中心/最大", value: "minCenterMax" }
     ]
 
     // DownloadTool colors
@@ -740,6 +740,28 @@ Item {
     }
 
     function setVersionMetadata(config, versionCode) {
+        if (config.schemaVersion === 3) {
+            var product = config.product || {}
+            product.version = versionCode
+            config.product = product
+            var lifecycle = config.lifecycle || {}
+            lifecycle.status = "active"
+            config.lifecycle = lifecycle
+            var operation = config.operation || {}
+            if (operation.mode === "firmware-backed") {
+                var bundledFirmware = operation.firmware || {}
+                bundledFirmware.version = versionCode.charAt(0).toUpperCase() === "V"
+                        ? versionCode.substring(1) : versionCode
+                var artifact = String(bundledFirmware.artifact || "")
+                var extensionMatch = artifact.match(/(\.(?:elf|hex|bin))$/i)
+                if (extensionMatch)
+                    bundledFirmware.artifact = String(product.code || "") + "_" + versionCode
+                            + extensionMatch[1].toLowerCase()
+                operation.firmware = bundledFirmware
+                config.operation = operation
+            }
+            return config
+        }
         if (!config.firmware)
             return config
         var firmware = config.firmware
@@ -795,7 +817,8 @@ Item {
 
         rebuildCloneOptionModels()
         cloneModelField.text = model ? (productBaseNameFromVersionedName(model) + "-NEW") : ""
-        cloneVersionField.text = "V1"
+        cloneVersionField.text = templateConfig.schemaVersion === 3
+                ? String(product.version || "V1") : "V1"
         cloneDescriptionArea.text = product.description || ""
         selectComboValue(cloneCustomerBox, cloneCustomerModel, firstConfiguredCustomerName())
         cloneCalibrationModeBox.currentIndex = calibrationModeIndex(calibration.mode)
@@ -824,6 +847,7 @@ Item {
         cloneButtonCountBox.value = 10
         cloneButtonNumbersField.text = ""
         cloneRollerCountBox.value = 4
+        cloneHasWorkLightCheck.checked = false
         cloneProductError = ""
         cloneProductPopup.open()
         cloneModelField.forceActiveFocus()
@@ -915,21 +939,30 @@ Item {
 
         if (!cloneProductUsesBlankTemplate) {
             var config = deepCopyConfig(productTemplateConfig())
+            if (config.schemaVersion === 3) {
+                if (cloneProductCreatesVersion)
+                    return setVersionMetadata(config, versionCode)
+                if (layoutManager && layoutManager.cloneProductConfigV3)
+                    return layoutManager.cloneProductConfigV3(config, model, description)
+                return ({})
+            }
             return applyCloneMetadata(config, model, description, versionCode)
         }
 
         var spec = {
-            model: model,
+            code: model,
+            version: versionCode,
             description: description,
             customerName: currentCloneCustomerName(),
             calibrationMode: currentCloneCalibrationMode(),
             baudRate: currentCloneBaudRate(),
             buttonCount: cloneButtonCountBox.value,
             buttonNumbers: parsedCloneButtonNumbers().numbers,
-            rollerCount: cloneRollerCountBox.value
+            rollerCount: cloneRollerCountBox.value,
+            hasWorkLight: cloneHasWorkLightCheck.checked
         }
-        if (layoutManager && layoutManager.buildStandardProductConfig)
-            return setVersionMetadata(layoutManager.buildStandardProductConfig(spec), versionCode)
+        if (layoutManager && layoutManager.buildStandardProductConfigV3)
+            return layoutManager.buildStandardProductConfigV3(spec)
 
         return applyCloneMetadata(defaultProductConfig(), model, description, versionCode)
     }
@@ -939,11 +972,19 @@ Item {
         if (cloneProductError.length > 0)
             return
 
-        if (!cloneProductUsesBlankTemplate && currentConfig && currentConfig.product)
+        if (!cloneProductUsesBlankTemplate && currentConfig && currentConfig.product
+                && currentConfig.schemaVersion !== 3)
             syncCurrentLayoutFromCells()
         var model = sanitizeProductModel(cloneModelField.text)
         var versionCode = normalizedCloneVersionCode()
         var config = buildClonedProductConfig()
+        if (!config || Object.keys(config).length === 0) {
+            cloneProductError = currentConfig && currentConfig.schemaVersion === 3
+                    && ((currentConfig.operation || {}).mode === "firmware-backed")
+                    ? "固件产品克隆失败：请先放入与新型号、版本同名的真实固件文件。"
+                    : "无法生成产品配置。"
+            return
+        }
         if (layoutManager && layoutManager.saveProductConfigVersionAs) {
             if (!layoutManager.saveProductConfigVersionAs(config, model, versionCode))
                 return
@@ -2990,6 +3031,21 @@ Item {
                     visible: cloneProductUsesBlankTemplate
                     font.pixelSize: 11
                     onValueChanged: root.cloneProductError = ""
+                }
+
+                Label {
+                    text: "灯光检查"
+                    color: dtText
+                    font.pixelSize: 11
+                    visible: cloneProductUsesBlankTemplate
+                }
+                CheckBox {
+                    id: cloneHasWorkLightCheck
+                    text: "包含固定工作灯开/关测试"
+                    visible: cloneProductUsesBlankTemplate
+                    checked: false
+                    font.pixelSize: 11
+                    onToggled: root.cloneProductError = ""
                 }
 
                 Label {
