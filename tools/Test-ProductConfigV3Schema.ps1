@@ -155,6 +155,41 @@ function Assert-Semantics {
     }
 }
 
+function Repair-NamedInvalidFixture {
+    param(
+        [object]$Config,
+        [string]$FixtureName
+    )
+
+    $repaired = Copy-JsonObject $Config
+    switch ($FixtureName) {
+        'invalid-auto-layout.json' {
+            $repaired.layout.mode = 'designed'
+        }
+        'invalid-decimal-address.json' {
+            $repaired.bus.sourceAddress = '0x33'
+        }
+        'invalid-missing-protocol.json' {
+            $repaired | Add-Member -NotePropertyName protocol -NotePropertyValue 'j1939'
+        }
+        'invalid-missing-topology.json' {
+            $repaired.controls[0] | Add-Member -NotePropertyName topology -NotePropertyValue ([pscustomobject]@{
+                kind = 'singleAxis'
+                orientation = 'horizontal'
+            })
+        }
+        'invalid-operation-pair.json' {
+            $repaired.operation.firmware = [pscustomobject]@{
+                source = 'external'
+            }
+        }
+        default {
+            throw "No named repair is defined for invalid fixture: $FixtureName"
+        }
+    }
+    return $repaired
+}
+
 if (-not (Test-Path -LiteralPath $SchemaPath)) {
     throw "Product Config V3 schema not found: $SchemaPath"
 }
@@ -180,6 +215,14 @@ foreach ($example in $validExamples) {
 foreach ($example in $invalidExamples) {
     $isValid = Test-Json -LiteralPath $example.FullName -SchemaFile $SchemaPath -ErrorAction SilentlyContinue
     Assert-True (-not $isValid) "Expected invalid example unexpectedly passed schema validation: $($example.Name)"
+
+    $invalidConfig = Read-JsonObject $example.FullName
+    $repairedConfig = Repair-NamedInvalidFixture $invalidConfig $example.Name
+    $repairedJson = $repairedConfig | ConvertTo-Json -Depth 100
+    $repairIsValid = Test-Json -Json $repairedJson -SchemaFile $SchemaPath -ErrorAction SilentlyContinue
+    Assert-True $repairIsValid `
+        "Invalid fixture contains failures beyond its named target: $($example.Name)"
+    Assert-Semantics $repairedConfig "repaired-$($example.Name)"
 }
 
 $hm025Config = @($validatedConfigs | Where-Object { $_.product.code -eq 'JC6000-BGA-HM025' })[0]
@@ -195,6 +238,18 @@ Assert-SemanticsRejects $invalidVersionMapping 'semantic-invalid-product-firmwar
 $invalidSignalReference = Copy-JsonObject $validatedConfigs[0]
 $invalidSignalReference.signals[0].source.messageId = 'missingMessage'
 Assert-SemanticsRejects $invalidSignalReference 'semantic-invalid-signal-reference'
+
+$branchVersionConfig = Copy-JsonObject $validatedConfigs[0]
+$branchVersionConfig.product.version = 'V2'
+$branchVersionJson = $branchVersionConfig | ConvertTo-Json -Depth 100
+Assert-True (Test-Json -Json $branchVersionJson -SchemaFile $SchemaPath -ErrorAction SilentlyContinue) `
+    'Branch-only product version V2 must remain valid.'
+
+$partialFirmwareVersionConfig = Copy-JsonObject $validatedConfigs[0]
+$partialFirmwareVersionConfig.product.version = 'V2.0'
+$partialFirmwareVersionJson = $partialFirmwareVersionConfig | ConvertTo-Json -Depth 100
+Assert-True (-not (Test-Json -Json $partialFirmwareVersionJson -SchemaFile $SchemaPath -ErrorAction SilentlyContinue)) `
+    'Partial firmware product version V2.0 must be rejected; use V2 or a full V2.x.y release.'
 
 $modes = @($validatedConfigs | ForEach-Object { [string]$_.operation.mode } | Sort-Object -Unique)
 $topologies = @(

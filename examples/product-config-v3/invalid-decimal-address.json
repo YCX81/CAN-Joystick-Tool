@@ -18,9 +18,54 @@
     "frameFormat": "extended",
     "sourceAddress": 51
   },
-  "messages": [],
-  "signals": [],
-  "controls": [],
+  "messages": [
+    {
+      "id": "bjm",
+      "name": "BJM1",
+      "pgn": "0x00FDD6",
+      "dlc": 8,
+      "periodMs": 20
+    }
+  ],
+  "signals": [
+    {
+      "id": "axisX",
+      "kind": "position",
+      "source": {
+        "messageId": "bjm",
+        "startByte": 0,
+        "startBit": 6,
+        "bitLength": 10,
+        "endian": "little",
+        "encoding": "unsigned"
+      }
+    }
+  ],
+  "controls": [
+    {
+      "id": "mainAxis",
+      "type": "axis",
+      "label": "主轴",
+      "topology": {
+        "kind": "singleAxis",
+        "orientation": "horizontal"
+      },
+      "axis": {
+        "signalId": "axisX",
+        "transform": {
+          "rawMin": 0,
+          "rawCenter": 500,
+          "rawMax": 1000,
+          "deadzone": 20,
+          "invert": false,
+          "outputRange": [
+            -1,
+            1
+          ]
+        }
+      }
+    }
+  ],
   "commands": [],
   "tests": [],
   "layout": {
@@ -29,6 +74,19 @@
       "width": 1280,
       "height": 720
     },
-    "cards": []
+    "cards": [
+      {
+        "id": "mainAxisCard",
+        "title": "主轴",
+        "x": 24,
+        "y": 24,
+        "width": 580,
+        "height": 300,
+        "renderer": "singleAxisGauge",
+        "controlIds": [
+          "mainAxis"
+        ]
+      }
+    ]
   }
 }
