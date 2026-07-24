@@ -13,6 +13,7 @@
 #include <QStringList>
 #include <QTemporaryDir>
 #include <QUuid>
+#include <cstdio>
 
 namespace {
 
@@ -20,6 +21,7 @@ bool expect(bool condition, const QString &message)
 {
     if (!condition) {
         qCritical().noquote() << message;
+        std::fprintf(stderr, "%s\n", qPrintable(message));
     }
     return condition;
 }
@@ -91,7 +93,25 @@ bool createCanonicalDatabase(const QString &databasePath)
                     "CREATE TABLE product_config_versions (id INTEGER PRIMARY KEY AUTOINCREMENT, "
                     "product_id INTEGER NOT NULL, version_code TEXT NOT NULL DEFAULT '', "
                     "config_file TEXT NOT NULL DEFAULT '', config_sha256 TEXT NOT NULL DEFAULT '', "
-                    "is_default INTEGER NOT NULL DEFAULT 0, updated_at TEXT, UNIQUE(product_id, version_code))"),
+                    "schema_version INTEGER NOT NULL DEFAULT 2, "
+                    "operation_mode TEXT NOT NULL DEFAULT 'legacy', "
+                    "firmware_source TEXT NOT NULL DEFAULT '', "
+                    "description TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'active', "
+                    "is_default INTEGER NOT NULL DEFAULT 0, updated_at TEXT, "
+                    "UNIQUE(product_id, version_code))"),
+                QStringLiteral(
+                    "CREATE TABLE firmwares (id INTEGER PRIMARY KEY AUTOINCREMENT, product_id INTEGER, "
+                    "version TEXT NOT NULL DEFAULT '', version_code TEXT NOT NULL DEFAULT '', "
+                    "description TEXT NOT NULL DEFAULT '', file_name TEXT NOT NULL, "
+                    "file_path TEXT NOT NULL UNIQUE, sha256 TEXT NOT NULL DEFAULT '', "
+                    "file_size INTEGER NOT NULL DEFAULT 0, file_mtime TEXT NOT NULL DEFAULT '', "
+                    "status TEXT NOT NULL DEFAULT 'active', updated_at TEXT)"),
+                QStringLiteral(
+                    "CREATE TABLE product_version_firmwares (id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                    "product_version_id INTEGER NOT NULL, firmware_id INTEGER NOT NULL, "
+                    "compatibility_level TEXT NOT NULL DEFAULT 'exact', "
+                    "is_default INTEGER NOT NULL DEFAULT 0, updated_at TEXT, "
+                    "UNIQUE(product_version_id, firmware_id))"),
                 QStringLiteral(
                     "CREATE TABLE customers (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE, "
                     "type TEXT NOT NULL DEFAULT 'real', status TEXT NOT NULL DEFAULT 'active')"),
@@ -101,7 +121,8 @@ bool createCanonicalDatabase(const QString &databasePath)
                     "is_default INTEGER NOT NULL DEFAULT 0, updated_at TEXT, UNIQUE(product_id, customer_id))"),
                 QStringLiteral("INSERT INTO schema_migrations (version, migration_name) VALUES (1, 'core-event-schema-v1')"),
                 QStringLiteral("INSERT INTO schema_migrations (version, migration_name) VALUES (2, 'functional-device-bindings-v2')"),
-                QStringLiteral("PRAGMA user_version = 2")
+                QStringLiteral("INSERT INTO schema_migrations (version, migration_name) VALUES (3, 'product-config-v3')"),
+                QStringLiteral("PRAGMA user_version = 3")
             };
 
             success = true;
@@ -260,7 +281,53 @@ bool verifyV3BuilderAndClone()
                      .arg(QString::fromUtf8(
                          QJsonDocument(basicValidation).toJson(QJsonDocument::Compact))));
     ok &= expect(workLightCommand(basic, QStringLiteral("workLightOn")).isEmpty(),
-                 QStringLiteral("V3 builder added work-light commands when disabled"));
+                  QStringLiteral("V3 builder added work-light commands when disabled"));
+
+    const QJsonObject singleX = manager.buildStandardProductConfigV3(QJsonObject{
+        {QStringLiteral("code"), QStringLiteral("JC6000-SINGLE-X")},
+        {QStringLiteral("joystickTopology"), QStringLiteral("singleAxisX")},
+        {QStringLiteral("buttonCount"), 0},
+        {QStringLiteral("rollerCount"), 0}
+    });
+    const QJsonArray singleXSignals = singleX.value(QStringLiteral("signals")).toArray();
+    const QJsonObject singleXControl =
+        findObject(singleX.value(QStringLiteral("controls")).toArray(),
+                   QStringLiteral("id"),
+                   QStringLiteral("joystickX"));
+    ok &= expect(!findObject(singleXSignals, QStringLiteral("id"), QStringLiteral("axisX")).isEmpty()
+                     && findObject(singleXSignals, QStringLiteral("id"), QStringLiteral("axisY")).isEmpty(),
+                 QStringLiteral("single-axis X config must declare only axisX"));
+    ok &= expect(singleXControl.value(QStringLiteral("type")).toString() == QStringLiteral("axis")
+                     && singleXControl.value(QStringLiteral("role")).toString()
+                            == QStringLiteral("joystick")
+                     && singleXControl.value(QStringLiteral("axis")).toObject()
+                            .value(QStringLiteral("signalId")).toString()
+                            == QStringLiteral("axisX"),
+                 QStringLiteral("single-axis X config must bind one joystick axis control"));
+    ok &= expect(manager.validateProductConfig(singleX).value(QStringLiteral("ok")).toBool(),
+                 QStringLiteral("single-axis X V3 output failed validation"));
+
+    const QJsonObject singleY = manager.buildStandardProductConfigV3(QJsonObject{
+        {QStringLiteral("code"), QStringLiteral("JC6000-SINGLE-Y")},
+        {QStringLiteral("joystickTopology"), QStringLiteral("singleAxisY")},
+        {QStringLiteral("buttonCount"), 0},
+        {QStringLiteral("rollerCount"), 0}
+    });
+    const QJsonArray singleYSignals = singleY.value(QStringLiteral("signals")).toArray();
+    const QJsonObject singleYControl =
+        findObject(singleY.value(QStringLiteral("controls")).toArray(),
+                   QStringLiteral("id"),
+                   QStringLiteral("joystickY"));
+    ok &= expect(findObject(singleYSignals, QStringLiteral("id"), QStringLiteral("axisX")).isEmpty()
+                     && !findObject(singleYSignals, QStringLiteral("id"), QStringLiteral("axisY")).isEmpty(),
+                 QStringLiteral("single-axis Y config must declare only axisY"));
+    ok &= expect(singleYControl.value(QStringLiteral("type")).toString() == QStringLiteral("axis")
+                     && singleYControl.value(QStringLiteral("topology")).toObject()
+                            .value(QStringLiteral("orientation")).toString()
+                            == QStringLiteral("vertical"),
+                 QStringLiteral("single-axis Y config must use a vertical single-axis topology"));
+    ok &= expect(manager.validateProductConfig(singleY).value(QStringLiteral("ok")).toBool(),
+                 QStringLiteral("single-axis Y V3 output failed validation"));
 
     const QJsonObject withLight = manager.buildStandardProductConfigV3(QJsonObject{
         {QStringLiteral("code"), QStringLiteral("JC6000-BGA-HM025")},

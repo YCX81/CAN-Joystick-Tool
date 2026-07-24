@@ -31,6 +31,11 @@ Item {
         { label: "中心点", value: "centerOnly" },
         { label: "最小/中心/最大", value: "minCenterMax" }
     ]
+    readonly property var cloneJoystickTopologyOptions: [
+        { label: "十字 XY 轴", value: "crossXY" },
+        { label: "单轴 X", value: "singleAxisX" },
+        { label: "单轴 Y", value: "singleAxisY" }
+    ]
 
     // DownloadTool colors
     readonly property color dtBg: "#f5f5f7"
@@ -478,6 +483,11 @@ Item {
         return item ? item.value : "centerOnly"
     }
 
+    function currentCloneJoystickTopology() {
+        var item = cloneJoystickTopologyOptions[cloneJoystickTopologyBox.currentIndex]
+        return item ? item.value : "crossXY"
+    }
+
     function cloneOptionArray(value) {
         if (value === undefined || value === null)
             return []
@@ -847,6 +857,7 @@ Item {
         cloneButtonCountBox.value = 10
         cloneButtonNumbersField.text = ""
         cloneRollerCountBox.value = 4
+        cloneJoystickTopologyBox.currentIndex = 0
         cloneHasWorkLightCheck.checked = false
         cloneProductError = ""
         cloneProductPopup.open()
@@ -953,9 +964,9 @@ Item {
             code: model,
             version: versionCode,
             description: description,
-            customerName: currentCloneCustomerName(),
             calibrationMode: currentCloneCalibrationMode(),
             baudRate: currentCloneBaudRate(),
+            joystickTopology: currentCloneJoystickTopology(),
             buttonCount: cloneButtonCountBox.value,
             buttonNumbers: parsedCloneButtonNumbers().numbers,
             rollerCount: cloneRollerCountBox.value,
@@ -985,7 +996,12 @@ Item {
                     : "无法生成产品配置。"
             return
         }
-        if (layoutManager && layoutManager.saveProductConfigVersionAs) {
+        if (cloneProductUsesBlankTemplate && layoutManager
+                && layoutManager.saveProductConfigVersionWithCustomerAs) {
+            if (!layoutManager.saveProductConfigVersionWithCustomerAs(
+                        config, model, versionCode, currentCloneCustomerName()))
+                return
+        } else if (layoutManager && layoutManager.saveProductConfigVersionAs) {
             if (!layoutManager.saveProductConfigVersionAs(config, model, versionCode))
                 return
         } else if (!layoutManager.saveProductConfigAs(config, model)) {
@@ -2980,6 +2996,24 @@ Item {
                     visible: cloneProductUsesBlankTemplate
                     onActivated: root.cloneProductError = ""
                     onEditTextChanged: root.cloneProductError = ""
+                }
+
+                Label {
+                    text: "主摇杆"
+                    color: dtText
+                    font.pixelSize: 11
+                    visible: cloneProductUsesBlankTemplate
+                }
+                ComboBox {
+                    id: cloneJoystickTopologyBox
+                    Layout.fillWidth: true
+                    model: cloneJoystickTopologyOptions
+                    textRole: "label"
+                    valueRole: "value"
+                    currentIndex: 0
+                    visible: cloneProductUsesBlankTemplate
+                    font.pixelSize: 11
+                    onActivated: root.cloneProductError = ""
                 }
 
                 Label {

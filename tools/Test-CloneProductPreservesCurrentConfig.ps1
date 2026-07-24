@@ -93,6 +93,9 @@ if (-not $designCanvasContent.Contains('if (c.type === "joystick" || c.type === 
 if ($body -notmatch 'rollerCount\s*:\s*cloneRollerCountBox\.value') {
     throw 'New products must pass the selected roller count to the generic J1939 builder.'
 }
+if ($body -notmatch 'joystickTopology\s*:\s*currentCloneJoystickTopology\(\)') {
+    throw 'New products must pass the selected joystick topology to the V3 builder.'
+}
 if ($body -notmatch 'hasWorkLight\s*:\s*cloneHasWorkLightCheck\.checked') {
     throw 'New products must pass the work-light selection to the V3 builder.'
 }
@@ -154,6 +157,12 @@ $saveBody = $saveMatch.Groups['body'].Value
 if ($saveBody -notmatch 'currentConfig\.schemaVersion\s*!==\s*3') {
     throw 'V3 clones must not pass through the legacy layout.grid.cells serializer.'
 }
+if ($saveBody -notmatch 'saveProductConfigVersionWithCustomerAs\s*\(' -or $saveBody -notmatch 'currentCloneCustomerName\(\)') {
+    throw 'Blank V3 products must persist customer selection through the database-only save API.'
+}
+if ($body -match 'customerName\s*:') {
+    throw 'Product Config V3 must not embed customer bindings in JSON.'
+}
 
 $customerMatch = [regex]::Match(
     $content,
@@ -180,6 +189,9 @@ if ($content -notmatch 'id:\s*cloneButtonNumbersField') {
 }
 if ($content -notmatch 'id:\s*cloneRollerCountBox') {
     throw 'The new-product form must expose a roller count control.'
+}
+if ($content -notmatch 'id:\s*cloneJoystickTopologyBox') {
+    throw 'The new-product form must expose cross-XY, single-X, and single-Y joystick topology choices.'
 }
 if ($content -notmatch 'id:\s*cloneHasWorkLightCheck') {
     throw 'The new-product form must expose a work-light option.'
