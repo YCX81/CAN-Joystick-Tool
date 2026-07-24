@@ -1,0 +1,1014 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://canjoystick.local/schemas/product-config-v3.schema.json",
+  "title": "CAN Joystick Product Config V3",
+  "description": "CANJoystickTool 与 CANJoystickDownloadTool 共用的产品配置首版契约。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "product",
+    "operation",
+    "protocol",
+    "bus",
+    "messages",
+    "signals",
+    "controls",
+    "commands",
+    "tests",
+    "layout"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "minLength": 1
+    },
+    "schemaVersion": {
+      "const": 3
+    },
+    "product": {
+      "$ref": "#/definitions/product"
+    },
+    "operation": {
+      "$ref": "#/definitions/operation"
+    },
+    "protocol": {
+      "enum": [
+        "j1939",
+        "canopen",
+        "raw_can"
+      ]
+    },
+    "bus": {
+      "$ref": "#/definitions/bus"
+    },
+    "messages": {
+      "type": "array",
+      "minItems": 1
+    },
+    "signals": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/definitions/signal"
+      }
+    },
+    "controls": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/definitions/control"
+      }
+    },
+    "commands": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/command"
+      }
+    },
+    "tests": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/test"
+      }
+    },
+    "layout": {
+      "$ref": "#/definitions/layout"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "protocol": {
+            "const": "j1939"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "bus": {
+            "allOf": [
+              {
+                "$ref": "#/definitions/bus"
+              },
+              {
+                "required": [
+                  "sourceAddress"
+                ],
+                "properties": {
+                  "frameFormat": {
+                    "const": "extended"
+                  }
+                }
+              }
+            ]
+          },
+          "messages": {
+            "items": {
+              "$ref": "#/definitions/j1939Message"
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "protocol": {
+            "const": "canopen"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "bus": {
+            "allOf": [
+              {
+                "$ref": "#/definitions/bus"
+              },
+              {
+                "required": [
+                  "nodeId"
+                ],
+                "properties": {
+                  "frameFormat": {
+                    "const": "standard"
+                  }
+                }
+              }
+            ]
+          },
+          "messages": {
+            "items": {
+              "$ref": "#/definitions/canMessage"
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "protocol": {
+            "const": "raw_can"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "messages": {
+            "items": {
+              "$ref": "#/definitions/canMessage"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "definitions": {
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z][A-Za-z0-9_-]*$"
+    },
+    "hexAddress": {
+      "type": "string",
+      "pattern": "^0x[0-9A-F]{2}$"
+    },
+    "hexPgn": {
+      "type": "string",
+      "pattern": "^0x[0-9A-F]{6}$"
+    },
+    "hexCanId": {
+      "type": "string",
+      "pattern": "^(?:0x[0-9A-F]{3}|0x[0-9A-F]{8})$"
+    },
+    "product": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "version",
+        "description"
+      ],
+      "properties": {
+        "code": {
+          "type": "string",
+          "pattern": "^[A-Z0-9][A-Z0-9_-]*$"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^V[1-9][0-9]*(?:\\.[0-9]+){0,2}$"
+        },
+        "description": {
+          "type": "string"
+        },
+        "aliases": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "operation": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode",
+            "firmware"
+          ],
+          "properties": {
+            "mode": {
+              "const": "test_only"
+            },
+            "firmware": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "source"
+              ],
+              "properties": {
+                "source": {
+                  "const": "external"
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode",
+            "firmware"
+          ],
+          "properties": {
+            "mode": {
+              "const": "firmware-backed"
+            },
+            "firmware": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "source",
+                "version",
+                "artifact"
+              ],
+              "properties": {
+                "source": {
+                  "const": "bundled"
+                },
+                "version": {
+                  "type": "string",
+                  "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+                },
+                "artifact": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*\\.(?:elf|hex|bin)$"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "bus": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "bitrateKbps",
+        "frameFormat"
+      ],
+      "properties": {
+        "bitrateKbps": {
+          "type": "integer",
+          "minimum": 10,
+          "maximum": 1000
+        },
+        "frameFormat": {
+          "enum": [
+            "standard",
+            "extended"
+          ]
+        },
+        "sourceAddress": {
+          "$ref": "#/definitions/hexAddress"
+        },
+        "nodeId": {
+          "$ref": "#/definitions/hexAddress"
+        }
+      }
+    },
+    "j1939Message": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "pgn",
+        "dlc"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/id"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "pgn": {
+          "$ref": "#/definitions/hexPgn"
+        },
+        "priority": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 7
+        },
+        "sourceAddress": {
+          "$ref": "#/definitions/hexAddress"
+        },
+        "destinationAddress": {
+          "$ref": "#/definitions/hexAddress"
+        },
+        "dlc": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 8
+        },
+        "periodMs": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "canMessage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "canId",
+        "dlc"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/id"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "canId": {
+          "$ref": "#/definitions/hexCanId"
+        },
+        "dlc": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 8
+        },
+        "periodMs": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "signal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind",
+        "source"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/id"
+        },
+        "kind": {
+          "enum": [
+            "position",
+            "status",
+            "button",
+            "counter",
+            "identity",
+            "numeric"
+          ]
+        },
+        "source": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "messageId",
+            "startByte",
+            "startBit",
+            "bitLength",
+            "endian",
+            "encoding"
+          ],
+          "properties": {
+            "messageId": {
+              "$ref": "#/definitions/id"
+            },
+            "startByte": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 7
+            },
+            "startBit": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 7
+            },
+            "bitLength": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 64
+            },
+            "endian": {
+              "enum": [
+                "little",
+                "big"
+              ]
+            },
+            "encoding": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      }
+    },
+    "axisTransform": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "rawMin",
+        "rawCenter",
+        "rawMax",
+        "deadzone",
+        "invert",
+        "outputRange"
+      ],
+      "properties": {
+        "rawMin": {
+          "type": "number"
+        },
+        "rawCenter": {
+          "type": "number"
+        },
+        "rawMax": {
+          "type": "number"
+        },
+        "deadzone": {
+          "type": "number",
+          "minimum": 0
+        },
+        "invert": {
+          "type": "boolean"
+        },
+        "outputRange": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": [
+            {
+              "const": -1
+            },
+            {
+              "const": 1
+            }
+          ],
+          "additionalItems": false
+        }
+      }
+    },
+    "axisBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "signalId",
+        "transform"
+      ],
+      "properties": {
+        "signalId": {
+          "$ref": "#/definitions/id"
+        },
+        "transform": {
+          "$ref": "#/definitions/axisTransform"
+        }
+      }
+    },
+    "control": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "type",
+            "label",
+            "topology",
+            "axis"
+          ],
+          "properties": {
+            "id": {
+              "$ref": "#/definitions/id"
+            },
+            "type": {
+              "const": "axis"
+            },
+            "label": {
+              "type": "string",
+              "minLength": 1
+            },
+            "topology": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind",
+                "orientation"
+              ],
+              "properties": {
+                "kind": {
+                  "const": "singleAxis"
+                },
+                "orientation": {
+                  "enum": [
+                    "horizontal",
+                    "vertical"
+                  ]
+                }
+              }
+            },
+            "axis": {
+              "$ref": "#/definitions/axisBinding"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "type",
+            "label",
+            "topology",
+            "xAxis",
+            "yAxis"
+          ],
+          "properties": {
+            "id": {
+              "$ref": "#/definitions/id"
+            },
+            "type": {
+              "const": "joystick"
+            },
+            "label": {
+              "type": "string",
+              "minLength": 1
+            },
+            "topology": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind",
+                "gate"
+              ],
+              "properties": {
+                "kind": {
+                  "const": "cross2D"
+                },
+                "gate": {
+                  "const": "cross"
+                }
+              }
+            },
+            "xAxis": {
+              "$ref": "#/definitions/axisBinding"
+            },
+            "yAxis": {
+              "$ref": "#/definitions/axisBinding"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "type",
+            "label",
+            "signalId"
+          ],
+          "properties": {
+            "id": {
+              "$ref": "#/definitions/id"
+            },
+            "type": {
+              "const": "button"
+            },
+            "label": {
+              "type": "string",
+              "minLength": 1
+            },
+            "signalId": {
+              "$ref": "#/definitions/id"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "type",
+            "label",
+            "onCommandId",
+            "offCommandId",
+            "activeLow"
+          ],
+          "properties": {
+            "id": {
+              "$ref": "#/definitions/id"
+            },
+            "type": {
+              "const": "binaryOutput"
+            },
+            "label": {
+              "type": "string",
+              "minLength": 1
+            },
+            "onCommandId": {
+              "$ref": "#/definitions/id"
+            },
+            "offCommandId": {
+              "$ref": "#/definitions/id"
+            },
+            "activeLow": {
+              "type": "boolean"
+            }
+          }
+        }
+      ]
+    },
+    "command": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "label",
+            "transport",
+            "frame"
+          ],
+          "properties": {
+            "id": {
+              "$ref": "#/definitions/id"
+            },
+            "label": {
+              "type": "string",
+              "minLength": 1
+            },
+            "transport": {
+              "const": "j1939"
+            },
+            "frame": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "priority",
+                "pgn",
+                "sourceAddress",
+                "destinationAddress",
+                "dlc",
+                "data"
+              ],
+              "properties": {
+                "priority": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 7
+                },
+                "pgn": {
+                  "$ref": "#/definitions/hexPgn"
+                },
+                "sourceAddress": {
+                  "$ref": "#/definitions/hexAddress"
+                },
+                "destinationAddress": {
+                  "$ref": "#/definitions/hexAddress"
+                },
+                "dlc": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 8
+                },
+                "data": {
+                  "type": "string",
+                  "pattern": "^(?:[0-9A-F]{2})(?: [0-9A-F]{2}){0,7}$"
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "label",
+            "transport",
+            "frame"
+          ],
+          "properties": {
+            "id": {
+              "$ref": "#/definitions/id"
+            },
+            "label": {
+              "type": "string",
+              "minLength": 1
+            },
+            "transport": {
+              "const": "can"
+            },
+            "frame": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "canId",
+                "dlc",
+                "data"
+              ],
+              "properties": {
+                "canId": {
+                  "$ref": "#/definitions/hexCanId"
+                },
+                "dlc": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 8
+                },
+                "data": {
+                  "type": "string",
+                  "pattern": "^(?:[0-9A-F]{2})(?: [0-9A-F]{2}){0,7}$"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "testStep": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "commandId"
+          ],
+          "properties": {
+            "type": {
+              "const": "sendCommand"
+            },
+            "commandId": {
+              "$ref": "#/definitions/id"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "milliseconds"
+          ],
+          "properties": {
+            "type": {
+              "const": "delay"
+            },
+            "milliseconds": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "prompt"
+          ],
+          "properties": {
+            "type": {
+              "const": "operatorConfirm"
+            },
+            "prompt": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "controlId",
+            "value"
+          ],
+          "properties": {
+            "type": {
+              "const": "setControl"
+            },
+            "controlId": {
+              "$ref": "#/definitions/id"
+            },
+            "value": {
+              "type": [
+                "boolean",
+                "number",
+                "string"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "signalId",
+            "value"
+          ],
+          "properties": {
+            "type": {
+              "const": "signalEquals"
+            },
+            "signalId": {
+              "$ref": "#/definitions/id"
+            },
+            "value": {
+              "type": [
+                "boolean",
+                "number",
+                "string"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "signalId",
+            "minimum",
+            "maximum"
+          ],
+          "properties": {
+            "type": {
+              "const": "signalRange"
+            },
+            "signalId": {
+              "$ref": "#/definitions/id"
+            },
+            "minimum": {
+              "type": "number"
+            },
+            "maximum": {
+              "type": "number"
+            }
+          }
+        }
+      ]
+    },
+    "test": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "label",
+        "steps",
+        "cleanup"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/id"
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1
+        },
+        "steps": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/definitions/testStep"
+          }
+        },
+        "cleanup": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/definitions/testStep"
+          }
+        }
+      }
+    },
+    "layout": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "canvas",
+        "cards"
+      ],
+      "properties": {
+        "mode": {
+          "const": "designed"
+        },
+        "canvas": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "width",
+            "height"
+          ],
+          "properties": {
+            "width": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "height": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        },
+        "cards": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "title",
+              "x",
+              "y",
+              "width",
+              "height",
+              "renderer",
+              "controlIds"
+            ],
+            "properties": {
+              "id": {
+                "$ref": "#/definitions/id"
+              },
+              "title": {
+                "type": "string",
+                "minLength": 1
+              },
+              "x": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "y": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "width": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "height": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "renderer": {
+                "type": "string",
+                "minLength": 1
+              },
+              "controlIds": {
+                "type": "array",
+                "minItems": 1,
+                "uniqueItems": true,
+                "items": {
+                  "$ref": "#/definitions/id"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

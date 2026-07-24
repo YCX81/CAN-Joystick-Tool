@@ -1,0 +1,122 @@
+{
+  "$schema": "../../schemas/product-config-v3.schema.json",
+  "schemaVersion": 3,
+  "product": {
+    "code": "JC6000-BGA-C0009",
+    "version": "V1",
+    "description": "无固件单轴纯测试产品"
+  },
+  "operation": {
+    "mode": "test_only",
+    "firmware": {
+      "source": "external"
+    }
+  },
+  "protocol": "j1939",
+  "bus": {
+    "bitrateKbps": 250,
+    "frameFormat": "extended",
+    "sourceAddress": "0x33"
+  },
+  "messages": [
+    {
+      "id": "bjm",
+      "name": "BJM1",
+      "pgn": "0x00FDD6",
+      "dlc": 8,
+      "periodMs": 20
+    }
+  ],
+  "signals": [
+    {
+      "id": "axisX",
+      "kind": "position",
+      "source": {
+        "messageId": "bjm",
+        "startByte": 0,
+        "startBit": 6,
+        "bitLength": 10,
+        "endian": "little",
+        "encoding": "unsigned"
+      }
+    },
+    {
+      "id": "button1",
+      "kind": "button",
+      "source": {
+        "messageId": "bjm",
+        "startByte": 5,
+        "startBit": 0,
+        "bitLength": 2,
+        "endian": "little",
+        "encoding": "j1939_2bit"
+      }
+    }
+  ],
+  "controls": [
+    {
+      "id": "mainAxis",
+      "type": "axis",
+      "label": "主轴",
+      "topology": {
+        "kind": "singleAxis",
+        "orientation": "horizontal"
+      },
+      "axis": {
+        "signalId": "axisX",
+        "transform": {
+          "rawMin": 0,
+          "rawCenter": 500,
+          "rawMax": 1000,
+          "deadzone": 20,
+          "invert": false,
+          "outputRange": [
+            -1,
+            1
+          ]
+        }
+      }
+    },
+    {
+      "id": "button1",
+      "type": "button",
+      "label": "按钮 1",
+      "signalId": "button1"
+    }
+  ],
+  "commands": [],
+  "tests": [],
+  "layout": {
+    "mode": "designed",
+    "canvas": {
+      "width": 1280,
+      "height": 720
+    },
+    "cards": [
+      {
+        "id": "mainAxisCard",
+        "title": "主轴",
+        "x": 24,
+        "y": 24,
+        "width": 580,
+        "height": 300,
+        "renderer": "singleAxisGauge",
+        "controlIds": [
+          "mainAxis"
+        ]
+      },
+      {
+        "id": "buttonsCard",
+        "title": "按钮",
+        "x": 628,
+        "y": 24,
+        "width": 300,
+        "height": 300,
+        "renderer": "buttonGrid",
+        "controlIds": [
+          "button1"
+        ]
+      }
+    ]
+  }
+}

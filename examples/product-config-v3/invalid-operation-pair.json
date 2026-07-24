@@ -1,0 +1,36 @@
+{
+  "$schema": "../../schemas/product-config-v3.schema.json",
+  "schemaVersion": 3,
+  "product": {
+    "code": "INVALID-OPERATION-PAIR",
+    "version": "V1",
+    "description": "纯测试产品不能声明 bundled 固件"
+  },
+  "operation": {
+    "mode": "test_only",
+    "firmware": {
+      "source": "bundled",
+      "version": "1.0.0",
+      "artifact": "INVALID-OPERATION-PAIR_V1.elf"
+    }
+  },
+  "protocol": "j1939",
+  "bus": {
+    "bitrateKbps": 250,
+    "frameFormat": "extended",
+    "sourceAddress": "0x33"
+  },
+  "messages": [],
+  "signals": [],
+  "controls": [],
+  "commands": [],
+  "tests": [],
+  "layout": {
+    "mode": "designed",
+    "canvas": {
+      "width": 1280,
+      "height": 720
+    },
+    "cards": []
+  }
+}

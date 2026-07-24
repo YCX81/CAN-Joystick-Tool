@@ -1,0 +1,172 @@
+{
+  "$schema": "../../schemas/product-config-v3.schema.json",
+  "schemaVersion": 3,
+  "product": {
+    "code": "JC6000-BGA-HM025",
+    "version": "V1",
+    "description": "无固件纯测试产品，包含工作灯检查"
+  },
+  "operation": {
+    "mode": "test_only",
+    "firmware": {
+      "source": "external"
+    }
+  },
+  "protocol": "j1939",
+  "bus": {
+    "bitrateKbps": 250,
+    "frameFormat": "extended",
+    "sourceAddress": "0x33"
+  },
+  "messages": [
+    {
+      "id": "bjm",
+      "name": "BJM1",
+      "pgn": "0x00FDD6",
+      "dlc": 8,
+      "periodMs": 20
+    }
+  ],
+  "signals": [
+    {
+      "id": "axisX",
+      "kind": "position",
+      "source": {
+        "messageId": "bjm",
+        "startByte": 0,
+        "startBit": 6,
+        "bitLength": 10,
+        "endian": "little",
+        "encoding": "unsigned"
+      }
+    }
+  ],
+  "controls": [
+    {
+      "id": "mainAxis",
+      "type": "axis",
+      "label": "主轴",
+      "topology": {
+        "kind": "singleAxis",
+        "orientation": "vertical"
+      },
+      "axis": {
+        "signalId": "axisX",
+        "transform": {
+          "rawMin": 0,
+          "rawCenter": 500,
+          "rawMax": 1000,
+          "deadzone": 20,
+          "invert": false,
+          "outputRange": [
+            -1,
+            1
+          ]
+        }
+      }
+    },
+    {
+      "id": "workLight",
+      "type": "binaryOutput",
+      "label": "工作灯",
+      "onCommandId": "workLightOn",
+      "offCommandId": "workLightOff",
+      "activeLow": true
+    }
+  ],
+  "commands": [
+    {
+      "id": "workLightOn",
+      "label": "工作灯开启",
+      "transport": "j1939",
+      "frame": {
+        "priority": 6,
+        "pgn": "0x00D000",
+        "sourceAddress": "0x03",
+        "destinationAddress": "0x33",
+        "dlc": 3,
+        "data": "00 FA 00"
+      }
+    },
+    {
+      "id": "workLightOff",
+      "label": "工作灯关闭",
+      "transport": "j1939",
+      "frame": {
+        "priority": 6,
+        "pgn": "0x00D000",
+        "sourceAddress": "0x03",
+        "destinationAddress": "0x33",
+        "dlc": 3,
+        "data": "00 00 00"
+      }
+    }
+  ],
+  "tests": [
+    {
+      "id": "workLightCheck",
+      "label": "工作灯检查",
+      "steps": [
+        {
+          "type": "sendCommand",
+          "commandId": "workLightOn"
+        },
+        {
+          "type": "delay",
+          "milliseconds": 300
+        },
+        {
+          "type": "operatorConfirm",
+          "prompt": "确认工作灯已点亮"
+        },
+        {
+          "type": "sendCommand",
+          "commandId": "workLightOff"
+        },
+        {
+          "type": "operatorConfirm",
+          "prompt": "确认工作灯已熄灭"
+        }
+      ],
+      "cleanup": [
+        {
+          "type": "sendCommand",
+          "commandId": "workLightOff"
+        }
+      ]
+    }
+  ],
+  "layout": {
+    "mode": "designed",
+    "canvas": {
+      "width": 1280,
+      "height": 720
+    },
+    "cards": [
+      {
+        "id": "mainAxisCard",
+        "title": "主轴",
+        "x": 24,
+        "y": 24,
+        "width": 580,
+        "height": 360,
+        "renderer": "singleAxisGauge",
+        "controlIds": [
+          "mainAxis"
+        ]
+      },
+      {
+        "id": "workLightCard",
+        "title": "工作灯",
+        "x": 628,
+        "y": 24,
+        "width": 300,
+        "height": 240,
+        "renderer": "binaryOutput",
+        "controlIds": [
+          "workLight"
+        ]
+      }
+    ]
+  }
+}

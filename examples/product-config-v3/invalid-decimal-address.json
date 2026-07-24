@@ -1,0 +1,34 @@
+{
+  "$schema": "../../schemas/product-config-v3.schema.json",
+  "schemaVersion": 3,
+  "product": {
+    "code": "INVALID-DECIMAL-ADDRESS",
+    "version": "V1",
+    "description": "地址必须使用规范十六进制字符串"
+  },
+  "operation": {
+    "mode": "test_only",
+    "firmware": {
+      "source": "external"
+    }
+  },
+  "protocol": "j1939",
+  "bus": {
+    "bitrateKbps": 250,
+    "frameFormat": "extended",
+    "sourceAddress": 51
+  },
+  "messages": [],
+  "signals": [],
+  "controls": [],
+  "commands": [],
+  "tests": [],
+  "layout": {
+    "mode": "designed",
+    "canvas": {
+      "width": 1280,
+      "height": 720
+    },
+    "cards": []
+  }
+}

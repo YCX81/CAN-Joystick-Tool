@@ -1,0 +1,33 @@
+{
+  "$schema": "../../schemas/product-config-v3.schema.json",
+  "schemaVersion": 3,
+  "product": {
+    "code": "INVALID-MISSING-PROTOCOL",
+    "version": "V1",
+    "description": "protocol 不能省略"
+  },
+  "operation": {
+    "mode": "test_only",
+    "firmware": {
+      "source": "external"
+    }
+  },
+  "bus": {
+    "bitrateKbps": 250,
+    "frameFormat": "extended",
+    "sourceAddress": "0x33"
+  },
+  "messages": [],
+  "signals": [],
+  "controls": [],
+  "commands": [],
+  "tests": [],
+  "layout": {
+    "mode": "designed",
+    "canvas": {
+      "width": 1280,
+      "height": 720
+    },
+    "cards": []
+  }
+}
