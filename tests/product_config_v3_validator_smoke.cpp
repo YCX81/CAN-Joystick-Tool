@@ -649,6 +649,59 @@ bool verifyMigrationControlAndLayoutRules(const QJsonObject &migrationConfig)
                         QStringLiteral("duplicate FNR packed positions"),
                         QStringLiteral("distinct"));
 
+    QJsonObject reusedPackedPosition = migrationConfig;
+    QJsonArray controls = reusedPackedPosition.value(QStringLiteral("controls")).toArray();
+    QJsonObject duplicateButton = controls.at(2).toObject();
+    duplicateButton.insert(QStringLiteral("id"), QStringLiteral("fnrForwardAsButton"));
+    duplicateButton.insert(QStringLiteral("position"), 2);
+    controls.append(duplicateButton);
+    reusedPackedPosition.insert(QStringLiteral("controls"), controls);
+    ok &= expectInvalid(reusedPackedPosition,
+                        QStringLiteral("packed position reused by button and FNR"),
+                        QStringLiteral("assigned more than once"));
+
+    QJsonObject preciseVisualProperties = migrationConfig;
+    QJsonObject preciseLayout =
+        preciseVisualProperties.value(QStringLiteral("layout")).toObject();
+    QJsonArray preciseCards = preciseLayout.value(QStringLiteral("cards")).toArray();
+    QJsonObject preciseCard = preciseCards.at(1).toObject();
+    QJsonArray preciseElements = preciseCard.value(QStringLiteral("elements")).toArray();
+    QJsonObject preciseElement = preciseElements.at(2).toObject();
+    preciseElement.insert(QStringLiteral("x"), 620.375);
+    preciseElement.insert(QStringLiteral("y"), 20.625);
+    QJsonObject preciseProperties =
+        preciseElement.value(QStringLiteral("properties")).toObject();
+    preciseProperties.insert(QStringLiteral("label"), QStringLiteral("BTN"));
+    preciseProperties.insert(QStringLiteral("buttonVariant"), QStringLiteral("green"));
+    preciseProperties.insert(QStringLiteral("bezelSize"), 50);
+    preciseProperties.insert(QStringLiteral("capSize"), 36);
+    preciseElement.insert(QStringLiteral("properties"), preciseProperties);
+    preciseElements[2] = preciseElement;
+    preciseCard.insert(QStringLiteral("elements"), preciseElements);
+    preciseCards[1] = preciseCard;
+    preciseLayout.insert(QStringLiteral("cards"), preciseCards);
+    preciseVisualProperties.insert(QStringLiteral("layout"), preciseLayout);
+    ok &= expectValid(preciseVisualProperties,
+                      QStringLiteral("fractional layout and button appearance"));
+
+    QJsonObject invalidButtonAppearance = preciseVisualProperties;
+    preciseLayout = invalidButtonAppearance.value(QStringLiteral("layout")).toObject();
+    preciseCards = preciseLayout.value(QStringLiteral("cards")).toArray();
+    preciseCard = preciseCards.at(1).toObject();
+    preciseElements = preciseCard.value(QStringLiteral("elements")).toArray();
+    preciseElement = preciseElements.at(2).toObject();
+    preciseProperties = preciseElement.value(QStringLiteral("properties")).toObject();
+    preciseProperties.insert(QStringLiteral("capSize"), 60);
+    preciseElement.insert(QStringLiteral("properties"), preciseProperties);
+    preciseElements[2] = preciseElement;
+    preciseCard.insert(QStringLiteral("elements"), preciseElements);
+    preciseCards[1] = preciseCard;
+    preciseLayout.insert(QStringLiteral("cards"), preciseCards);
+    invalidButtonAppearance.insert(QStringLiteral("layout"), preciseLayout);
+    ok &= expectInvalid(invalidButtonAppearance,
+                        QStringLiteral("button cap larger than bezel"),
+                        QStringLiteral("capSize"));
+
     QJsonObject missingElementControl = migrationConfig;
     QJsonObject layout = missingElementControl.value(QStringLiteral("layout")).toObject();
     QJsonArray cards = layout.value(QStringLiteral("cards")).toArray();

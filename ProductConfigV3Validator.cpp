@@ -851,6 +851,22 @@ private:
         const QJsonArray controls =
             requiredArray(config, QStringLiteral("controls"), QStringLiteral("controls"), false);
         QSet<QString> ids;
+        QHash<QString, QHash<int, QString>> packedPositionOwners;
+        const auto claimPackedPosition =
+            [this, &packedPositionOwners](const QString &signalId,
+                                          int position,
+                                          const QString &path) {
+                const QString previousOwner =
+                    packedPositionOwners.value(signalId).value(position);
+                if (!previousOwner.isEmpty()) {
+                    addError(path
+                             + QStringLiteral(
+                                 " is assigned more than once; first assigned by %1")
+                                   .arg(previousOwner));
+                    return;
+                }
+                packedPositionOwners[signalId].insert(position, path);
+            };
         for (qsizetype index = 0; index < controls.size(); ++index) {
             if (!controls.at(index).isObject()) {
                 addError(QStringLiteral("controls[%1] must be an object").arg(index));
@@ -1004,10 +1020,13 @@ private:
                                     path + QStringLiteral(".position"));
                 if (validateSignalReference(signalId,
                                             path + QStringLiteral(".signalId"),
-                                            signalIds)) {
-                    validatePackedPosition(signalId,
-                                           position,
-                                           path + QStringLiteral(".position"));
+                                            signalIds)
+                    && validatePackedPosition(signalId,
+                                              position,
+                                              path + QStringLiteral(".position"))) {
+                    claimPackedPosition(signalId,
+                                        position,
+                                        path + QStringLiteral(".position"));
                 }
             } else if (type == QStringLiteral("fnr")) {
                 rejectUnknownKeys(control,
@@ -1067,16 +1086,28 @@ private:
                         ".positions forward/neutral/reverse must be distinct"));
                 }
                 if (hasSignal) {
-                    validatePackedPosition(signalId,
-                                           forward,
-                                           path + QStringLiteral(".positions.forward"));
-                    validatePackedPosition(signalId,
-                                           reverse,
-                                           path + QStringLiteral(".positions.reverse"));
+                    if (validatePackedPosition(signalId,
+                                               forward,
+                                               path + QStringLiteral(".positions.forward"))) {
+                        claimPackedPosition(signalId,
+                                            forward,
+                                            path + QStringLiteral(".positions.forward"));
+                    }
+                    if (validatePackedPosition(signalId,
+                                               reverse,
+                                               path + QStringLiteral(".positions.reverse"))) {
+                        claimPackedPosition(signalId,
+                                            reverse,
+                                            path + QStringLiteral(".positions.reverse"));
+                    }
                     if (neutral >= 0) {
-                        validatePackedPosition(signalId,
-                                               neutral,
-                                               path + QStringLiteral(".positions.neutral"));
+                        if (validatePackedPosition(signalId,
+                                                   neutral,
+                                                   path + QStringLiteral(".positions.neutral"))) {
+                            claimPackedPosition(signalId,
+                                                neutral,
+                                                path + QStringLiteral(".positions.neutral"));
+                        }
                     }
                 }
             } else if (type == QStringLiteral("numericDisplay")) {
@@ -1400,18 +1431,18 @@ private:
                     if (!renderer.isEmpty() && !renderers.contains(renderer)) {
                         addError(elementPath + QStringLiteral(".renderer is unsupported"));
                     }
-                    const int elementX =
-                        requiredInteger(element, QStringLiteral("x"),
-                                        elementPath + QStringLiteral(".x"));
-                    const int elementY =
-                        requiredInteger(element, QStringLiteral("y"),
-                                        elementPath + QStringLiteral(".y"));
-                    const int elementWidth =
-                        requiredInteger(element, QStringLiteral("width"),
-                                        elementPath + QStringLiteral(".width"));
-                    const int elementHeight =
-                        requiredInteger(element, QStringLiteral("height"),
-                                        elementPath + QStringLiteral(".height"));
+                    const double elementX =
+                        requiredNumber(element, QStringLiteral("x"),
+                                       elementPath + QStringLiteral(".x"));
+                    const double elementY =
+                        requiredNumber(element, QStringLiteral("y"),
+                                       elementPath + QStringLiteral(".y"));
+                    const double elementWidth =
+                        requiredNumber(element, QStringLiteral("width"),
+                                       elementPath + QStringLiteral(".width"));
+                    const double elementHeight =
+                        requiredNumber(element, QStringLiteral("height"),
+                                       elementPath + QStringLiteral(".height"));
                     if (elementX < 0 || elementY < 0) {
                         addError(elementPath + QStringLiteral(".x/y must be non-negative"));
                     }
@@ -1437,6 +1468,10 @@ private:
                              QStringLiteral("showLabel"),
                              QStringLiteral("showValue"),
                              QStringLiteral("compact"),
+                             QStringLiteral("label"),
+                             QStringLiteral("buttonVariant"),
+                             QStringLiteral("bezelSize"),
+                             QStringLiteral("capSize"),
                              QStringLiteral("decimals"),
                              QStringLiteral("unit"),
                              QStringLiteral("columns"),
@@ -1445,6 +1480,77 @@ private:
                              QStringLiteral("inactiveColor"),
                              QStringLiteral("labelPosition")},
                             elementPath + QStringLiteral(".properties"));
+                        const QSet<QString> buttonPropertyKeys{
+                            QStringLiteral("buttonVariant"),
+                            QStringLiteral("bezelSize"),
+                            QStringLiteral("capSize")
+                        };
+                        for (const QString &key : buttonPropertyKeys) {
+                            if (properties.contains(key)
+                                && renderer != QStringLiteral("button")) {
+                                addError(elementPath + QStringLiteral(".properties.")
+                                         + key
+                                         + QStringLiteral(
+                                             " is only valid for the button renderer"));
+                            }
+                        }
+                        if (properties.contains(QStringLiteral("label"))
+                            && !properties.value(QStringLiteral("label")).isString()) {
+                            addError(elementPath
+                                     + QStringLiteral(".properties.label must be a string"));
+                        }
+                        if (properties.contains(QStringLiteral("buttonVariant"))) {
+                            const QString variant =
+                                properties.value(QStringLiteral("buttonVariant")).toString();
+                            static const QSet<QString> variants{
+                                QStringLiteral("red"),
+                                QStringLiteral("black"),
+                                QStringLiteral("green"),
+                                QStringLiteral("orange")
+                            };
+                            if (!variants.contains(variant)) {
+                                addError(elementPath
+                                         + QStringLiteral(
+                                             ".properties.buttonVariant is unsupported"));
+                            }
+                        }
+                        bool bezelValid = false;
+                        bool capValid = false;
+                        double bezelSize = 0.0;
+                        double capSize = 0.0;
+                        if (properties.contains(QStringLiteral("bezelSize"))) {
+                            bezelSize =
+                                requiredNumber(properties,
+                                               QStringLiteral("bezelSize"),
+                                               elementPath
+                                                   + QStringLiteral(
+                                                       ".properties.bezelSize"),
+                                               &bezelValid);
+                            if (bezelValid && bezelSize <= 0.0) {
+                                addError(elementPath
+                                         + QStringLiteral(
+                                             ".properties.bezelSize must be positive"));
+                            }
+                        }
+                        if (properties.contains(QStringLiteral("capSize"))) {
+                            capSize =
+                                requiredNumber(properties,
+                                               QStringLiteral("capSize"),
+                                               elementPath
+                                                   + QStringLiteral(
+                                                       ".properties.capSize"),
+                                               &capValid);
+                            if (capValid && capSize <= 0.0) {
+                                addError(elementPath
+                                         + QStringLiteral(
+                                             ".properties.capSize must be positive"));
+                            }
+                        }
+                        if (bezelValid && capValid && capSize > bezelSize) {
+                            addError(elementPath
+                                     + QStringLiteral(
+                                         ".properties.capSize must not exceed bezelSize"));
+                        }
                     }
                 }
             } else if (kind == QStringLiteral("system")) {

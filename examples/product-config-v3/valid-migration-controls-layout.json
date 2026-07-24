@@ -282,13 +282,17 @@
             "id": "buttonElement",
             "controlId": "physicalButton",
             "renderer": "button",
-            "x": 620,
-            "y": 20,
+            "x": 620.375,
+            "y": 20.625,
             "width": 150,
             "height": 120,
             "properties": {
               "showLabel": true,
-              "compact": true
+              "compact": true,
+              "label": "BTN",
+              "buttonVariant": "green",
+              "bezelSize": 50,
+              "capSize": 36
             }
           },
           {

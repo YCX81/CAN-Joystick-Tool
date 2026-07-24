@@ -1363,6 +1363,25 @@
         "compact": {
           "type": "boolean"
         },
+        "label": {
+          "type": "string"
+        },
+        "buttonVariant": {
+          "enum": [
+            "red",
+            "black",
+            "green",
+            "orange"
+          ]
+        },
+        "bezelSize": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "capSize": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
         "decimals": {
           "type": "integer",
           "minimum": 0,
@@ -1430,20 +1449,20 @@
           ]
         },
         "x": {
-          "type": "integer",
+          "type": "number",
           "minimum": 0
         },
         "y": {
-          "type": "integer",
+          "type": "number",
           "minimum": 0
         },
         "width": {
-          "type": "integer",
-          "minimum": 1
+          "type": "number",
+          "exclusiveMinimum": 0
         },
         "height": {
-          "type": "integer",
-          "minimum": 1
+          "type": "number",
+          "exclusiveMinimum": 0
         },
         "properties": {
           "$ref": "#/definitions/layoutElementProperties"
