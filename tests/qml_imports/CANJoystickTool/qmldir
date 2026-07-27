@@ -1,0 +1,5 @@
+module CANJoystickTool
+singleton Constants 1.0 ../../../CANJoystickTool/Constants.qml
+singleton ComponentRegistry 1.0 ../../../CANJoystickTool/ComponentRegistry.qml
+DigitalDisplay 1.0 ../../../CANJoystickTool/DigitalDisplay.qml
+MiniJoystick 1.0 ../../../CANJoystickTool/MiniJoystick.qml

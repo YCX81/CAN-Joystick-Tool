@@ -353,6 +353,109 @@ bool verifySparseButtonConfig(LayoutManager &manager, const QJsonObject &config)
     return ok;
 }
 
+QJsonObject withMiniJoystickVisual(const QJsonObject &source,
+                                   const QString &xBindingId,
+                                   const QString &yBindingId)
+{
+    QJsonObject config = source;
+    QJsonObject layout = config.value(QStringLiteral("layout")).toObject();
+    QJsonObject grid = layout.value(QStringLiteral("grid")).toObject();
+    QJsonArray cells = grid.value(QStringLiteral("cells")).toArray();
+
+    for (int index = 0; index < cells.size(); ++index) {
+        QJsonObject cell = cells.at(index).toObject();
+        if (cell.value(QStringLiteral("row")).toInt(-1) != 1
+            || cell.value(QStringLiteral("col")).toInt(-1) != 0) {
+            continue;
+        }
+
+        QJsonArray visuals = cell.value(QStringLiteral("visualComponents")).toArray();
+        QJsonObject miniJoystick{
+            {QStringLiteral("type"), QStringLiteral("MiniJoystick")},
+            {QStringLiteral("x"), 300},
+            {QStringLiteral("y"), 20},
+            {QStringLiteral("config"), QJsonObject{}},
+            {QStringLiteral("xBindingId"), xBindingId}
+        };
+        if (!yBindingId.isNull()) {
+            miniJoystick.insert(QStringLiteral("yBindingId"), yBindingId);
+        }
+        visuals.append(miniJoystick);
+        cell.insert(QStringLiteral("visualComponents"), visuals);
+        cells[index] = cell;
+        break;
+    }
+
+    grid.insert(QStringLiteral("cells"), cells);
+    layout.insert(QStringLiteral("grid"), grid);
+    config.insert(QStringLiteral("layout"), layout);
+    return config;
+}
+
+QJsonObject withArbitrarilyNamedRollers(const QJsonObject &source)
+{
+    QJsonObject config = source;
+    QJsonArray components = config.value(QStringLiteral("components")).toArray();
+    components.append(QJsonObject{
+        {QStringLiteral("id"), QStringLiteral("travel_axis_a")},
+        {QStringLiteral("type"), QStringLiteral("roller")},
+        {QStringLiteral("label"), QStringLiteral("任意滚轮 A")},
+        {QStringLiteral("position"), QStringLiteral("ejm.handleXPos")},
+        {QStringLiteral("status"), QStringLiteral("ejm.handleXStatus")}
+    });
+    components.append(QJsonObject{
+        {QStringLiteral("id"), QStringLiteral("travel_axis_b")},
+        {QStringLiteral("type"), QStringLiteral("roller")},
+        {QStringLiteral("label"), QStringLiteral("任意滚轮 B")},
+        {QStringLiteral("position"), QStringLiteral("ejm.handleYPos")},
+        {QStringLiteral("status"), QStringLiteral("ejm.handleYStatus")}
+    });
+    config.insert(QStringLiteral("components"), components);
+    return config;
+}
+
+bool verifyMiniJoystickDualBindingValidation(LayoutManager &manager)
+{
+    const QJsonObject standard = manager.buildStandardProductConfig(QJsonObject{
+        {QStringLiteral("model"), QStringLiteral("GENERIC-MINI-JOYSTICK")},
+        {QStringLiteral("buttonCount"), 0},
+        {QStringLiteral("rollerCount"), 2}
+    });
+    const QJsonObject base = withArbitrarilyNamedRollers(standard);
+
+    bool ok = true;
+    const QJsonObject valid = withMiniJoystickVisual(
+        base, QStringLiteral("travel_axis_a"), QStringLiteral("travel_axis_b"));
+    const QJsonObject validResult = manager.validateProductConfig(valid);
+    ok &= expect(validResult.value(QStringLiteral("ok")).toBool(),
+                 QStringLiteral("MiniJoystick must accept any two roller component IDs"));
+
+    const QJsonObject missingY = withMiniJoystickVisual(
+        base, QStringLiteral("travel_axis_a"), QString());
+    const QJsonObject missingYResult = manager.validateProductConfig(missingY);
+    ok &= expect(!missingYResult.value(QStringLiteral("ok")).toBool(),
+                 QStringLiteral("MiniJoystick without yBindingId must be rejected"));
+
+    const QJsonObject unknownY = withMiniJoystickVisual(
+        base, QStringLiteral("travel_axis_a"), QStringLiteral("missing_axis"));
+    const QJsonObject unknownYResult = manager.validateProductConfig(unknownY);
+    ok &= expect(!unknownYResult.value(QStringLiteral("ok")).toBool(),
+                 QStringLiteral("MiniJoystick with an unknown Y binding must be rejected"));
+
+    const QJsonObject sameRoller = withMiniJoystickVisual(
+        base, QStringLiteral("travel_axis_a"), QStringLiteral("travel_axis_a"));
+    const QJsonObject sameRollerResult = manager.validateProductConfig(sameRoller);
+    ok &= expect(!sameRollerResult.value(QStringLiteral("ok")).toBool(),
+                 QStringLiteral("MiniJoystick must bind two different rollers"));
+
+    const QJsonObject joystickComponent = withMiniJoystickVisual(
+        base, QStringLiteral("travel_axis_a"), QStringLiteral("joystick_xy"));
+    const QJsonObject joystickComponentResult = manager.validateProductConfig(joystickComponent);
+    ok &= expect(!joystickComponentResult.value(QStringLiteral("ok")).toBool(),
+                 QStringLiteral("MiniJoystick bindings must not reference a joystick component"));
+    return ok;
+}
+
 } // namespace
 
 int main(int argc, char *argv[])
@@ -395,6 +498,7 @@ int main(int argc, char *argv[])
         {QStringLiteral("rollerCount"), -1}
     });
     ok &= verifyGenericConfig(manager, emptyConfig, 0, 0, QString());
+    ok &= verifyMiniJoystickDualBindingValidation(manager);
     ok &= verifyTypedCustomerPersistence();
 
     if (!ok) {

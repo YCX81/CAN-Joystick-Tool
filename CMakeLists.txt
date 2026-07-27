@@ -55,6 +55,7 @@ qt_add_qml_module(CANJoystickTool
         CANJoystickTool/StatusIndicator.qml
         CANJoystickTool/RollerWheel.qml
         CANJoystickTool/RotaryPotentiometer.qml
+        CANJoystickTool/MiniJoystick.qml
         CANJoystickTool/DigitalDisplay.qml
         CANJoystickTool/RockerSwitch.qml
         CANJoystickTool/IndustrialButton.qml
@@ -67,6 +68,7 @@ qt_add_qml_module(CANJoystickTool
         CANJoystickTool/VerticalRollerUnit.qml
         CANJoystickTool/HorizontalRollerUnit.qml
         CANJoystickTool/RotaryPotentiometerUnit.qml
+        CANJoystickTool/MiniJoystickUnit.qml
         CANJoystickTool/HorizontalFNRUnit.qml
         CANJoystickTool/HorizontalFNRRightUnit.qml
         # 可视化编辑组件
@@ -105,9 +107,9 @@ function(add_qt_runtime_test test_name target_name)
             COMMAND "${CMAKE_COMMAND}" -E env
                 "PATH=${QT_BIN_DIR};${CXX_RUNTIME_DIR};$ENV{PATH}"
                 "QT_PLUGIN_PATH=${QT_PREFIX_DIR}/plugins"
-                "$<TARGET_FILE:${target_name}>")
+                "$<TARGET_FILE:${target_name}>" ${ARGN})
     else()
-        add_test(NAME ${test_name} COMMAND "$<TARGET_FILE:${target_name}>")
+        add_test(NAME ${test_name} COMMAND "$<TARGET_FILE:${target_name}>" ${ARGN})
     endif()
 endfunction()
 
@@ -148,6 +150,20 @@ if(BUILD_TESTING)
     )
     target_link_libraries(fnr_mapping_smoke PRIVATE Qt6::Quick)
     add_qt_runtime_test(fnr_mapping_smoke fnr_mapping_smoke)
+
+    add_executable(mini_joystick_behavior_smoke
+        tests/mini_joystick_behavior_smoke.cpp
+    )
+    target_link_libraries(mini_joystick_behavior_smoke PRIVATE
+        Qt6::Quick
+        Qt6::QuickControls2
+    )
+    add_qt_runtime_test(
+        mini_joystick_behavior_smoke
+        mini_joystick_behavior_smoke
+        "${CMAKE_CURRENT_SOURCE_DIR}"
+        "${CMAKE_CURRENT_BINARY_DIR}"
+    )
 endif()
 
 if(WIN32 AND EXISTS "${QT_SQLITE_DRIVER}")

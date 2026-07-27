@@ -834,6 +834,7 @@ bool isRuntimeVisualType(const QString &type)
     return type.startsWith(QStringLiteral("Button"))
         || type.contains(QStringLiteral("Roller"))
         || type.contains(QStringLiteral("Potentiometer"))
+        || type == QStringLiteral("MiniJoystick")
         || type.contains(QStringLiteral("FNR"));
 }
 
@@ -1495,6 +1496,43 @@ QJsonObject LayoutManager::validateProductConfig(const QJsonObject &configJson) 
             const QString visualType = visual.value(QStringLiteral("type")).toString();
             const QString bindingId = visual.value(QStringLiteral("bindingId")).toString().trimmed();
             if (!isRuntimeVisualType(visualType)) {
+                continue;
+            }
+            if (visualType == QStringLiteral("MiniJoystick")) {
+                const auto validateAxisBinding = [&](const QString &key, const QString &axisName) {
+                    const QString axisBinding = visual.value(key).toString().trimmed();
+                    if (axisBinding.isEmpty()) {
+                        appendMessage(errors, tr("MiniJoystick requires %1BindingId").arg(axisName));
+                        return;
+                    }
+
+                    const QString baseId = bindingBaseId(axisBinding);
+                    if (!componentIds.contains(baseId)) {
+                        appendMessage(
+                            errors,
+                            tr("MiniJoystick %1BindingId %2 references missing component %3")
+                                .arg(axisName, axisBinding, baseId));
+                        return;
+                    }
+
+                    const QString componentType = componentTypes.value(baseId);
+                    if (componentType != QStringLiteral("roller")) {
+                        appendMessage(
+                            errors,
+                            tr("MiniJoystick %1BindingId %2 must reference a roller component")
+                                .arg(axisName, axisBinding));
+                    }
+                };
+
+                validateAxisBinding(QStringLiteral("xBindingId"), QStringLiteral("x"));
+                validateAxisBinding(QStringLiteral("yBindingId"), QStringLiteral("y"));
+                const QString xBinding = visual.value(QStringLiteral("xBindingId")).toString().trimmed();
+                const QString yBinding = visual.value(QStringLiteral("yBindingId")).toString().trimmed();
+                if (!xBinding.isEmpty()
+                    && !yBinding.isEmpty()
+                    && bindingBaseId(xBinding) == bindingBaseId(yBinding)) {
+                    appendMessage(errors, tr("MiniJoystick requires two different roller components"));
+                }
                 continue;
             }
             if (bindingId.isEmpty()) {

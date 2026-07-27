@@ -20,7 +20,7 @@ QtObject {
         {
             id: "rollers",
             name: "Rollers",
-            components: ["VerticalRoller", "HorizontalRoller", "RotaryPotentiometer"]
+            components: ["VerticalRoller", "HorizontalRoller", "RotaryPotentiometer", "MiniJoystick"]
         }
     ]
 
@@ -194,6 +194,22 @@ QtObject {
                 minimumAngle: 30,
                 maximumAngle: 330,
                 displayUnit: "%",
+                label: ""
+            },
+            hasLabel: true
+        },
+
+        "MiniJoystick": {
+            name: "2-Axis",
+            description: "双滚轮绑定的俯视 XY 平面摇杆",
+            defaultWidth: 244,
+            defaultHeight: 240,
+            thumbnailScale: 0.30,
+            defaultConfig: {
+                xValue: 0,
+                yValue: 0,
+                minValue: -1,
+                maxValue: 1,
                 label: ""
             },
             hasLabel: true

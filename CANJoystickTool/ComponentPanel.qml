@@ -185,7 +185,8 @@ Item {
                                     componentType: modelData
                                     componentDef: ComponentRegistry.getDefinition(modelData)
                                     tileWidth: modelData === "HorizontalRoller" ? 112
-                                               : modelData === "RotaryPotentiometer" ? 84 : 66
+                                               : (modelData === "RotaryPotentiometer"
+                                                  || modelData === "MiniJoystick") ? 84 : 66
                                     tileHeight: 72
                                     onClicked: {
                                         root.activeComponentType = modelData
@@ -275,8 +276,9 @@ Item {
                         Layout.fillWidth: true
                     }
 
-                    Row {
+                    Flow {
                         Layout.alignment: Qt.AlignHCenter
+                        Layout.fillWidth: true
                         spacing: 8
 
                         Repeater {
@@ -286,7 +288,8 @@ Item {
                                 componentType: modelData
                                 componentDef: ComponentRegistry.getDefinition(modelData)
                                 tileWidth: modelData === "HorizontalRoller" ? 104
-                                           : modelData === "RotaryPotentiometer" ? 78 : 62
+                                           : (modelData === "RotaryPotentiometer"
+                                              || modelData === "MiniJoystick") ? 78 : 62
                                 tileHeight: modelData === "HorizontalRoller" ? 64 : 76
                                 onClicked: {
                                     root.activeComponentType = modelData
@@ -488,6 +491,7 @@ Item {
             if (type === "VerticalRoller") return "VerticalRollerUnit.qml"
             if (type === "HorizontalRoller") return "HorizontalRollerUnit.qml"
             if (type === "RotaryPotentiometer") return "RotaryPotentiometerUnit.qml"
+            if (type === "MiniJoystick") return "MiniJoystickUnit.qml"
             return ""
         }
 

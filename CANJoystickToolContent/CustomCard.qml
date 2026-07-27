@@ -107,6 +107,15 @@ AluminumPanel {
                 }
                 break
 
+            case "MiniJoystick":
+                if (instance.moved) {
+                    instance.moved.connect(function(x, y) {
+                        componentValueChanged(compData.id, "xValue", x)
+                        componentValueChanged(compData.id, "yValue", y)
+                    })
+                }
+                break
+
             case "FNRSwitch":
                 if (instance.fnrChanged) {
                     instance.fnrChanged.connect(function(state) {
@@ -144,6 +153,7 @@ AluminumPanel {
         if (type === "VerticalRoller") return prefix + "VerticalRollerUnit.qml"
         if (type === "HorizontalRoller") return prefix + "HorizontalRollerUnit.qml"
         if (type === "RotaryPotentiometer") return prefix + "RotaryPotentiometerUnit.qml"
+        if (type === "MiniJoystick") return prefix + "MiniJoystickUnit.qml"
         // 基础组件 (向后兼容)
         var mapping = {
             "IndustrialButton": prefix + "IndustrialButton.qml",

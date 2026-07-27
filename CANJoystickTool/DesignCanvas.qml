@@ -161,8 +161,7 @@ AluminumPanel {
                     text: contextMenu.targetComponent
                           && getBindCategory(contextMenu.targetComponent.componentType) === "fnr"
                           ? "设置FNR按钮..."
-                          : (contextMenu.targetComponent && contextMenu.targetComponent.bindingId
-                             ? ("Binding: " + contextMenu.targetComponent.bindingId) : "Set Binding...")
+                          : bindingSummary(contextMenu.targetComponent)
                     height: 30
                     onTriggered: {
                         contextMenu.close()
@@ -369,7 +368,45 @@ AluminumPanel {
 
         property var targetComponent: null
         property var filteredBindings: []
+        property string activeAxis: "x"
         readonly property real maxPopupHeight: Math.max(150, Math.min(360, popupHostHeight(bindingEditor) - 16))
+
+        function isDualAxis() {
+            return targetComponent && targetComponent.componentType === "MiniJoystick"
+        }
+
+        function currentBinding() {
+            if (!targetComponent)
+                return ""
+            if (!isDualAxis())
+                return targetComponent.bindingId || ""
+            return activeAxis === "y"
+                    ? (targetComponent.yBindingId || "")
+                    : (targetComponent.xBindingId || "")
+        }
+
+        function setCurrentBinding(value) {
+            if (!targetComponent)
+                return
+            if (!isDualAxis()) {
+                targetComponent.bindingId = value
+            } else if (activeAxis === "y") {
+                targetComponent.yBindingId = value
+            } else {
+                targetComponent.xBindingId = value
+            }
+        }
+
+        function refreshFilteredBindings() {
+            if (!targetComponent) {
+                filteredBindings = []
+                return
+            }
+            filteredBindings = root.getFilteredBindings(
+                        targetComponent.componentType, targetComponent, activeAxis)
+        }
+
+        onActiveAxisChanged: refreshFilteredBindings()
 
         background: Rectangle {
             radius: 10
@@ -399,10 +436,52 @@ AluminumPanel {
                 width: bindingFlick.width - 16
                 spacing: 4
 
-                Text { text: "设置数据绑定"; font.pixelSize: 11; font.bold: true; color: "#2a2a2e" }
+                Text {
+                    text: bindingEditor.isDualAxis() ? "选择两个滚轮" : "设置数据绑定"
+                    font.pixelSize: 11
+                    font.bold: true
+                    color: "#2a2a2e"
+                }
+
+                Row {
+                    width: parent.width
+                    height: bindingEditor.isDualAxis() ? 28 : 0
+                    spacing: 4
+                    visible: bindingEditor.isDualAxis()
+
+                    Repeater {
+                        model: [
+                            { axis: "x", label: "X 通道" },
+                            { axis: "y", label: "Y 通道" }
+                        ]
+
+                        Rectangle {
+                            required property var modelData
+                            width: (bindingCol.width - 4) / 2
+                            height: 28
+                            radius: 5
+                            color: bindingEditor.activeAxis === modelData.axis ? "#e8f0fe" : "#08000000"
+                            border.width: 1
+                            border.color: bindingEditor.activeAxis === modelData.axis ? "#55007aff" : "#12000000"
+
+                            Text {
+                                anchors.centerIn: parent
+                                text: modelData.label
+                                color: "#2a2a2e"
+                                font.pixelSize: 9
+                                font.bold: bindingEditor.activeAxis === modelData.axis
+                            }
+
+                            MouseArea {
+                                anchors.fill: parent
+                                onClicked: bindingEditor.activeAxis = modelData.axis
+                            }
+                        }
+                    }
+                }
 
                 Text {
-                    text: "当前: " + (bindingEditor.targetComponent ? (bindingEditor.targetComponent.bindingId || "无") : "无")
+                    text: "当前: " + (bindingEditor.currentBinding() || "无")
                     font.pixelSize: 9; color: "#76767e"
                 }
 
@@ -415,10 +494,12 @@ AluminumPanel {
                     Text { anchors.centerIn: parent; text: "清除绑定"; font.pixelSize: 10; color: "#ff453a" }
                     MouseArea { id: clearMA; anchors.fill: parent; hoverEnabled: true
                         onClicked: {
-                            if (bindingEditor.targetComponent)
-                                bindingEditor.targetComponent.bindingId = ""
-                            bindingEditor.close()
+                            bindingEditor.setCurrentBinding("")
                             root.layoutModified()
+                            if (bindingEditor.isDualAxis() && bindingEditor.activeAxis === "x")
+                                bindingEditor.activeAxis = "y"
+                            else
+                                bindingEditor.close()
                         }
                     }
                 }
@@ -429,7 +510,7 @@ AluminumPanel {
                     Rectangle {
                         width: bindingCol.width; height: 26; radius: 4
                         color: {
-                            var isCurrent = bindingEditor.targetComponent && bindingEditor.targetComponent.bindingId === modelData.bindId
+                            var isCurrent = bindingEditor.currentBinding() === modelData.bindId
                             return isCurrent ? "#e8f0fe" : (bma.containsMouse ? "#08000000" : "transparent")
                         }
                         Row {
@@ -440,10 +521,12 @@ AluminumPanel {
                         }
                         MouseArea { id: bma; anchors.fill: parent; hoverEnabled: true
                             onClicked: {
-                                if (bindingEditor.targetComponent)
-                                    bindingEditor.targetComponent.bindingId = modelData.bindId
-                                bindingEditor.close()
+                                bindingEditor.setCurrentBinding(modelData.bindId)
                                 root.layoutModified()
+                                if (bindingEditor.isDualAxis() && bindingEditor.activeAxis === "x")
+                                    bindingEditor.activeAxis = "y"
+                                else
+                                    bindingEditor.close()
                             }
                         }
                     }
@@ -452,7 +535,13 @@ AluminumPanel {
                 // Hint when no options
                 Text {
                     visible: bindingEditor.filteredBindings.length === 0
-                    text: "无匹配的绑定项"; font.pixelSize: 9; color: "#a0a0a8"
+                    text: bindingEditor.isDualAxis()
+                          ? "没有可用滚轮，请先在产品中配置两个滚轮"
+                          : "无匹配的绑定项"
+                    font.pixelSize: 9
+                    color: "#a0a0a8"
+                    wrapMode: Text.Wrap
+                    width: parent.width
                 }
             }
         }
@@ -463,9 +552,21 @@ AluminumPanel {
     // Available bindings (set from ProductEditor via property)
     property var productBindings: []
 
+    function bindingSummary(wrapper) {
+        if (!wrapper)
+            return "Set Binding..."
+        if (wrapper.componentType === "MiniJoystick") {
+            var xBinding = wrapper.xBindingId || "无"
+            var yBinding = wrapper.yBindingId || "无"
+            return "X: " + xBinding + "  Y: " + yBinding
+        }
+        return wrapper.bindingId ? ("Binding: " + wrapper.bindingId) : "Set Binding..."
+    }
+
     // Detect component category
     function getBindCategory(wrapperType) {
         if (wrapperType.indexOf("Button") === 0) return "button"
+        if (wrapperType === "MiniJoystick") return "dualAxis"
         if (wrapperType === "VerticalRoller"
                 || wrapperType === "HorizontalRoller"
                 || wrapperType === "RotaryPotentiometer") return "roller"
@@ -474,10 +575,16 @@ AluminumPanel {
     }
 
     // Build filtered bindings based on component type
-    function getFilteredBindings(wrapperType) {
+    function getFilteredBindings(wrapperType, wrapper, activeAxis) {
         var result = []
         var allComps = productBindings || []
         var cat = getBindCategory(wrapperType)
+        var excludedBinding = ""
+        if (cat === "dualAxis" && wrapper) {
+            excludedBinding = activeAxis === "y"
+                    ? (wrapper.xBindingId || "")
+                    : (wrapper.yBindingId || "")
+        }
 
         for (var i = 0; i < allComps.length; i++) {
             var comp = allComps[i]
@@ -490,6 +597,14 @@ AluminumPanel {
             } else if (cat === "roller" && (comp.type === "roller"
                        || comp.type === "potentiometer")) {
                 result.push({ bindId: comp.id, desc: comp.label || "轴", color: "#ff9500" })
+            } else if (cat === "dualAxis"
+                       && comp.type === "roller"
+                       && comp.id !== excludedBinding) {
+                result.push({
+                    bindId: comp.id,
+                    desc: comp.label || "滚轮",
+                    color: "#ff9500"
+                })
             } else if (cat === "fnr" && comp.type === "fnrSwitch") {
                 // FNR 直接绑定到 fnrSwitch 组件（按钮映射在 JSON 中定义）
                 result.push({ bindId: comp.id, desc: comp.label || "FNR", color: "#af52de" })
@@ -499,10 +614,10 @@ AluminumPanel {
         }
 
         // Fallback: show all non-joystick components
-        if (result.length === 0) {
+        if (result.length === 0 && cat !== "dualAxis") {
             for (var j = 0; j < allComps.length; j++) {
                 var c = allComps[j]
-                if (c.type === "joystick" || c.type === "buttonGroup") continue
+                if ((c.type === "joystick" && cat !== "dualAxis") || c.type === "buttonGroup") continue
                 result.push({ bindId: c.id, desc: c.label || c.type, color: "#007aff" })
             }
         }
@@ -559,7 +674,8 @@ AluminumPanel {
     function showBindingEditor(wrapper) {
         if (!wrapper) return
         bindingEditor.targetComponent = wrapper
-        bindingEditor.filteredBindings = getFilteredBindings(wrapper.componentType)
+        bindingEditor.activeAxis = "x"
+        bindingEditor.refreshFilteredBindings()
         placeBindingEditorForWrapper(wrapper)
         bindingEditor.open()
         Qt.callLater(function() {
@@ -897,6 +1013,8 @@ AluminumPanel {
             var wrapper = addComponent(compData.type, (compData.x || 0) * sx, (compData.y || 0) * sy, compData.config)
             if (wrapper && compData.id) wrapper.componentId = compData.id
             if (wrapper && compData.bindingId) wrapper.bindingId = compData.bindingId
+            if (wrapper && compData.xBindingId) wrapper.xBindingId = compData.xBindingId
+            if (wrapper && compData.yBindingId) wrapper.yBindingId = compData.yBindingId
         }
         nextComponentId = components.length + 1
     }
@@ -907,6 +1025,10 @@ AluminumPanel {
         for (var i = 0; i < components.length; i++) {
             var bid = components[i].bindingId
             if (bid && bid !== "") used.push(bid)
+            var xBid = components[i].xBindingId
+            var yBid = components[i].yBindingId
+            if (xBid && xBid !== "" && used.indexOf(xBid) < 0) used.push(xBid)
+            if (yBid && yBid !== "" && used.indexOf(yBid) < 0) used.push(yBid)
         }
         return used
     }

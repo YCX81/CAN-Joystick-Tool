@@ -11,6 +11,8 @@ Item {
     property var componentConfig: ({})
     property Item wrappedComponent: null
     property string bindingId: ""  // Maps to product JSON components[].id
+    property string xBindingId: "" // MiniJoystick X-axis component binding
+    property string yBindingId: "" // MiniJoystick Y-axis component binding
 
     property bool selected: false
     property bool isEditing: true
@@ -175,6 +177,7 @@ Item {
         if (type === "VerticalRoller") return "VerticalRollerUnit.qml"
         if (type === "HorizontalRoller") return "HorizontalRollerUnit.qml"
         if (type === "RotaryPotentiometer") return "RotaryPotentiometerUnit.qml"
+        if (type === "MiniJoystick") return "MiniJoystickUnit.qml"
         var mapping = {
             "IndustrialButton": "IndustrialButton.qml",
             "RollerWheel": "RollerWheel.qml",
@@ -297,7 +300,16 @@ Item {
     }
 
     function toJSON() {
-        return { id: componentId, type: componentType, x: root.x, y: root.y, config: componentConfig, bindingId: bindingId }
+        return {
+            id: componentId,
+            type: componentType,
+            x: root.x,
+            y: root.y,
+            config: componentConfig,
+            bindingId: bindingId,
+            xBindingId: xBindingId,
+            yBindingId: yBindingId
+        }
     }
 
     function fromJSON(data) {
@@ -307,6 +319,8 @@ Item {
         root.y = data.y || 0
         componentConfig = data.config || {}
         bindingId = data.bindingId || ""
+        xBindingId = data.xBindingId || ""
+        yBindingId = data.yBindingId || ""
         if (componentType) loadComponent(componentType)
     }
 }

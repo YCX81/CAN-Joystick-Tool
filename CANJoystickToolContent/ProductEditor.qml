@@ -1195,6 +1195,9 @@ Item {
     // Map product component definition to DesignCanvas component type
     function mapToCanvasType(compDef) {
         switch (compDef.type) {
+        // MiniJoystick is a component-library visual. It is bound manually to
+        // two independent roller components instead of a joystick component.
+        case "joystick": return null
         case "buttonGroup": return { type: "ButtonRed", perItem: true, count: compDef.count || 8, label: "" }
         case "roller":
         case "potentiometer": return {
@@ -1252,12 +1255,27 @@ Item {
                 if (mapping.label) config.label = mapping.label
                 if (mapping.lampCount) config.lampCount = mapping.lampCount
                 var wrapper = canvas.addComponent(mapping.type, x, y, config)
-                if (wrapper)
-                    wrapper.bindingId = resolved[i].id
+                if (wrapper) {
+                    if (mapping.dualBinding) {
+                        wrapper.xBindingId = resolved[i].id
+                        wrapper.yBindingId = resolved[i].id
+                    } else {
+                        wrapper.bindingId = resolved[i].id
+                    }
+                }
                 x += w + 8
                 maxRowH = Math.max(maxRowH, h)
             }
         }
+    }
+
+    function promptMiniJoystickBindings(canvas, wrapper) {
+        if (!canvas || !wrapper || wrapper.componentType !== "MiniJoystick")
+            return
+        Qt.callLater(function() {
+            if (wrapper && wrapper.parent)
+                canvas.showBindingEditor(wrapper)
+        })
     }
 
     function cloneConfig(config) {
@@ -1317,6 +1335,10 @@ Item {
         var wrapper = canvas.addComponent(type, pos.x, pos.y, config)
         if (wrapper && visual.bindingId)
             wrapper.bindingId = visual.bindingId
+        if (wrapper && visual.xBindingId)
+            wrapper.xBindingId = visual.xBindingId
+        if (wrapper && visual.yBindingId)
+            wrapper.yBindingId = visual.yBindingId
         return wrapper
     }
 
@@ -1400,8 +1422,11 @@ Item {
     function canvasComponentIdsFromVisualComponents(visualComponents, fallbackComponents, allowFallback) {
         var result = []
         var visuals = visualComponents || []
-        for (var i = 0; i < visuals.length; i++)
+        for (var i = 0; i < visuals.length; i++) {
             appendCanvasComponentId(result, bindingComponentId(visuals[i].bindingId))
+            appendCanvasComponentId(result, bindingComponentId(visuals[i].xBindingId))
+            appendCanvasComponentId(result, bindingComponentId(visuals[i].yBindingId))
+        }
         if (result.length > 0 || allowFallback === false)
             return result
         return sanitizedCanvasComponentIds(fallbackComponents || [])
@@ -1551,7 +1576,15 @@ Item {
                 var comps = canvasData.components || []
                 cd.components = canvasComponentIdsFromVisualComponents(comps, cell.cellCompIds, false)
                 for (var j = 0; j < comps.length; j++)
-                    cd.visualComponents.push({ type: comps[j].type, x: comps[j].x, y: comps[j].y, config: comps[j].config, bindingId: comps[j].bindingId || "" })
+                    cd.visualComponents.push({
+                        type: comps[j].type,
+                        x: comps[j].x,
+                        y: comps[j].y,
+                        config: comps[j].config,
+                        bindingId: comps[j].bindingId || "",
+                        xBindingId: comps[j].xBindingId || "",
+                        yBindingId: comps[j].yBindingId || ""
+                    })
             }
             cells.push(cd)
         }
@@ -2636,10 +2669,12 @@ Item {
                             if (!cell || !cell.canvasItem) return
                             var size = ComponentRegistry.getDefaultSize(ct)
                             var cfg = ComponentRegistry.getDefaultConfig(ct)
-                            cell.canvasItem.addComponent(ct,
-                                                         (cell.canvasItem.canvasWidth - size.width) / 2,
-                                                         (cell.canvasItem.canvasHeight - size.height) / 2,
-                                                         cfg)
+                            var wrapper = cell.canvasItem.addComponent(
+                                        ct,
+                                        (cell.canvasItem.canvasWidth - size.width) / 2,
+                                        (cell.canvasItem.canvasHeight - size.height) / 2,
+                                        cfg)
+                            root.promptMiniJoystickBindings(cell.canvasItem, wrapper)
                             hasUnsavedChanges = true
                             refreshBindingStatus()
                         }
@@ -2670,10 +2705,12 @@ Item {
                                     var pos = cell.canvasItem.displayToCanvasPoint(displayPos.x, displayPos.y)
                                     var size = ComponentRegistry.getDefaultSize(dp.componentType)
                                     var cfg = ComponentRegistry.getDefaultConfig(dp.componentType)
-                                    cell.canvasItem.addComponent(dp.componentType,
-                                                                 pos.x - size.width / 2,
-                                                                 pos.y - size.height / 2,
-                                                                 cfg)
+                                    var wrapper = cell.canvasItem.addComponent(
+                                                dp.componentType,
+                                                pos.x - size.width / 2,
+                                                pos.y - size.height / 2,
+                                                cfg)
+                                    root.promptMiniJoystickBindings(cell.canvasItem, wrapper)
                                     hasUnsavedChanges = true
                                     refreshBindingStatus()
                                     return
@@ -3130,6 +3167,7 @@ Item {
                     if (t === "VerticalRoller") return dpVRollerComp
                     if (t === "HorizontalRoller") return dpHRollerComp
                     if (t === "RotaryPotentiometer") return dpPotentiometerComp
+                    if (t === "MiniJoystick") return dpMiniJoystickComp
                     if (t === "HorizontalFNR") return dpHFNRComp
                     if (t === "HorizontalFNRRight") return dpHFNRRightComp
                     return null
@@ -3144,6 +3182,7 @@ Item {
     Component { id: dpVRollerComp; VerticalRollerUnit {} }
     Component { id: dpHRollerComp; HorizontalRollerUnit {} }
     Component { id: dpPotentiometerComp; RotaryPotentiometerUnit {} }
+    Component { id: dpMiniJoystickComp; MiniJoystickUnit {} }
     Component { id: dpHFNRComp; HorizontalFNRUnit {} }
     Component { id: dpHFNRRightComp; HorizontalFNRRightUnit {} }
 
