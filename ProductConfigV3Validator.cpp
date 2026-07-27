@@ -1012,6 +1012,8 @@ private:
                                   {QStringLiteral("id"),
                                    QStringLiteral("type"),
                                    QStringLiteral("label"),
+                                   QStringLiteral("testPattern"),
+                                   QStringLiteral("cycleCount"),
                                    QStringLiteral("topology"),
                                    QStringLiteral("xAxis"),
                                    QStringLiteral("yAxis")},
@@ -1036,6 +1038,27 @@ private:
                 } else {
                     addError(path + QStringLiteral(
                         ".topology.kind must be cross2D or xy2D"));
+                }
+                if (control.contains(QStringLiteral("testPattern"))) {
+                    const QString testPattern =
+                        control.value(QStringLiteral("testPattern")).toString();
+                    if (testPattern != QStringLiteral("ninePoint")
+                        && testPattern != QStringLiteral("cross")) {
+                        addError(path
+                                 + QStringLiteral(
+                                     ".testPattern must be ninePoint or cross"));
+                    }
+                }
+                if (control.contains(QStringLiteral("cycleCount"))) {
+                    const int cycleCount =
+                        requiredInteger(control,
+                                        QStringLiteral("cycleCount"),
+                                        path + QStringLiteral(".cycleCount"));
+                    if (cycleCount < 1 || cycleCount > 10) {
+                        addError(path
+                                 + QStringLiteral(
+                                     ".cycleCount must be from 1 to 10"));
+                    }
                 }
                 validateAxisBinding(control,
                                     QStringLiteral("xAxis"),

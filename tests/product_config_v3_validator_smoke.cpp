@@ -970,6 +970,41 @@ bool verifyMiniJoystickExtensions(const QJsonObject &cross2d)
     return ok;
 }
 
+bool verifyJoystickTestSettings(const QJsonObject &base)
+{
+    QJsonObject configured = base;
+    QJsonArray controls = configured.value(QStringLiteral("controls")).toArray();
+    QJsonObject joystick = controls.first().toObject();
+    joystick.insert(QStringLiteral("testPattern"), QStringLiteral("cross"));
+    joystick.insert(QStringLiteral("cycleCount"), 3);
+    controls[0] = joystick;
+    configured.insert(QStringLiteral("controls"), controls);
+
+    bool ok = expectValid(configured,
+                          QStringLiteral("configured joystick functional test"));
+
+    QJsonObject invalidPattern = configured;
+    controls = invalidPattern.value(QStringLiteral("controls")).toArray();
+    joystick = controls.first().toObject();
+    joystick.insert(QStringLiteral("testPattern"), QStringLiteral("circle"));
+    controls[0] = joystick;
+    invalidPattern.insert(QStringLiteral("controls"), controls);
+    ok &= expectInvalid(invalidPattern,
+                        QStringLiteral("invalid joystick test pattern"),
+                        QStringLiteral("testPattern"));
+
+    QJsonObject invalidCycles = configured;
+    controls = invalidCycles.value(QStringLiteral("controls")).toArray();
+    joystick = controls.first().toObject();
+    joystick.insert(QStringLiteral("cycleCount"), 0);
+    controls[0] = joystick;
+    invalidCycles.insert(QStringLiteral("controls"), controls);
+    ok &= expectInvalid(invalidCycles,
+                        QStringLiteral("invalid joystick cycle count"),
+                        QStringLiteral("cycleCount"));
+    return ok;
+}
+
 } // namespace
 
 int main(int argc, char *argv[])
@@ -1017,6 +1052,7 @@ int main(int argc, char *argv[])
     ok &= verifyMigrationControlAndLayoutRules(migrationConfig);
     ok &= verifyCalibrationAndIdentityRules(singleAxis, canopen);
     ok &= verifyMiniJoystickExtensions(cross2d);
+    ok &= verifyJoystickTestSettings(cross2d);
 
     if (!ok) {
         return 1;
