@@ -131,12 +131,20 @@ public:
     Q_INVOKABLE bool saveProductConfig(const QJsonObject &configJson, const QString &filePath);
     Q_INVOKABLE QJsonObject validateProductConfig(const QJsonObject &configJson) const;
     Q_INVOKABLE QJsonObject buildStandardProductConfig(const QJsonObject &spec) const;
+    Q_INVOKABLE QJsonObject buildStandardProductConfigV3(const QJsonObject &spec) const;
+    Q_INVOKABLE QJsonObject cloneProductConfigV3(const QJsonObject &sourceConfig,
+                                                 const QString &productCode,
+                                                 const QString &description) const;
     Q_INVOKABLE QString sanitizeProductModel(const QString &model) const;
     Q_INVOKABLE bool productConfigExists(const QString &model) const;
     Q_INVOKABLE QString productConfigVersionPath(const QString &model, const QString &versionCode) const;
     Q_INVOKABLE bool productConfigVersionExists(const QString &model, const QString &versionCode) const;
     Q_INVOKABLE bool saveProductConfigAs(const QJsonObject &configJson, const QString &model);
     Q_INVOKABLE bool saveProductConfigVersionAs(const QJsonObject &configJson, const QString &model, const QString &versionCode);
+    Q_INVOKABLE bool saveProductConfigVersionWithCustomerAs(const QJsonObject &configJson,
+                                                            const QString &model,
+                                                            const QString &versionCode,
+                                                            const QString &customerName);
     Q_INVOKABLE QString productConfigPath(const QString &model) const;
     Q_INVOKABLE bool openProductConfigFile(const QString &model) const;
     Q_INVOKABLE bool openProductConfigPath(const QString &filePath);
@@ -187,8 +195,12 @@ private:
     QString customerDatabasePath() const;
     QString productConfigPathForDatabase(const QString &filePath) const;
     bool validateProductionDatabaseSchema(QSqlDatabase &db);
-    bool syncProductConfigToDatabase(const QJsonObject &configJson, const QString &filePath);
-    bool persistProductConfig(const QJsonObject &configJson, const QString &filePath);
+    bool syncProductConfigToDatabase(const QJsonObject &configJson,
+                                     const QString &filePath,
+                                     const QString &customerName = QString());
+    bool persistProductConfig(const QJsonObject &configJson,
+                              const QString &filePath,
+                              const QString &customerName = QString());
 
     // 写入JSON文件
     bool writeJsonFile(const QString &path, const QJsonDocument &doc);

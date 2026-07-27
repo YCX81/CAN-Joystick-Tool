@@ -1,0 +1,130 @@
+{
+  "$schema": "../../schemas/product-config-v3.schema.json",
+  "schemaVersion": 3,
+  "product": {
+    "code": "JC6000-BGA-CANOPEN",
+    "version": "V1",
+    "description": "CANopen 身份强校验示例"
+  },
+  "lifecycle": {
+    "status": "active"
+  },
+  "operation": {
+    "mode": "test_only",
+    "firmware": {
+      "source": "external"
+    }
+  },
+  "calibration": {
+    "mode": "centerOnly",
+    "transport": "canopenSdo",
+    "allowedInNormalModeReadOnly": true
+  },
+  "protocol": "canopen",
+  "identityPolicy": {
+    "mode": "required",
+    "deviceInfo": {
+      "vendorId": "0x00001234",
+      "productCode": "0x00006000",
+      "revisionNumber": "0x00000001",
+      "serialNumber": "0x00000001"
+    }
+  },
+  "bus": {
+    "bitrateKbps": 250,
+    "frameFormat": "standard",
+    "nodeId": "0x01"
+  },
+  "messages": [
+    {
+      "id": "tpdo1",
+      "name": "TPDO1",
+      "canId": "0x181",
+      "dlc": 8,
+      "periodMs": 20
+    }
+  ],
+  "signals": [
+    {
+      "id": "axisX",
+      "kind": "position",
+      "source": {
+        "messageId": "tpdo1",
+        "startByte": 0,
+        "startBit": 0,
+        "bitLength": 16,
+        "endian": "little",
+        "encoding": "signed"
+      }
+    }
+  ],
+  "controls": [
+    {
+      "id": "mainAxis",
+      "type": "axis",
+      "role": "joystick",
+      "inputMode": "signed",
+      "label": "主轴",
+      "topology": {
+        "kind": "singleAxis",
+        "orientation": "horizontal"
+      },
+      "axis": {
+        "signalId": "axisX",
+        "transform": {
+          "rawMin": -32768,
+          "rawCenter": 0,
+          "rawMax": 32767,
+          "deadzone": 100,
+          "invert": false,
+          "outputRange": [
+            -1,
+            1
+          ]
+        }
+      }
+    }
+  ],
+  "commands": [],
+  "tests": [],
+  "layout": {
+    "mode": "designed",
+    "canvas": {
+      "width": 1280,
+      "height": 720
+    },
+    "grid": {
+      "rows": 1,
+      "columns": 1
+    },
+    "cards": [
+      {
+        "id": "mainAxisCard",
+        "kind": "controls",
+        "title": "主轴",
+        "grid": {
+          "row": 0,
+          "column": 0,
+          "rowSpan": 1,
+          "columnSpan": 1
+        },
+        "contentCanvas": {
+          "width": 480,
+          "height": 480,
+          "scaleMode": "uniform"
+        },
+        "elements": [
+          {
+            "id": "mainAxisElement",
+            "controlId": "mainAxis",
+            "renderer": "singleAxisGauge",
+            "x": 0,
+            "y": 0,
+            "width": 480,
+            "height": 480
+          }
+        ]
+      }
+    ]
+  }
+}

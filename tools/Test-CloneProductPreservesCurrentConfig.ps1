@@ -55,20 +55,23 @@ if (-not $match.Success) {
 
 $body = $match.Groups['body'].Value
 
-if ($body -notmatch 'cloneProductCreatesVersion') {
-    throw 'buildClonedProductConfig() must distinguish new versions from new products.'
+if ($body -notmatch 'cloneProductUsesBlankTemplate') {
+    throw 'buildClonedProductConfig() must distinguish blank products from source-based copies.'
 }
 
 if ($body -notmatch 'var\s+config\s*=\s*deepCopyConfig\s*\(\s*productTemplateConfig\s*\(\s*\)\s*\)') {
-    throw 'New versions must deep-copy productTemplateConfig().'
+    throw 'Source-based new products and new versions must deep-copy productTemplateConfig().'
 }
 
 if ($body -notmatch 'applyCloneMetadata\s*\(') {
-    throw 'New versions do not apply clone metadata through the shared helper.'
+    throw 'Source-based copies do not apply clone metadata through the shared helper.'
 }
 
-if ($body -notmatch 'buildStandardProductConfig\s*\(') {
-    throw 'New products must use buildStandardProductConfig().'
+if ($body -notmatch 'buildStandardProductConfigV3\s*\(') {
+    throw 'The explicit blank-product path must create Product Config V3.'
+}
+if ($body -notmatch 'cloneProductConfigV3\s*\(') {
+    throw 'Source-based V3 products must use the semantic deep-clone helper.'
 }
 
 if ($body -notmatch 'buttonCount\s*:\s*cloneButtonCountBox\.value') {
@@ -90,6 +93,12 @@ if (-not $designCanvasContent.Contains('if (c.type === "joystick" || c.type === 
 if ($body -notmatch 'rollerCount\s*:\s*cloneRollerCountBox\.value') {
     throw 'New products must pass the selected roller count to the generic J1939 builder.'
 }
+if ($body -notmatch 'joystickTopology\s*:\s*currentCloneJoystickTopology\(\)') {
+    throw 'New products must pass the selected joystick topology to the V3 builder.'
+}
+if ($body -notmatch 'hasWorkLight\s*:\s*cloneHasWorkLightCheck\.checked') {
+    throw 'New products must pass the work-light selection to the V3 builder.'
+}
 
 $helperMatch = [regex]::Match($content, '(?s)function\s+applyCloneMetadata\s*\([^)]*\)\s*\{(?<body>.*?)\n\s*\}\s*\n\s*function\s+openCloneProductPopup\s*\(')
 if (-not $helperMatch.Success) {
@@ -99,6 +108,60 @@ if (-not $helperMatch.Success) {
 $helperBody = $helperMatch.Groups['body'].Value
 if ($helperBody -match '\.protocol\s*=|protocol\s*:') {
     throw 'applyCloneMetadata() must preserve the source product protocol.'
+}
+if ($helperBody -match 'calibration\.mode|defaultBaudRate|setProductCustomerBinding') {
+    throw 'Source-based copies must not overwrite calibration, CAN baud rate, or customer bindings.'
+}
+if ($helperBody -match 'clonedConfig\.firmware\s*\|\|\s*\{\}') {
+    throw 'Source-based copies must not create a synthetic firmware object.'
+}
+
+$versionHelperMatch = [regex]::Match(
+    $content,
+    '(?s)function\s+setVersionMetadata\s*\([^)]*\)\s*\{(?<body>.*?)\n\s*\}\s*\n\s*function\s+setProductCustomerBinding')
+if (-not $versionHelperMatch.Success) {
+    throw 'Could not locate setVersionMetadata() body.'
+}
+if ($versionHelperMatch.Groups['body'].Value -notmatch 'if\s*\(\s*!config\.firmware\s*\)') {
+    throw 'Legacy firmware version metadata may only be updated when a firmware block already exists.'
+}
+
+$openCloneMatch = [regex]::Match(
+    $content,
+    '(?s)function\s+openCloneProductPopup\s*\(\)\s*\{(?<body>.*?)\n\s*\}\s*\n\s*function\s+openBlankProductPopup\s*\(')
+if (-not $openCloneMatch.Success) {
+    throw 'Could not locate source-based new-product popup initialization.'
+}
+$openCloneBody = $openCloneMatch.Groups['body'].Value
+if ($openCloneBody -notmatch 'cloneProductUsesBlankTemplate\s*=\s*false') {
+    throw 'Source-based new-product creation must explicitly disable the blank template.'
+}
+if ($openCloneBody -notmatch 'cloneDescriptionArea\.text\s*=\s*product\.description\s*\|\|\s*""') {
+    throw 'Source-based new-product creation must prefill the source description.'
+}
+if ($openCloneBody -match 'cloneButtonCountBox\.value\s*=|cloneRollerCountBox\.value\s*=|calibrationModeIndex\("centerOnly"\)|selectComboValue\(cloneBaudRateBox,\s*cloneBaudRateModel,\s*250\)') {
+    throw 'Source-based new-product creation must not reset source configuration fields.'
+}
+
+if ($content -notmatch 'function\s+openBlankProductPopup\s*\(') {
+    throw 'Generic blank-product creation must remain available as a separate action.'
+}
+
+$saveMatch = [regex]::Match(
+    $content,
+    '(?s)function\s+saveCloneProduct\s*\(\)\s*\{(?<body>.*?)\n\s*\}\s*\n\s*// Resolve component IDs')
+if (-not $saveMatch.Success) {
+    throw 'Could not locate saveCloneProduct() body.'
+}
+$saveBody = $saveMatch.Groups['body'].Value
+if ($saveBody -notmatch 'currentConfig\.schemaVersion\s*!==\s*3') {
+    throw 'V3 clones must not pass through the legacy layout.grid.cells serializer.'
+}
+if ($saveBody -notmatch 'saveProductConfigVersionWithCustomerAs\s*\(' -or $saveBody -notmatch 'currentCloneCustomerName\(\)') {
+    throw 'Blank V3 products must persist customer selection through the database-only save API.'
+}
+if ($body -match 'customerName\s*:') {
+    throw 'Product Config V3 must not embed customer bindings in JSON.'
 }
 
 $customerMatch = [regex]::Match(
@@ -127,6 +190,24 @@ if ($content -notmatch 'id:\s*cloneButtonNumbersField') {
 if ($content -notmatch 'id:\s*cloneRollerCountBox') {
     throw 'The new-product form must expose a roller count control.'
 }
+if ($content -notmatch 'id:\s*cloneJoystickTopologyBox') {
+    throw 'The new-product form must expose joystick topology choices.'
+}
+if ($content -notmatch 'label:\s*"普通 XY 双轴"\s*,\s*value:\s*"xy2D"') {
+    throw 'The new-product form must expose ordinary XY as a distinct topology.'
+}
+if ($content -notmatch 'label:\s*"十字 XY 轴"\s*,\s*value:\s*"crossXY"') {
+    throw 'The new-product form must retain cross-XY as a distinct topology.'
+}
+if (($content -notmatch 'label:\s*"单轴 X"\s*,\s*value:\s*"singleAxisX"') -or ($content -notmatch 'label:\s*"单轴 Y"\s*,\s*value:\s*"singleAxisY"')) {
+    throw 'The new-product form must retain both single-axis topology choices.'
+}
+if ($content -notmatch '(?s)cloneJoystickTopologyOptions:\s*\[\s*\{\s*label:\s*"普通 XY 双轴"\s*,\s*value:\s*"xy2D"') {
+    throw 'Ordinary XY must be the default first topology choice.'
+}
+if ($content -notmatch 'id:\s*cloneHasWorkLightCheck') {
+    throw 'The new-product form must expose a work-light option.'
+}
 
 if ($layoutManagerContent -notmatch 'boundedJsonInt\(spec,\s*QStringLiteral\("buttonCount"\),\s*10,\s*0,\s*12\)') {
     throw 'The generic J1939 builder must default to 10 buttons and clamp to 0..12.'
@@ -141,4 +222,4 @@ if ($layoutManagerContent -notmatch 'j1939EjmFields\(rollerCount') {
     throw 'The generic J1939 builder must generate EJM fields from rollerCount.'
 }
 
-Write-Host 'OK: new products use editable customers and configurable generic J1939 parsing; new versions preserve current config.'
+Write-Host 'OK: source-based copies preserve the complete config and layout; blank products keep the generic J1939 builder.'

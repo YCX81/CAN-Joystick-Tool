@@ -1,0 +1,120 @@
+{
+  "$schema": "../../schemas/product-config-v3.schema.json",
+  "schemaVersion": 3,
+  "product": {
+    "code": "INVALID-AUTO-LAYOUT",
+    "version": "V1",
+    "description": "生产 V3 不允许自动布局"
+  },
+  "lifecycle": {
+    "status": "active"
+  },
+  "operation": {
+    "mode": "test_only",
+    "firmware": {
+      "source": "external"
+    }
+  },
+  "calibration": {
+    "mode": "disabled",
+    "reason": "本例只验证布局模式错误"
+  },
+  "protocol": "j1939",
+  "bus": {
+    "bitrateKbps": 250,
+    "frameFormat": "extended",
+    "sourceAddress": "0x33"
+  },
+  "messages": [
+    {
+      "id": "bjm",
+      "name": "BJM1",
+      "pgn": "0x00FDD6",
+      "dlc": 8,
+      "periodMs": 20
+    }
+  ],
+  "signals": [
+    {
+      "id": "axisX",
+      "kind": "position",
+      "source": {
+        "messageId": "bjm",
+        "startByte": 0,
+        "startBit": 6,
+        "bitLength": 10,
+        "endian": "little",
+        "encoding": "unsigned"
+      }
+    }
+  ],
+  "controls": [
+    {
+      "id": "mainAxis",
+      "type": "axis",
+      "role": "joystick",
+      "inputMode": "centered",
+      "label": "主轴",
+      "topology": {
+        "kind": "singleAxis",
+        "orientation": "horizontal"
+      },
+      "axis": {
+        "signalId": "axisX",
+        "transform": {
+          "rawMin": 0,
+          "rawCenter": 500,
+          "rawMax": 1000,
+          "deadzone": 20,
+          "invert": false,
+          "outputRange": [
+            -1,
+            1
+          ]
+        }
+      }
+    }
+  ],
+  "commands": [],
+  "tests": [],
+  "layout": {
+    "mode": "auto",
+    "canvas": {
+      "width": 1280,
+      "height": 720
+    },
+    "grid": {
+      "rows": 1,
+      "columns": 1
+    },
+    "cards": [
+      {
+        "id": "mainAxisCard",
+        "kind": "controls",
+        "title": "主轴",
+        "grid": {
+          "row": 0,
+          "column": 0,
+          "rowSpan": 1,
+          "columnSpan": 1
+        },
+        "contentCanvas": {
+          "width": 580,
+          "height": 300,
+          "scaleMode": "uniform"
+        },
+        "elements": [
+          {
+            "id": "mainAxisElement",
+            "controlId": "mainAxis",
+            "renderer": "singleAxisGauge",
+            "x": 0,
+            "y": 0,
+            "width": 580,
+            "height": 300
+          }
+        ]
+      }
+    ]
+  }
+}

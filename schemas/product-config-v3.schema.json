@@ -1,0 +1,1826 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://canjoystick.local/schemas/product-config-v3.schema.json",
+  "title": "CAN Joystick Product Config V3",
+  "description": "CANJoystickTool 与 CANJoystickDownloadTool 共用的产品配置首版契约。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "product",
+    "lifecycle",
+    "operation",
+    "calibration",
+    "protocol",
+    "bus",
+    "messages",
+    "signals",
+    "controls",
+    "commands",
+    "tests",
+    "layout"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "minLength": 1
+    },
+    "schemaVersion": {
+      "const": 3
+    },
+    "product": {
+      "$ref": "#/definitions/product"
+    },
+    "lifecycle": {
+      "$ref": "#/definitions/lifecycle"
+    },
+    "operation": {
+      "$ref": "#/definitions/operation"
+    },
+    "calibration": {
+      "$ref": "#/definitions/calibration"
+    },
+    "identityPolicy": {
+      "$ref": "#/definitions/identityPolicy"
+    },
+    "protocol": {
+      "enum": [
+        "j1939",
+        "canopen",
+        "raw_can"
+      ]
+    },
+    "bus": {
+      "$ref": "#/definitions/bus"
+    },
+    "messages": {
+      "type": "array",
+      "minItems": 1
+    },
+    "signals": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/definitions/signal"
+      }
+    },
+    "controls": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/definitions/control"
+      }
+    },
+    "commands": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/command"
+      }
+    },
+    "tests": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/test"
+      }
+    },
+    "layout": {
+      "$ref": "#/definitions/layout"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "protocol": {
+            "const": "j1939"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "bus": {
+            "allOf": [
+              {
+                "$ref": "#/definitions/bus"
+              },
+              {
+                "required": [
+                  "sourceAddress"
+                ],
+                "properties": {
+                  "frameFormat": {
+                    "const": "extended"
+                  }
+                }
+              }
+            ]
+          },
+          "messages": {
+            "items": {
+              "$ref": "#/definitions/j1939Message"
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "protocol": {
+            "const": "canopen"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "identityPolicy"
+        ],
+        "properties": {
+          "bus": {
+            "allOf": [
+              {
+                "$ref": "#/definitions/bus"
+              },
+              {
+                "required": [
+                  "nodeId"
+                ],
+                "properties": {
+                  "frameFormat": {
+                    "const": "standard"
+                  }
+                }
+              }
+            ]
+          },
+          "messages": {
+            "items": {
+              "$ref": "#/definitions/canMessage"
+            }
+          },
+          "identityPolicy": {
+            "$ref": "#/definitions/identityPolicy"
+          }
+        }
+      },
+      "else": {
+        "not": {
+          "required": [
+            "identityPolicy"
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "protocol": {
+            "const": "raw_can"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "messages": {
+            "items": {
+              "$ref": "#/definitions/canMessage"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "definitions": {
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z][A-Za-z0-9_-]*$"
+    },
+    "hexAddress": {
+      "type": "string",
+      "pattern": "^0x[0-9A-F]{2}$"
+    },
+    "hexPgn": {
+      "type": "string",
+      "pattern": "^0x[0-9A-F]{6}$"
+    },
+    "hexCanId": {
+      "type": "string",
+      "pattern": "^(?:0x[0-9A-F]{3}|0x[0-9A-F]{8})$"
+    },
+    "product": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "version",
+        "description"
+      ],
+      "properties": {
+        "code": {
+          "type": "string",
+          "pattern": "^[A-Z0-9][A-Z0-9_-]*$"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^V[1-9][0-9]*(?:\\.[0-9]+\\.[0-9]+)?$"
+        },
+        "description": {
+          "type": "string"
+        },
+        "customerBindings": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "isDefault": {
+                "type": "boolean"
+              },
+              "note": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "aliases": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "lifecycle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "active",
+            "deprecated"
+          ]
+        }
+      }
+    },
+    "calibration": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode",
+            "transport",
+            "allowedInNormalModeReadOnly"
+          ],
+          "properties": {
+            "mode": {
+              "enum": [
+                "centerOnly",
+                "minCenterMax"
+              ]
+            },
+            "transport": {
+              "enum": [
+                "j1939VendorPgn",
+                "canopenSdo"
+              ]
+            },
+            "allowedInNormalModeReadOnly": {
+              "type": "boolean"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode",
+            "reason"
+          ],
+          "properties": {
+            "mode": {
+              "const": "disabled"
+            },
+            "reason": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      ]
+    },
+    "deviceInfo": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "vendorId",
+        "productCode",
+        "revisionNumber"
+      ],
+      "properties": {
+        "vendorId": {
+          "type": "string",
+          "pattern": "^0x[0-9A-F]{8}$"
+        },
+        "productCode": {
+          "type": "string",
+          "pattern": "^0x[0-9A-F]{8}$"
+        },
+        "revisionNumber": {
+          "type": "string",
+          "pattern": "^0x[0-9A-F]{8}$"
+        },
+        "serialNumber": {
+          "type": "string",
+          "pattern": "^0x[0-9A-F]{8}$"
+        }
+      }
+    },
+    "identityPolicy": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode",
+            "deviceInfo"
+          ],
+          "properties": {
+            "mode": {
+              "const": "required"
+            },
+            "deviceInfo": {
+              "$ref": "#/definitions/deviceInfo"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode",
+            "reason"
+          ],
+          "properties": {
+            "mode": {
+              "const": "disabled"
+            },
+            "reason": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      ]
+    },
+    "operation": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode",
+            "firmware"
+          ],
+          "properties": {
+            "mode": {
+              "const": "test_only"
+            },
+            "firmware": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "source"
+              ],
+              "properties": {
+                "source": {
+                  "const": "external"
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mode",
+            "firmware"
+          ],
+          "properties": {
+            "mode": {
+              "const": "firmware-backed"
+            },
+            "firmware": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "source",
+                "version",
+                "artifact"
+              ],
+              "properties": {
+                "source": {
+                  "const": "bundled"
+                },
+                "version": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]*(?:\\.[0-9]+\\.[0-9]+)?$"
+                },
+                "artifact": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*\\.(?:elf|hex|bin)$"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "bus": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "bitrateKbps",
+        "frameFormat"
+      ],
+      "properties": {
+        "bitrateKbps": {
+          "type": "integer",
+          "minimum": 10,
+          "maximum": 1000
+        },
+        "frameFormat": {
+          "enum": [
+            "standard",
+            "extended"
+          ]
+        },
+        "sourceAddress": {
+          "$ref": "#/definitions/hexAddress"
+        },
+        "nodeId": {
+          "$ref": "#/definitions/hexAddress"
+        }
+      }
+    },
+    "j1939Message": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "pgn",
+        "dlc"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/id"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "pgn": {
+          "$ref": "#/definitions/hexPgn"
+        },
+        "priority": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 7
+        },
+        "sourceAddress": {
+          "$ref": "#/definitions/hexAddress"
+        },
+        "destinationAddress": {
+          "$ref": "#/definitions/hexAddress"
+        },
+        "dlc": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 8
+        },
+        "periodMs": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "canMessage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "canId",
+        "dlc"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/id"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "canId": {
+          "$ref": "#/definitions/hexCanId"
+        },
+        "dlc": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 8
+        },
+        "periodMs": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "signal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind",
+        "source"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/id"
+        },
+        "kind": {
+          "enum": [
+            "position",
+            "status",
+            "button",
+            "packedButtons",
+            "counter",
+            "identity",
+            "numeric",
+            "crc",
+            "selfCheck"
+          ]
+        },
+        "source": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "messageId",
+            "startByte",
+            "startBit",
+            "bitLength",
+            "endian",
+            "encoding"
+          ],
+          "properties": {
+            "messageId": {
+              "$ref": "#/definitions/id"
+            },
+            "startByte": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 7
+            },
+            "startBit": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 7
+            },
+            "bitLength": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 64
+            },
+            "endian": {
+              "enum": [
+                "little",
+                "big"
+              ]
+            },
+            "encoding": {
+              "enum": [
+                "unsigned",
+                "signed",
+                "boolean",
+                "raw_16bit",
+                "j1939_axis_status",
+                "j1939_2bit",
+                "canopen_1bit",
+                "gessmann_8bit",
+                "gessmann_2bit",
+                "signed_percent",
+                "crc8_atm",
+                "detent_2bit",
+                "counter",
+                "selfCheck",
+                "identity"
+              ]
+            }
+          }
+        }
+      }
+    },
+    "axisTransform": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "rawMin",
+        "rawCenter",
+        "rawMax",
+        "deadzone",
+        "invert",
+        "outputRange"
+      ],
+      "properties": {
+        "rawMin": {
+          "type": "number"
+        },
+        "rawCenter": {
+          "type": "number"
+        },
+        "rawMax": {
+          "type": "number"
+        },
+        "deadzone": {
+          "type": "number",
+          "minimum": 0
+        },
+        "invert": {
+          "type": "boolean"
+        },
+        "outputRange": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "items": [
+            {
+              "const": -1
+            },
+            {
+              "const": 1
+            }
+          ],
+          "additionalItems": false
+        }
+      }
+    },
+    "axisBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "signalId",
+        "transform"
+      ],
+      "properties": {
+        "signalId": {
+          "$ref": "#/definitions/id"
+        },
+        "transform": {
+          "$ref": "#/definitions/axisTransform"
+        }
+      }
+    },
+    "control": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "type",
+            "role",
+            "inputMode",
+            "label",
+            "topology",
+            "axis"
+          ],
+          "properties": {
+            "id": {
+              "$ref": "#/definitions/id"
+            },
+            "type": {
+              "const": "axis"
+            },
+            "role": {
+              "enum": [
+                "joystick",
+                "roller",
+                "potentiometer",
+                "auxiliary"
+              ]
+            },
+            "inputMode": {
+              "enum": [
+                "centered",
+                "signed",
+                "unipolar"
+              ]
+            },
+            "zeroAsNeutral": {
+              "type": "boolean"
+            },
+            "display": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "valueMin",
+                "valueMax",
+                "angleMinDegrees",
+                "angleMaxDegrees",
+                "unit"
+              ],
+              "properties": {
+                "valueMin": {
+                  "type": "number"
+                },
+                "valueMax": {
+                  "type": "number"
+                },
+                "angleMinDegrees": {
+                  "type": "number"
+                },
+                "angleMaxDegrees": {
+                  "type": "number"
+                },
+                "unit": {
+                  "type": "string"
+                }
+              }
+            },
+            "label": {
+              "type": "string",
+              "minLength": 1
+            },
+            "topology": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind",
+                "orientation"
+              ],
+              "properties": {
+                "kind": {
+                  "const": "singleAxis"
+                },
+                "orientation": {
+                  "enum": [
+                    "horizontal",
+                    "vertical"
+                  ]
+                }
+              }
+            },
+            "axis": {
+              "$ref": "#/definitions/axisBinding"
+            }
+          },
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "role": {
+                    "const": "potentiometer"
+                  }
+                }
+              },
+              "then": {
+                "required": [
+                  "display"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "type",
+            "label",
+            "topology",
+            "xAxis",
+            "yAxis"
+          ],
+          "properties": {
+            "id": {
+              "$ref": "#/definitions/id"
+            },
+            "type": {
+              "const": "joystick"
+            },
+            "label": {
+              "type": "string",
+              "minLength": 1
+            },
+            "topology": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind",
+                "gate"
+              ],
+              "properties": {
+                "kind": {
+                  "enum": [
+                    "xy2D",
+                    "cross2D"
+                  ]
+                },
+                "gate": {
+                  "enum": [
+                    "omnidirectional",
+                    "cross"
+                  ]
+                }
+              },
+              "oneOf": [
+                {
+                  "properties": {
+                    "kind": {
+                      "const": "xy2D"
+                    },
+                    "gate": {
+                      "const": "omnidirectional"
+                    }
+                  }
+                },
+                {
+                  "properties": {
+                    "kind": {
+                      "const": "cross2D"
+                    },
+                    "gate": {
+                      "const": "cross"
+                    }
+                  }
+                }
+              ]
+            },
+            "xAxis": {
+              "$ref": "#/definitions/axisBinding"
+            },
+            "yAxis": {
+              "$ref": "#/definitions/axisBinding"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "type",
+            "label",
+            "signalId",
+            "position"
+          ],
+          "properties": {
+            "id": {
+              "$ref": "#/definitions/id"
+            },
+            "type": {
+              "const": "button"
+            },
+            "label": {
+              "type": "string",
+              "minLength": 1
+            },
+            "signalId": {
+              "$ref": "#/definitions/id"
+            },
+            "position": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "type",
+            "label",
+            "signalId",
+            "positions"
+          ],
+          "properties": {
+            "id": {
+              "$ref": "#/definitions/id"
+            },
+            "type": {
+              "const": "fnr"
+            },
+            "label": {
+              "type": "string",
+              "minLength": 1
+            },
+            "signalId": {
+              "$ref": "#/definitions/id"
+            },
+            "positions": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "neutralMode",
+                    "forward",
+                    "neutral",
+                    "reverse"
+                  ],
+                  "properties": {
+                    "neutralMode": {
+                      "const": "signal"
+                    },
+                    "forward": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "neutral": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "reverse": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "neutralMode",
+                    "forward",
+                    "reverse"
+                  ],
+                  "properties": {
+                    "neutralMode": {
+                      "const": "inferred"
+                    },
+                    "forward": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "reverse": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "type",
+            "label",
+            "signalId",
+            "format"
+          ],
+          "properties": {
+            "id": {
+              "$ref": "#/definitions/id"
+            },
+            "type": {
+              "const": "numericDisplay"
+            },
+            "label": {
+              "type": "string",
+              "minLength": 1
+            },
+            "signalId": {
+              "$ref": "#/definitions/id"
+            },
+            "format": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "decimals"
+              ],
+              "properties": {
+                "decimals": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 6
+                },
+                "unit": {
+                  "type": "string"
+                },
+                "prefix": {
+                  "type": "string"
+                },
+                "suffix": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "type",
+            "label",
+            "signalId",
+            "states"
+          ],
+          "properties": {
+            "id": {
+              "$ref": "#/definitions/id"
+            },
+            "type": {
+              "const": "indicator"
+            },
+            "label": {
+              "type": "string",
+              "minLength": 1
+            },
+            "signalId": {
+              "$ref": "#/definitions/id"
+            },
+            "states": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "value",
+                  "label",
+                  "color"
+                ],
+                "properties": {
+                  "value": {
+                    "type": [
+                      "boolean",
+                      "number",
+                      "string"
+                    ]
+                  },
+                  "label": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "color": {
+                    "type": "string",
+                    "pattern": "^#[0-9A-F]{6}$"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "type",
+            "label",
+            "onCommandId",
+            "offCommandId",
+            "activeLow"
+          ],
+          "properties": {
+            "id": {
+              "$ref": "#/definitions/id"
+            },
+            "type": {
+              "const": "binaryOutput"
+            },
+            "label": {
+              "type": "string",
+              "minLength": 1
+            },
+            "onCommandId": {
+              "$ref": "#/definitions/id"
+            },
+            "offCommandId": {
+              "$ref": "#/definitions/id"
+            },
+            "activeLow": {
+              "type": "boolean"
+            }
+          }
+        }
+      ]
+    },
+    "command": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "label",
+            "transport",
+            "frame"
+          ],
+          "properties": {
+            "id": {
+              "$ref": "#/definitions/id"
+            },
+            "label": {
+              "type": "string",
+              "minLength": 1
+            },
+            "transport": {
+              "const": "j1939"
+            },
+            "frame": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "priority",
+                "pgn",
+                "sourceAddress",
+                "destinationAddress",
+                "dlc",
+                "data"
+              ],
+              "properties": {
+                "priority": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 7
+                },
+                "pgn": {
+                  "$ref": "#/definitions/hexPgn"
+                },
+                "sourceAddress": {
+                  "$ref": "#/definitions/hexAddress"
+                },
+                "destinationAddress": {
+                  "$ref": "#/definitions/hexAddress"
+                },
+                "dlc": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 8
+                },
+                "data": {
+                  "type": "string",
+                  "pattern": "^(?:[0-9A-F]{2})(?: [0-9A-F]{2}){0,7}$"
+                }
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "label",
+            "transport",
+            "frame"
+          ],
+          "properties": {
+            "id": {
+              "$ref": "#/definitions/id"
+            },
+            "label": {
+              "type": "string",
+              "minLength": 1
+            },
+            "transport": {
+              "const": "can"
+            },
+            "frame": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "canId",
+                "dlc",
+                "data"
+              ],
+              "properties": {
+                "canId": {
+                  "$ref": "#/definitions/hexCanId"
+                },
+                "dlc": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 8
+                },
+                "data": {
+                  "type": "string",
+                  "pattern": "^(?:[0-9A-F]{2})(?: [0-9A-F]{2}){0,7}$"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "testStep": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "commandId"
+          ],
+          "properties": {
+            "type": {
+              "const": "sendCommand"
+            },
+            "commandId": {
+              "$ref": "#/definitions/id"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "milliseconds"
+          ],
+          "properties": {
+            "type": {
+              "const": "delay"
+            },
+            "milliseconds": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "prompt"
+          ],
+          "properties": {
+            "type": {
+              "const": "operatorConfirm"
+            },
+            "prompt": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "controlId",
+            "value"
+          ],
+          "properties": {
+            "type": {
+              "const": "setControl"
+            },
+            "controlId": {
+              "$ref": "#/definitions/id"
+            },
+            "value": {
+              "type": [
+                "boolean",
+                "number",
+                "string"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "signalId",
+            "value"
+          ],
+          "properties": {
+            "type": {
+              "const": "signalEquals"
+            },
+            "signalId": {
+              "$ref": "#/definitions/id"
+            },
+            "value": {
+              "type": [
+                "boolean",
+                "number",
+                "string"
+              ]
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "signalId",
+            "minimum",
+            "maximum"
+          ],
+          "properties": {
+            "type": {
+              "const": "signalRange"
+            },
+            "signalId": {
+              "$ref": "#/definitions/id"
+            },
+            "minimum": {
+              "type": "number"
+            },
+            "maximum": {
+              "type": "number"
+            }
+          }
+        }
+      ]
+    },
+    "test": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "label",
+        "steps",
+        "cleanup"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/id"
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1
+        },
+        "steps": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/definitions/testStep"
+          }
+        },
+        "cleanup": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/definitions/testStep"
+          }
+        }
+      }
+    },
+    "layoutElementProperties": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "orientation": {
+          "enum": [
+            "horizontal",
+            "vertical"
+          ]
+        },
+        "showLabel": {
+          "type": "boolean"
+        },
+        "showValue": {
+          "type": "boolean"
+        },
+        "compact": {
+          "type": "boolean"
+        },
+        "invertX": {
+          "type": "boolean"
+        },
+        "invertY": {
+          "type": "boolean"
+        },
+        "testPattern": {
+          "enum": [
+            "ninePoint",
+            "cross"
+          ]
+        },
+        "cycleCount": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10
+        },
+        "label": {
+          "type": "string"
+        },
+        "buttonVariant": {
+          "enum": [
+            "red",
+            "black",
+            "green",
+            "orange"
+          ]
+        },
+        "bezelSize": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "capSize": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "decimals": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 6
+        },
+        "unit": {
+          "type": "string"
+        },
+        "columns": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "rows": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "activeColor": {
+          "type": "string",
+          "pattern": "^#[0-9A-F]{6}$"
+        },
+        "inactiveColor": {
+          "type": "string",
+          "pattern": "^#[0-9A-F]{6}$"
+        },
+        "labelPosition": {
+          "enum": [
+            "top",
+            "bottom",
+            "left",
+            "right"
+          ]
+        }
+      }
+    },
+    "layoutElement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "controlId",
+        "renderer",
+        "x",
+        "y",
+        "width",
+        "height"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/id"
+        },
+        "controlId": {
+          "$ref": "#/definitions/id"
+        },
+        "renderer": {
+          "enum": [
+            "singleAxisGauge",
+            "joystickPad",
+            "miniJoystick",
+            "button",
+            "roller",
+            "potentiometer",
+            "fnr",
+            "numericDisplay",
+            "indicator",
+            "binaryOutput"
+          ]
+        },
+        "x": {
+          "type": "number",
+          "minimum": 0
+        },
+        "y": {
+          "type": "number",
+          "minimum": 0
+        },
+        "width": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "height": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "properties": {
+          "$ref": "#/definitions/layoutElementProperties"
+        }
+      }
+    },
+    "cardGrid": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "row",
+        "column",
+        "rowSpan",
+        "columnSpan"
+      ],
+      "properties": {
+        "row": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "column": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "rowSpan": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "columnSpan": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "contentCanvas": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "width",
+        "height",
+        "scaleMode"
+      ],
+      "properties": {
+        "width": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "scaleMode": {
+          "enum": [
+            "uniform",
+            "stretch",
+            "none"
+          ]
+        }
+      }
+    },
+    "controlCard": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind",
+        "title",
+        "grid",
+        "contentCanvas",
+        "elements"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/id"
+        },
+        "kind": {
+          "const": "controls"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "grid": {
+          "$ref": "#/definitions/cardGrid"
+        },
+        "contentCanvas": {
+          "$ref": "#/definitions/contentCanvas"
+        },
+        "elements": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/layoutElement"
+          }
+        }
+      }
+    },
+    "systemCardProperties": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "refreshMs": {
+          "type": "integer",
+          "minimum": 50
+        },
+        "maxRows": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "showTimestamp": {
+          "type": "boolean"
+        },
+        "showChannel": {
+          "type": "boolean"
+        },
+        "showDirection": {
+          "type": "boolean"
+        },
+        "showOperator": {
+          "type": "boolean"
+        },
+        "showSerialNumber": {
+          "type": "boolean"
+        }
+      }
+    },
+    "systemCard": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind",
+        "title",
+        "grid",
+        "systemType"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/id"
+        },
+        "kind": {
+          "const": "system"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "grid": {
+          "$ref": "#/definitions/cardGrid"
+        },
+        "systemType": {
+          "enum": [
+            "busStats",
+            "rawFrames",
+            "recordInfo"
+          ]
+        },
+        "properties": {
+          "$ref": "#/definitions/systemCardProperties"
+        }
+      }
+    },
+    "emptyCard": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind",
+        "title",
+        "grid"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/id"
+        },
+        "kind": {
+          "const": "empty"
+        },
+        "title": {
+          "type": "string"
+        },
+        "grid": {
+          "$ref": "#/definitions/cardGrid"
+        }
+      }
+    },
+    "leftRegionCard": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind",
+        "title",
+        "grid",
+        "controlId",
+        "widthRatio"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/id"
+        },
+        "kind": {
+          "const": "leftRegion"
+        },
+        "title": {
+          "type": "string"
+        },
+        "grid": {
+          "$ref": "#/definitions/cardGrid"
+        },
+        "controlId": {
+          "$ref": "#/definitions/id"
+        },
+        "widthRatio": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "exclusiveMaximum": 1
+        }
+      }
+    },
+    "layout": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "canvas",
+        "grid",
+        "cards"
+      ],
+      "properties": {
+        "mode": {
+          "const": "designed"
+        },
+        "canvas": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "width",
+            "height"
+          ],
+          "properties": {
+            "width": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "height": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        },
+        "grid": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "rows",
+            "columns"
+          ],
+          "properties": {
+            "rows": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "columns": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        },
+        "cards": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "oneOf": [
+              {
+                "$ref": "#/definitions/controlCard"
+              },
+              {
+                "$ref": "#/definitions/systemCard"
+              },
+              {
+                "$ref": "#/definitions/emptyCard"
+              },
+              {
+                "$ref": "#/definitions/leftRegionCard"
+              }
+            ]
+          }
+        }
+      }
+    }
+  }
+}

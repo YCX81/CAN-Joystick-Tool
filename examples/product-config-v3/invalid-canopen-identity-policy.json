@@ -1,0 +1,122 @@
+{
+  "$schema": "../../schemas/product-config-v3.schema.json",
+  "schemaVersion": 3,
+  "product": {
+    "code": "JC6000-BGA-HM032",
+    "version": "V1",
+    "description": "CANopen 身份检查不得靠字段缺失隐式关闭"
+  },
+  "lifecycle": {
+    "status": "active"
+  },
+  "operation": {
+    "mode": "test_only",
+    "firmware": {
+      "source": "external"
+    }
+  },
+  "calibration": {
+    "mode": "disabled",
+    "reason": "该产品不支持校准"
+  },
+  "protocol": "canopen",
+  "identityPolicy": {
+    "mode": "disabled"
+  },
+  "bus": {
+    "bitrateKbps": 250,
+    "frameFormat": "standard",
+    "nodeId": "0x01"
+  },
+  "messages": [
+    {
+      "id": "tpdo1",
+      "name": "TPDO1",
+      "canId": "0x181",
+      "dlc": 8
+    }
+  ],
+  "signals": [
+    {
+      "id": "axisX",
+      "kind": "position",
+      "source": {
+        "messageId": "tpdo1",
+        "startByte": 0,
+        "startBit": 0,
+        "bitLength": 16,
+        "endian": "little",
+        "encoding": "signed"
+      }
+    }
+  ],
+  "controls": [
+    {
+      "id": "mainAxis",
+      "type": "axis",
+      "role": "joystick",
+      "inputMode": "signed",
+      "label": "主轴",
+      "topology": {
+        "kind": "singleAxis",
+        "orientation": "horizontal"
+      },
+      "axis": {
+        "signalId": "axisX",
+        "transform": {
+          "rawMin": -32768,
+          "rawCenter": 0,
+          "rawMax": 32767,
+          "deadzone": 100,
+          "invert": false,
+          "outputRange": [
+            -1,
+            1
+          ]
+        }
+      }
+    }
+  ],
+  "commands": [],
+  "tests": [],
+  "layout": {
+    "mode": "designed",
+    "canvas": {
+      "width": 1280,
+      "height": 720
+    },
+    "grid": {
+      "rows": 1,
+      "columns": 1
+    },
+    "cards": [
+      {
+        "id": "mainAxisCard",
+        "kind": "controls",
+        "title": "主轴",
+        "grid": {
+          "row": 0,
+          "column": 0,
+          "rowSpan": 1,
+          "columnSpan": 1
+        },
+        "contentCanvas": {
+          "width": 480,
+          "height": 480,
+          "scaleMode": "uniform"
+        },
+        "elements": [
+          {
+            "id": "mainAxisElement",
+            "controlId": "mainAxis",
+            "renderer": "singleAxisGauge",
+            "x": 0,
+            "y": 0,
+            "width": 480,
+            "height": 480
+          }
+        ]
+      }
+    ]
+  }
+}
