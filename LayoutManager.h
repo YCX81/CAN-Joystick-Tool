@@ -31,6 +31,7 @@ class LayoutManager : public QObject
     Q_PROPERTY(QString layoutsDirectory READ layoutsDirectory WRITE setLayoutsDirectory NOTIFY layoutsDirectoryChanged)
     Q_PROPERTY(QString templatesDirectory READ templatesDirectory WRITE setTemplatesDirectory NOTIFY templatesDirectoryChanged)
     Q_PROPERTY(QString productsDirectory READ productsDirectory WRITE setProductsDirectory NOTIFY productsDirectoryChanged)
+    Q_PROPERTY(QString productCatalogRoot READ productCatalogRoot WRITE setProductCatalogRoot NOTIFY productCatalogRootChanged)
     Q_PROPERTY(QString currentLayoutPath READ currentLayoutPath NOTIFY currentLayoutPathChanged)
     Q_PROPERTY(bool hasUnsavedChanges READ hasUnsavedChanges WRITE setHasUnsavedChanges NOTIFY hasUnsavedChangesChanged)
 
@@ -50,6 +51,9 @@ public:
 
     QString productsDirectory() const { return m_productsDirectory; }
     void setProductsDirectory(const QString &path);
+
+    QString productCatalogRoot() const { return m_productCatalogRoot; }
+    void setProductCatalogRoot(const QString &path);
 
     QString currentLayoutPath() const { return m_currentLayoutPath; }
 
@@ -148,6 +152,10 @@ public:
     Q_INVOKABLE QString productConfigPath(const QString &model) const;
     Q_INVOKABLE bool openProductConfigFile(const QString &model) const;
     Q_INVOKABLE bool openProductConfigPath(const QString &filePath);
+    Q_INVOKABLE QString productDraftPath(const QString &filePath) const;
+    Q_INVOKABLE bool saveProductDraft(const QJsonObject &configJson, const QString &filePath);
+    Q_INVOKABLE QJsonObject loadProductDraft(const QString &filePath) const;
+    Q_INVOKABLE bool discardProductDraft(const QString &filePath);
 
     // ========== 工具方法 ==========
 
@@ -170,6 +178,7 @@ signals:
     void layoutsDirectoryChanged();
     void templatesDirectoryChanged();
     void productsDirectoryChanged();
+    void productCatalogRootChanged();
     void productConfigSaved(const QString &path);
     void productConfigLoaded(const QString &path);
     void currentLayoutPathChanged();
@@ -185,6 +194,7 @@ private:
     QString m_layoutsDirectory;
     QString m_templatesDirectory;
     QString m_productsDirectory;
+    QString m_productCatalogRoot;
     QString m_currentLayoutPath;
     bool m_hasUnsavedChanges = false;
 
@@ -198,6 +208,10 @@ private:
     bool syncProductConfigToDatabase(const QJsonObject &configJson,
                                      const QString &filePath,
                                      const QString &customerName = QString());
+    QString catalogActiveDirectory() const;
+    bool isCatalogActivePath(const QString &filePath) const;
+    bool persistCatalogProductConfig(const QJsonObject &configJson,
+                                     const QString &filePath);
     bool persistProductConfig(const QJsonObject &configJson,
                               const QString &filePath,
                               const QString &customerName = QString());

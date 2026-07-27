@@ -460,6 +460,90 @@ bool verifyV3BuilderAndClone()
     return ok;
 }
 
+bool verifyCatalogStorePersistence()
+{
+    QTemporaryDir root;
+    if (!expect(root.isValid(), QStringLiteral("could not create catalog store temp directory"))) {
+        return false;
+    }
+
+    LayoutManager manager;
+    manager.setProductCatalogRoot(root.path());
+    manager.setProductsDirectory(QDir(root.path()).filePath(QStringLiteral("active")));
+
+    QJsonObject config = manager.buildStandardProductConfigV3(QJsonObject{
+        {QStringLiteral("code"), QStringLiteral("JC6000-BGA-STORETEST")},
+        {QStringLiteral("description"), QStringLiteral("first revision")},
+        {QStringLiteral("buttonCount"), 1},
+        {QStringLiteral("buttonNumbers"), QJsonArray{1}},
+        {QStringLiteral("rollerCount"), 0}
+    });
+    bool ok = expect(
+        manager.saveProductConfigVersionAs(
+            config,
+            QStringLiteral("JC6000-BGA-STORETEST"),
+            QStringLiteral("V1")),
+        QStringLiteral("first catalog save failed"));
+
+    const QString activePath = QDir(root.path()).filePath(
+        QStringLiteral("active/JC6000-BGA-STORETEST_V1.json"));
+    QFile firstFile(activePath);
+    ok &= expect(firstFile.open(QIODevice::ReadOnly),
+                 QStringLiteral("first active config could not be read"));
+    const QByteArray firstBytes = firstFile.readAll();
+    firstFile.close();
+
+    QJsonObject product = config.value(QStringLiteral("product")).toObject();
+    product.insert(QStringLiteral("description"), QStringLiteral("second revision"));
+    config.insert(QStringLiteral("product"), product);
+    ok &= expect(manager.saveProductConfig(config, activePath),
+                 QStringLiteral("changed catalog save failed"));
+
+    const QDir backupDirectory(QDir(root.path()).filePath(
+        QStringLiteral("backups/JC6000-BGA-STORETEST")));
+    const QFileInfoList backups = backupDirectory.entryInfoList(
+        QStringList{QStringLiteral("*.json")}, QDir::Files, QDir::Name);
+    ok &= expect(backups.size() == 1,
+                 QStringLiteral("changed catalog save must create one backup"));
+    if (backups.size() == 1) {
+        QFile backup(backups.constFirst().absoluteFilePath());
+        ok &= expect(backup.open(QIODevice::ReadOnly),
+                     QStringLiteral("catalog backup could not be read"));
+        ok &= expect(backup.readAll() == firstBytes,
+                     QStringLiteral("catalog backup did not preserve exact prior bytes"));
+    }
+
+    QFile changedFile(activePath);
+    ok &= expect(changedFile.open(QIODevice::ReadOnly),
+                 QStringLiteral("changed active config could not be read"));
+    const QByteArray changedBytes = changedFile.readAll();
+    changedFile.close();
+    ok &= expect(changedBytes == QJsonDocument(config).toJson(QJsonDocument::Indented),
+                 QStringLiteral("changed active config serialization was not stable"));
+
+    ok &= expect(manager.saveProductConfig(config, activePath),
+                 QStringLiteral("identical catalog save failed"));
+    ok &= expect(backupDirectory.entryInfoList(
+                     QStringList{QStringLiteral("*.json")}, QDir::Files).size() == 1,
+                 QStringLiteral("identical catalog save must not create another backup"));
+
+    ok &= expect(manager.saveProductDraft(config, activePath),
+                 QStringLiteral("catalog draft save failed"));
+    const QString draftPath = manager.productDraftPath(activePath);
+    ok &= expect(QFileInfo::exists(draftPath),
+                 QStringLiteral("catalog draft was not persisted"));
+    ok &= expect(manager.loadProductDraft(activePath)
+                     .value(QStringLiteral("product")).toObject()
+                     .value(QStringLiteral("description")).toString()
+                     == QStringLiteral("second revision"),
+                 QStringLiteral("catalog draft could not be recovered"));
+    ok &= expect(manager.discardProductDraft(activePath),
+                 QStringLiteral("catalog draft discard failed"));
+    ok &= expect(!QFileInfo::exists(draftPath),
+                 QStringLiteral("catalog draft was not removed after save"));
+    return ok;
+}
+
 bool verifyGenericConfig(LayoutManager &manager,
                          const QJsonObject &config,
                          int expectedButtonCount,
@@ -771,6 +855,7 @@ int main(int argc, char *argv[])
     ok &= verifyMiniJoystickDualBindingValidation(manager);
     ok &= verifyTypedCustomerPersistence();
     ok &= verifyV3BuilderAndClone();
+    ok &= verifyCatalogStorePersistence();
 
     if (!ok) {
         return 1;

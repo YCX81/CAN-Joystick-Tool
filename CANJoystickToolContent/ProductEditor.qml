@@ -49,6 +49,22 @@ Item {
     readonly property color dtWarning: "#ff9500"
     readonly property color dtBorder: "#d2d2d7"
 
+    Timer {
+        id: productDraftTimer
+        interval: 2000
+        repeat: true
+        running: root.hasUnsavedChanges
+                 && root.currentFilePath.length > 0
+                 && root.layoutManager !== null
+        onTriggered: {
+            if (root.loadingCells || !root.layoutManager.saveProductDraft)
+                return
+            root.syncCurrentLayoutFromCells()
+            root.layoutManager.saveProductDraft(
+                        root.currentConfig, root.currentFilePath)
+        }
+    }
+
     readonly property var cellTypeOptions: [
         { value: "canvas",     label: "画布" },
         { value: "busStats",   label: "总线统计" },
@@ -434,9 +450,18 @@ Item {
         currentFilePath = path
         currentConfig = layoutManager.loadProductConfig(currentFilePath)
         migrateLegacyFnrBindings()
-        saveProductMessage = ""
-        saveProductMessageIsError = false
-        hasUnsavedChanges = false
+        var recoveredDraft = layoutManager.loadProductDraft
+                ? layoutManager.loadProductDraft(currentFilePath) : ({})
+        if (recoveredDraft && Object.keys(recoveredDraft).length > 0) {
+            currentConfig = recoveredDraft
+            saveProductMessage = "已恢复上次未正式保存的草稿。"
+            saveProductMessageIsError = false
+            hasUnsavedChanges = true
+        } else {
+            saveProductMessage = ""
+            saveProductMessageIsError = false
+            hasUnsavedChanges = false
+        }
         loadCells()
     }
 

@@ -1033,18 +1033,28 @@ void LayoutManager::initDefaultDirectories()
 
     m_layoutsDirectory = appDataPath + "/layouts";
     m_templatesDirectory = appDataPath + "/templates";
+    const QString configuredCatalogRoot =
+        qEnvironmentVariable("CANJOYSTICK_PRODUCT_CATALOG_ROOT").trimmed();
+    m_productCatalogRoot = configuredCatalogRoot.isEmpty()
+        ? QDir(appDataPath).filePath(QStringLiteral("product-catalog"))
+        : QDir::cleanPath(configuredCatalogRoot);
 
     // 产品配置目录优先使用 DownloadTool 当前的 firmware 资产根；保留 products 作为旧版本回退。
     const QString appDir = QCoreApplication::applicationDirPath();
     const QString desktopPath = QStandardPaths::writableLocation(QStandardPaths::DesktopLocation);
-    const QStringList assetCandidates = {
+    QStringList assetCandidates;
+    const QString configuredActiveDirectory = catalogActiveDirectory();
+    if (!configuredCatalogRoot.isEmpty() || QDir(configuredActiveDirectory).exists()) {
+        assetCandidates.append(configuredActiveDirectory);
+    }
+    assetCandidates.append({
         QDir(appDir).filePath(QStringLiteral("firmware")),
         QDir(appDir).filePath(QStringLiteral("products")),
         QDir(appDir).filePath(QStringLiteral("../CANJoystickDownloadTool/firmware")),
         QDir(desktopPath).filePath(QStringLiteral("CANJoystickDownloadTool/firmware")),
         QDir(appDir).filePath(QStringLiteral("../CANJoystickDownloadTool/products")),
         QDir(desktopPath).filePath(QStringLiteral("CANJoystickDownloadTool/products"))
-    };
+    });
     for (const QString &candidate : assetCandidates) {
         if (QDir(candidate).exists()) {
             m_productsDirectory = QDir::cleanPath(candidate);
@@ -1084,6 +1094,20 @@ void LayoutManager::setProductsDirectory(const QString &path)
         m_productsDirectory = path;
         emit productsDirectoryChanged();
     }
+}
+
+void LayoutManager::setProductCatalogRoot(const QString &path)
+{
+    const QString cleanPath = QDir::cleanPath(path.trimmed());
+    if (cleanPath.isEmpty() || m_productCatalogRoot == cleanPath) {
+        return;
+    }
+
+    m_productCatalogRoot = cleanPath;
+    ensureDirectoryExists(catalogActiveDirectory());
+    ensureDirectoryExists(QDir(m_productCatalogRoot).filePath(QStringLiteral("backups")));
+    ensureDirectoryExists(QDir(m_productCatalogRoot).filePath(QStringLiteral("drafts")));
+    emit productCatalogRootChanged();
 }
 
 void LayoutManager::setHasUnsavedChanges(bool value)
@@ -2361,6 +2385,10 @@ QString LayoutManager::productConfigVersionPath(const QString &model, const QStr
 
     const QDir dir(m_productsDirectory);
     const QString fileName = QStringLiteral("%1_%2.json").arg(baseModel, safeVersionCode);
+    if (QDir::cleanPath(dir.absolutePath())
+        == QDir::cleanPath(QDir(catalogActiveDirectory()).absolutePath())) {
+        return dir.filePath(fileName);
+    }
     return QDir(dir.filePath(baseModel)).filePath(fileName);
 }
 
@@ -2415,6 +2443,10 @@ QString LayoutManager::productConfigPath(const QString &model) const
         }
     }
 
+    if (QDir::cleanPath(dir.absolutePath())
+        == QDir::cleanPath(QDir(catalogActiveDirectory()).absolutePath())) {
+        return dir.filePath(baseModel + QStringLiteral("_V1.json"));
+    }
     return QDir(dir.filePath(baseModel)).filePath(baseModel + QStringLiteral("_V1.json"));
 }
 
@@ -2435,6 +2467,76 @@ bool LayoutManager::openProductConfigPath(const QString &filePath)
         return false;
     }
     return QDesktopServices::openUrl(QUrl::fromLocalFile(cleanPath));
+}
+
+QString LayoutManager::catalogActiveDirectory() const
+{
+    return QDir(m_productCatalogRoot).filePath(QStringLiteral("active"));
+}
+
+bool LayoutManager::isCatalogActivePath(const QString &filePath) const
+{
+    if (m_productCatalogRoot.trimmed().isEmpty()) {
+        return false;
+    }
+
+    const QString activePrefix =
+        QDir(catalogActiveDirectory()).absolutePath().replace(QLatin1Char('\\'), QLatin1Char('/'))
+        + QLatin1Char('/');
+    const QString candidate =
+        QFileInfo(filePath).absoluteFilePath().replace(QLatin1Char('\\'), QLatin1Char('/'));
+    return candidate.startsWith(activePrefix, Qt::CaseInsensitive);
+}
+
+QString LayoutManager::productDraftPath(const QString &filePath) const
+{
+    if (filePath.trimmed().isEmpty() || m_productCatalogRoot.trimmed().isEmpty()) {
+        return QString();
+    }
+
+    const QString cleanTarget = QDir::cleanPath(QFileInfo(filePath).absoluteFilePath());
+    const QString targetHash = QString::fromLatin1(
+        QCryptographicHash::hash(cleanTarget.toUtf8(), QCryptographicHash::Sha256)
+            .toHex()
+            .left(12));
+    const QString baseName = sanitizeProductModel(QFileInfo(filePath).completeBaseName());
+    return QDir(m_productCatalogRoot).filePath(
+        QStringLiteral("drafts/%1-%2.json").arg(baseName, targetHash));
+}
+
+bool LayoutManager::saveProductDraft(const QJsonObject &configJson, const QString &filePath)
+{
+    const QString draftPath = productDraftPath(filePath);
+    if (draftPath.isEmpty()) {
+        return false;
+    }
+    if (!ensureDirectoryExists(QFileInfo(draftPath).absolutePath())) {
+        emit errorOccurred(tr("Failed to create product draft directory"));
+        return false;
+    }
+    return writeJsonFile(draftPath, QJsonDocument(configJson));
+}
+
+QJsonObject LayoutManager::loadProductDraft(const QString &filePath) const
+{
+    const QString draftPath = productDraftPath(filePath);
+    if (draftPath.isEmpty() || !QFileInfo::exists(draftPath)) {
+        return {};
+    }
+    return readJsonFileQuiet(draftPath).object();
+}
+
+bool LayoutManager::discardProductDraft(const QString &filePath)
+{
+    const QString draftPath = productDraftPath(filePath);
+    if (draftPath.isEmpty() || !QFileInfo::exists(draftPath)) {
+        return true;
+    }
+    if (!QFile::remove(draftPath)) {
+        emit errorOccurred(tr("Failed to remove product draft: %1").arg(draftPath));
+        return false;
+    }
+    return true;
 }
 
 bool LayoutManager::saveProductConfigAs(const QJsonObject &configJson, const QString &model)
@@ -2523,10 +2625,100 @@ bool LayoutManager::saveProductConfigVersionWithCustomerAs(const QJsonObject &co
     return persistProductConfig(normalizedConfig, filePath, customerName.trimmed());
 }
 
+bool LayoutManager::persistCatalogProductConfig(const QJsonObject &configJson,
+                                                const QString &filePath)
+{
+    if (isManualMappingDraft(configJson)) {
+        emit errorOccurred(tr("A manual mapping draft cannot be saved as an active product config"));
+        return false;
+    }
+
+    const QJsonObject product = configJson.value(QStringLiteral("product")).toObject();
+    const QString productCode = sanitizeProductModel(
+        product.value(QStringLiteral("code")).toString()).toUpper();
+    const QString versionCode = normalizedVersionCode(
+        product.value(QStringLiteral("version")).toString());
+    const QString expectedFileName =
+        QStringLiteral("%1_%2.json").arg(productCode, versionCode);
+    if (productCode.isEmpty()
+        || QFileInfo(filePath).fileName().compare(
+               expectedFileName, Qt::CaseInsensitive) != 0) {
+        emit errorOccurred(tr("Active config filename does not match product identity: %1")
+                               .arg(filePath));
+        return false;
+    }
+
+    const QByteArray newContents =
+        QJsonDocument(configJson).toJson(QJsonDocument::Indented);
+    QByteArray previousContents;
+    if (QFileInfo::exists(filePath)) {
+        QFile previousFile(filePath);
+        if (!previousFile.open(QIODevice::ReadOnly)) {
+            emit errorOccurred(tr("Failed to read existing product config before saving: %1")
+                                   .arg(filePath));
+            return false;
+        }
+        previousContents = previousFile.readAll();
+        if (previousContents == newContents) {
+            discardProductDraft(filePath);
+            emit productConfigSaved(filePath);
+            return true;
+        }
+    }
+
+    QString backupPath;
+    if (!previousContents.isEmpty()) {
+        const QString backupDirectory = QDir(m_productCatalogRoot).filePath(
+            QStringLiteral("backups/%1").arg(productCode));
+        if (!ensureDirectoryExists(backupDirectory)) {
+            emit errorOccurred(tr("Failed to create product config backup directory: %1")
+                                   .arg(backupDirectory));
+            return false;
+        }
+        const QString previousHash = QString::fromLatin1(
+            QCryptographicHash::hash(previousContents, QCryptographicHash::Sha256)
+                .toHex()
+                .left(12));
+        const QString timestamp =
+            QDateTime::currentDateTimeUtc().toString(QStringLiteral("yyyyMMddTHHmmsszzzZ"));
+        backupPath = QDir(backupDirectory).filePath(
+            QStringLiteral("%1_%2_%3")
+                .arg(timestamp, previousHash, expectedFileName));
+
+        QSaveFile backupFile(backupPath);
+        if (!backupFile.open(QIODevice::WriteOnly)
+            || backupFile.write(previousContents) != previousContents.size()
+            || !backupFile.commit()) {
+            emit errorOccurred(tr("Failed to back up the previous product config: %1")
+                                   .arg(filePath));
+            return false;
+        }
+    }
+
+    QSaveFile activeFile(filePath);
+    if (!activeFile.open(QIODevice::WriteOnly)
+        || activeFile.write(newContents) != newContents.size()
+        || !activeFile.commit()) {
+        emit errorOccurred(tr("Failed to write active product config: %1").arg(filePath));
+        if (!backupPath.isEmpty()) {
+            QFile::remove(backupPath);
+        }
+        return false;
+    }
+
+    discardProductDraft(filePath);
+    emit productConfigSaved(filePath);
+    return true;
+}
+
 bool LayoutManager::persistProductConfig(const QJsonObject &configJson,
                                          const QString &filePath,
                                          const QString &customerName)
 {
+    if (isCatalogActivePath(filePath)) {
+        return persistCatalogProductConfig(configJson, filePath);
+    }
+
     const QFileInfo existingInfo(filePath);
     const bool existed = existingInfo.exists();
     QByteArray previousContents;
