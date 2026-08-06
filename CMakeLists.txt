@@ -8,7 +8,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
 
-find_package(Qt6 6.5 REQUIRED COMPONENTS Quick QuickControls2 Widgets Sql)
+find_package(Qt6 6.5 REQUIRED COMPONENTS Quick QuickControls2 Widgets Sql Network)
 
 qt_standard_project_setup(REQUIRES 6.5)
 
@@ -84,6 +84,7 @@ qt_add_qml_module(CANJoystickTool
         CANJoystickToolContent/HandleCard.qml
         CANJoystickToolContent/CustomCard.qml
         CANJoystickToolContent/ProductConfigV3EditorAdapter.js
+        CANJoystickToolContent/ProductDraftPolicy.js
         CANJoystickToolContent/ProductEditor.qml
     RESOURCES
         qtquickcontrols2.conf
@@ -94,6 +95,7 @@ target_link_libraries(CANJoystickTool PRIVATE
     Qt6::QuickControls2
     Qt6::Widgets
     Qt6::Sql
+    Qt6::Network
 )
 
 if(WIN32)
@@ -102,6 +104,7 @@ if(WIN32)
     get_filename_component(QT_PREFIX_DIR "${QT_BIN_DIR}" DIRECTORY)
     get_filename_component(CXX_RUNTIME_DIR "${CMAKE_CXX_COMPILER}" DIRECTORY)
     set(QT_SQLITE_DRIVER "${QT_PREFIX_DIR}/plugins/sqldrivers/qsqlite.dll")
+    set(WINDEPLOYQT_EXECUTABLE "${QT_BIN_DIR}/windeployqt.exe")
 endif()
 
 function(add_qt_runtime_test test_name target_name)
@@ -130,8 +133,26 @@ if(BUILD_TESTING)
         Qt6::QuickControls2
         Qt6::Widgets
         Qt6::Sql
+        Qt6::Network
     )
     add_qt_runtime_test(product_config_builder_smoke product_config_builder_smoke)
+
+    add_executable(catalog_active_hydration_smoke
+        tests/catalog_active_hydration_smoke.cpp
+        LayoutManager.h
+        LayoutManager.cpp
+        ProductConfigV3Validator.h
+        ProductConfigV3Validator.cpp
+    )
+    target_include_directories(catalog_active_hydration_smoke PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    target_link_libraries(catalog_active_hydration_smoke PRIVATE
+        Qt6::Quick
+        Qt6::QuickControls2
+        Qt6::Widgets
+        Qt6::Sql
+        Qt6::Network
+    )
+    add_qt_runtime_test(catalog_active_hydration_smoke catalog_active_hydration_smoke)
 
     add_executable(layoutmanager_database_smoke
         tests/layoutmanager_database_smoke.cpp
@@ -146,8 +167,26 @@ if(BUILD_TESTING)
         Qt6::QuickControls2
         Qt6::Widgets
         Qt6::Sql
+        Qt6::Network
     )
     add_qt_runtime_test(layoutmanager_database_smoke layoutmanager_database_smoke)
+
+    add_executable(catalog_save_publish_smoke
+        tests/catalog_save_publish_smoke.cpp
+        LayoutManager.h
+        LayoutManager.cpp
+        ProductConfigV3Validator.h
+        ProductConfigV3Validator.cpp
+    )
+    target_include_directories(catalog_save_publish_smoke PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    target_link_libraries(catalog_save_publish_smoke PRIVATE
+        Qt6::Quick
+        Qt6::QuickControls2
+        Qt6::Widgets
+        Qt6::Sql
+        Qt6::Network
+    )
+    add_qt_runtime_test(catalog_save_publish_smoke catalog_save_publish_smoke)
 
     add_executable(fnr_mapping_smoke
         tests/fnr_mapping_smoke.cpp
@@ -184,6 +223,30 @@ if(BUILD_TESTING)
     target_link_libraries(product_config_v3_validator_smoke PRIVATE Qt6::Core)
     add_qt_runtime_test(product_config_v3_validator_smoke product_config_v3_validator_smoke)
 
+    add_executable(product_config_v3_editor_adapter_smoke
+        tests/product_config_v3_editor_adapter_smoke.cpp
+    )
+    target_compile_definitions(product_config_v3_editor_adapter_smoke PRIVATE
+        PRODUCT_CONFIG_V3_EDITOR_ADAPTER_SOURCE="${CMAKE_CURRENT_SOURCE_DIR}/CANJoystickToolContent/ProductConfigV3EditorAdapter.js"
+    )
+    target_link_libraries(product_config_v3_editor_adapter_smoke PRIVATE Qt6::Quick)
+    add_qt_runtime_test(
+        product_config_v3_editor_adapter_smoke
+        product_config_v3_editor_adapter_smoke
+    )
+
+    add_executable(product_draft_policy_smoke
+        tests/product_draft_policy_smoke.cpp
+    )
+    target_compile_definitions(product_draft_policy_smoke PRIVATE
+        PRODUCT_DRAFT_POLICY_SOURCE="${CMAKE_CURRENT_SOURCE_DIR}/CANJoystickToolContent/ProductDraftPolicy.js"
+    )
+    target_link_libraries(product_draft_policy_smoke PRIVATE Qt6::Quick)
+    add_qt_runtime_test(
+        product_draft_policy_smoke
+        product_draft_policy_smoke
+    )
+
     add_executable(layoutmanager_v3_validation_smoke
         tests/layoutmanager_v3_validation_smoke.cpp
         LayoutManager.h
@@ -200,6 +263,7 @@ if(BUILD_TESTING)
         Qt6::QuickControls2
         Qt6::Widgets
         Qt6::Sql
+        Qt6::Network
     )
     add_qt_runtime_test(layoutmanager_v3_validation_smoke layoutmanager_v3_validation_smoke)
 endif()
@@ -211,6 +275,28 @@ if(WIN32 AND EXISTS "${QT_SQLITE_DRIVER}")
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
             "${QT_SQLITE_DRIVER}"
             "$<TARGET_FILE_DIR:CANJoystickTool>/sqldrivers/qsqlite.dll"
+    )
+endif()
+
+if(WIN32 AND EXISTS "${WINDEPLOYQT_EXECUTABLE}")
+    # A Release build must be runnable outside the Qt developer shell.  Keep
+    # the Qt DLLs, MinGW runtime, plugins, and QML modules beside the editor.
+    add_custom_command(TARGET CANJoystickTool POST_BUILD
+        COMMAND "${WINDEPLOYQT_EXECUTABLE}"
+            --compiler-runtime
+            --qmldir "${CMAKE_CURRENT_SOURCE_DIR}"
+            "$<TARGET_FILE:CANJoystickTool>"
+        VERBATIM
+    )
+elseif(WIN32)
+    message(WARNING "windeployqt was not found; CANJoystickTool will not be self-contained: ${WINDEPLOYQT_EXECUTABLE}")
+endif()
+
+if(WIN32 AND BUILD_TESTING)
+    add_test(NAME editor_runtime_deployment
+        COMMAND powershell -NoProfile -ExecutionPolicy Bypass
+                -File "${CMAKE_CURRENT_SOURCE_DIR}/tests/Test-EditorReleaseRuntime.ps1"
+                -EditorPath "$<TARGET_FILE:CANJoystickTool>"
     )
 endif()
 

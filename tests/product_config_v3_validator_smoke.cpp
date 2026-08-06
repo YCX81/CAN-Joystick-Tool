@@ -37,6 +37,23 @@ QJsonObject loadExample(const QString &fileName)
     return document.object();
 }
 
+QJsonObject loadConfigFile(const QString &path)
+{
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        qCritical().noquote() << "could not open V3 config:" << path;
+        return {};
+    }
+    QJsonParseError error;
+    const QJsonDocument document = QJsonDocument::fromJson(file.readAll(), &error);
+    if (error.error != QJsonParseError::NoError || !document.isObject()) {
+        qCritical().noquote() << "could not parse V3 config:" << path
+                              << error.errorString();
+        return {};
+    }
+    return document.object();
+}
+
 QString joinedErrors(const ProductConfigV3Validator::Result &result)
 {
     return result.errors.join(QStringLiteral(" | "));
@@ -373,6 +390,66 @@ bool verifySignalBitRules(const QJsonObject &singleAxis)
 {
     bool ok = true;
 
+    QJsonObject sparseButtons = singleAxis;
+    QJsonArray signalArray = sparseButtons.value(QStringLiteral("signals")).toArray();
+    QJsonObject packedSignal = signalArray.at(1).toObject();
+    QJsonObject packedSource = packedSignal.value(QStringLiteral("source")).toObject();
+    packedSource.insert(QStringLiteral("bitLength"), 16);
+    packedSource.insert(QStringLiteral("buttonBitPositions"),
+                        QJsonArray{6, 4, 2, 0, 14, 12, 10, 8});
+    packedSignal.insert(QStringLiteral("source"), packedSource);
+    signalArray[1] = packedSignal;
+    sparseButtons.insert(QStringLiteral("signals"), signalArray);
+    ok &= expectValid(sparseButtons, QStringLiteral("sparse packed button bit positions"));
+
+    QJsonObject duplicatePositions = sparseButtons;
+    signalArray = duplicatePositions.value(QStringLiteral("signals")).toArray();
+    packedSignal = signalArray.at(1).toObject();
+    packedSource = packedSignal.value(QStringLiteral("source")).toObject();
+    packedSource.insert(QStringLiteral("buttonBitPositions"), QJsonArray{0, 0});
+    packedSignal.insert(QStringLiteral("source"), packedSource);
+    signalArray[1] = packedSignal;
+    duplicatePositions.insert(QStringLiteral("signals"), signalArray);
+    ok &= expectInvalid(duplicatePositions,
+                        QStringLiteral("duplicate packed button bit positions"),
+                        QStringLiteral("unique"));
+
+    QJsonObject nonIntegerPosition = sparseButtons;
+    signalArray = nonIntegerPosition.value(QStringLiteral("signals")).toArray();
+    packedSignal = signalArray.at(1).toObject();
+    packedSource = packedSignal.value(QStringLiteral("source")).toObject();
+    packedSource.insert(QStringLiteral("buttonBitPositions"), QJsonArray{0, 1.5});
+    packedSignal.insert(QStringLiteral("source"), packedSource);
+    signalArray[1] = packedSignal;
+    nonIntegerPosition.insert(QStringLiteral("signals"), signalArray);
+    ok &= expectInvalid(nonIntegerPosition,
+                        QStringLiteral("non-integer packed button bit position"),
+                        QStringLiteral("integer"));
+
+    QJsonObject outOfRangePosition = sparseButtons;
+    signalArray = outOfRangePosition.value(QStringLiteral("signals")).toArray();
+    packedSignal = signalArray.at(1).toObject();
+    packedSource = packedSignal.value(QStringLiteral("source")).toObject();
+    packedSource.insert(QStringLiteral("buttonBitPositions"), QJsonArray{0, 64});
+    packedSignal.insert(QStringLiteral("source"), packedSource);
+    signalArray[1] = packedSignal;
+    outOfRangePosition.insert(QStringLiteral("signals"), signalArray);
+    ok &= expectInvalid(outOfRangePosition,
+                        QStringLiteral("out-of-range packed button bit position"),
+                        QStringLiteral("0..63"));
+
+    QJsonObject emptyPositions = sparseButtons;
+    signalArray = emptyPositions.value(QStringLiteral("signals")).toArray();
+    packedSignal = signalArray.at(1).toObject();
+    packedSource = packedSignal.value(QStringLiteral("source")).toObject();
+    packedSource.insert(QStringLiteral("buttonBitPositions"), QJsonArray{});
+    packedSignal.insert(QStringLiteral("source"), packedSource);
+    signalArray[1] = packedSignal;
+    emptyPositions.insert(QStringLiteral("signals"), signalArray);
+    ok &= expectInvalid(emptyPositions,
+                        QStringLiteral("empty packed button bit positions"),
+                        QStringLiteral("must not be empty"));
+
     QJsonObject outOfRange = singleAxis;
     QJsonObject signal = outOfRange.value(QStringLiteral("signals")).toArray().first().toObject();
     QJsonObject source = signal.value(QStringLiteral("source")).toObject();
@@ -385,7 +462,7 @@ bool verifySignalBitRules(const QJsonObject &singleAxis)
                         QStringLiteral("DLC"));
 
     QJsonObject overlap = singleAxis;
-    QJsonArray signalArray = overlap.value(QStringLiteral("signals")).toArray();
+    signalArray = overlap.value(QStringLiteral("signals")).toArray();
     QJsonObject secondSignal = signalArray.at(1).toObject();
     secondSignal.insert(QStringLiteral("source"),
                         signalArray.first().toObject().value(QStringLiteral("source")).toObject());
@@ -967,6 +1044,132 @@ bool verifyMiniJoystickExtensions(const QJsonObject &cross2d)
     ok &= expectInvalid(invalid,
                         QStringLiteral("invalid mini joystick test pattern"),
                         QStringLiteral("testPattern"));
+
+    QJsonObject duplicateAxisOwner = config;
+    QJsonArray controls =
+        duplicateAxisOwner.value(QStringLiteral("controls")).toArray();
+    QJsonObject joystick;
+    for (const QJsonValue &value : controls) {
+        if (value.toObject().value(QStringLiteral("type")).toString()
+            == QStringLiteral("joystick")) {
+            joystick = value.toObject();
+            break;
+        }
+    }
+    const QString duplicatedSignal =
+        joystick.value(QStringLiteral("xAxis"))
+            .toObject()
+            .value(QStringLiteral("signalId"))
+            .toString();
+    controls.append(QJsonObject{
+        {QStringLiteral("id"), QStringLiteral("duplicateMiniXAxis")},
+        {QStringLiteral("type"), QStringLiteral("axis")},
+        {QStringLiteral("role"), QStringLiteral("roller")},
+        {QStringLiteral("inputMode"), QStringLiteral("centered")},
+        {QStringLiteral("label"), QStringLiteral("重复迷你摇杆X轴")},
+        {QStringLiteral("topology"),
+         QJsonObject{
+             {QStringLiteral("kind"), QStringLiteral("singleAxis")},
+             {QStringLiteral("orientation"), QStringLiteral("vertical")}
+         }},
+        {QStringLiteral("axis"),
+         QJsonObject{
+             {QStringLiteral("signalId"), duplicatedSignal},
+             {QStringLiteral("transform"),
+              QJsonObject{
+                  {QStringLiteral("rawMin"), 0},
+                  {QStringLiteral("rawCenter"), 500},
+                  {QStringLiteral("rawMax"), 1000},
+                  {QStringLiteral("deadzone"), 20},
+                  {QStringLiteral("invert"), false},
+                  {QStringLiteral("outputRange"), QJsonArray{-1, 1}}
+              }}
+         }}
+    });
+    duplicateAxisOwner.insert(QStringLiteral("controls"), controls);
+    ok &= expectInvalid(duplicateAxisOwner,
+                        QStringLiteral("duplicate analog signal owner"),
+                        QStringLiteral("assigned more than once"));
+    return ok;
+}
+
+bool verifyBindingChannelRules(const QJsonObject &base)
+{
+    const QJsonObject axisControl =
+        base.value(QStringLiteral("controls")).toArray().first().toObject();
+    const QJsonObject axisChannel{
+        {QStringLiteral("id"), QStringLiteral("roller1")},
+        {QStringLiteral("kind"), QStringLiteral("axis")},
+        {QStringLiteral("role"), QStringLiteral("roller")},
+        {QStringLiteral("inputMode"), QStringLiteral("centered")},
+        {QStringLiteral("label"), QStringLiteral("滚轮1")},
+        {QStringLiteral("topology"),
+         QJsonObject{
+             {QStringLiteral("kind"), QStringLiteral("singleAxis")},
+             {QStringLiteral("orientation"), QStringLiteral("vertical")}
+         }},
+        {QStringLiteral("axis"), axisControl.value(QStringLiteral("axis")).toObject()}
+    };
+    const QJsonObject buttonChannel{
+        {QStringLiteral("id"), QStringLiteral("button1")},
+        {QStringLiteral("kind"), QStringLiteral("button")},
+        {QStringLiteral("label"), QStringLiteral("按钮 1")},
+        {QStringLiteral("signalId"), QStringLiteral("button1")},
+        {QStringLiteral("position"), 0}
+    };
+
+    QJsonObject configured = base;
+    configured.insert(QStringLiteral("bindingChannels"),
+                      QJsonArray{buttonChannel, axisChannel});
+    bool ok = expectValid(configured,
+                          QStringLiteral("physical binding channel inventory"));
+
+    QJsonObject duplicateId = configured;
+    QJsonObject duplicateAxis = axisChannel;
+    duplicateAxis.insert(QStringLiteral("id"), QStringLiteral("button1"));
+    duplicateId.insert(QStringLiteral("bindingChannels"),
+                       QJsonArray{buttonChannel, duplicateAxis});
+    ok &= expectInvalid(duplicateId,
+                        QStringLiteral("duplicate binding channel id"),
+                        QStringLiteral("duplicated"));
+
+    QJsonObject badSignal = configured;
+    QJsonObject badButton = buttonChannel;
+    badButton.insert(QStringLiteral("signalId"), QStringLiteral("missingSignal"));
+    badSignal.insert(QStringLiteral("bindingChannels"),
+                     QJsonArray{badButton, axisChannel});
+    ok &= expectInvalid(badSignal,
+                        QStringLiteral("binding channel signal reference"),
+                        QStringLiteral("references missing signal"));
+
+    QJsonObject badPosition = configured;
+    badButton = buttonChannel;
+    badButton.insert(QStringLiteral("position"), 99);
+    badPosition.insert(QStringLiteral("bindingChannels"),
+                       QJsonArray{badButton, axisChannel});
+    ok &= expectInvalid(badPosition,
+                        QStringLiteral("binding channel packed position"),
+                        QStringLiteral("outside"));
+
+    QJsonObject duplicatePhysicalAxis = configured;
+    QJsonObject secondAxisChannel = axisChannel;
+    secondAxisChannel.insert(QStringLiteral("id"), QStringLiteral("roller2"));
+    duplicatePhysicalAxis.insert(QStringLiteral("bindingChannels"),
+                                 QJsonArray{
+                                     buttonChannel,
+                                     axisChannel,
+                                     secondAxisChannel
+                                 });
+    ok &= expectInvalid(duplicatePhysicalAxis,
+                        QStringLiteral("duplicate physical axis channel"),
+                        QStringLiteral("duplicates a physical axis signal"));
+
+    QJsonObject missingButtonInventory = configured;
+    missingButtonInventory.insert(QStringLiteral("bindingChannels"),
+                                  QJsonArray{axisChannel});
+    ok &= expectInvalid(missingButtonInventory,
+                        QStringLiteral("missing physical button inventory"),
+                        QStringLiteral("no matching physical button channel"));
     return ok;
 }
 
@@ -1052,7 +1255,19 @@ int main(int argc, char *argv[])
     ok &= verifyMigrationControlAndLayoutRules(migrationConfig);
     ok &= verifyCalibrationAndIdentityRules(singleAxis, canopen);
     ok &= verifyMiniJoystickExtensions(cross2d);
+    ok &= verifyBindingChannelRules(singleAxis);
     ok &= verifyJoystickTestSettings(cross2d);
+
+    for (int argumentIndex = 1; argumentIndex < argc; ++argumentIndex) {
+        const QString path = QString::fromLocal8Bit(argv[argumentIndex]);
+        const QJsonObject config = loadConfigFile(path);
+        ok &= expect(!config.isEmpty(),
+                     QStringLiteral("external V3 config is empty: %1").arg(path));
+        if (!config.isEmpty()) {
+            ok &= expectValid(config,
+                              QStringLiteral("external V3 config %1").arg(path));
+        }
+    }
 
     if (!ok) {
         return 1;

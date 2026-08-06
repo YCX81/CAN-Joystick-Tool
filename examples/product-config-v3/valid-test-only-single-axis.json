@@ -56,7 +56,10 @@
         "startBit": 0,
         "bitLength": 2,
         "endian": "little",
-        "encoding": "j1939_2bit"
+        "encoding": "j1939_2bit",
+        "buttonBitPositions": [
+          0
+        ]
       }
     }
   ],

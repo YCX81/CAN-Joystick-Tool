@@ -5,6 +5,7 @@ import QtQuick.Effects
 import CANJoystickTool
 import "../CANJoystickTool/FnrMapping.js" as FnrMapping
 import "ProductConfigV3EditorAdapter.js" as V3EditorAdapter
+import "ProductDraftPolicy.js" as ProductDraftPolicy
 
 Item {
     id: root
@@ -25,6 +26,14 @@ Item {
     property bool cloneProductUsesBlankTemplate: false
     property string saveProductMessage: ""
     property bool saveProductMessageIsError: false
+    property var pendingRecoveredDraft: ({})
+    property string pendingRecoveredDraftPath: ""
+    property bool markLoadedConfigUnsaved: false
+    property string loadedCellsPath: ""
+    property int productLoadGeneration: 0
+    // Temporarily pause product draft autosave and recovery. Keep the
+    // implementation in place so it can be re-enabled deliberately later.
+    readonly property bool productDraftsEnabled: false
     readonly property int defaultCanvasWidth: Constants.homeCardDesignSize
     readonly property int defaultCanvasHeight: Constants.homeCardDesignSize
     readonly property real panelWidth: 320
@@ -53,13 +62,20 @@ Item {
         id: productDraftTimer
         interval: 2000
         repeat: true
-        running: root.hasUnsavedChanges
-                 && root.currentFilePath.length > 0
-                 && root.layoutManager !== null
+        running: root.productDraftsEnabled
+                  && root.hasUnsavedChanges
+                  && root.currentFilePath.length > 0
+                  && !root.loadingCells
+                  && root.loadedCellsPath === root.currentFilePath
+                  && root.layoutManager !== null
         onTriggered: {
-            if (root.loadingCells || !root.layoutManager.saveProductDraft)
+            if (root.loadingCells
+                    || root.loadedCellsPath !== root.currentFilePath
+                    || root.hasActiveCellEdit()
+                    || !root.layoutManager.saveProductDraft)
                 return
-            root.syncCurrentLayoutFromCells()
+            if (!root.syncCurrentLayoutFromCells())
+                return
             root.layoutManager.saveProductDraft(
                         root.currentConfig, root.currentFilePath)
         }
@@ -120,6 +136,17 @@ Item {
         hasUnsavedChanges = true
     }
 
+    function hasActiveCellEdit() {
+        for (var i = 0; i < cellRepeater.count; ++i) {
+            var cell = cellRepeater.itemAt(i)
+            if (cell && (cell.titleEditing
+                         || cell.addressEditing
+                         || cell.productDescriptionEditing))
+                return true
+        }
+        return false
+    }
+
     function commitTitleEdits(exceptIndex) {
         for (var i = 0; i < cellRepeater.count; i++) {
             if (i === exceptIndex)
@@ -140,8 +167,19 @@ Item {
         }
     }
 
+    function commitProductAddressEdits(exceptIndex) {
+        for (var i = 0; i < cellRepeater.count; i++) {
+            if (i === exceptIndex)
+                continue
+            var cell = cellRepeater.itemAt(i)
+            if (cell && cell.addressEditing && cell.commitProductAddressEdit)
+                cell.commitProductAddressEdit()
+        }
+    }
+
     function commitCellEdits(exceptIndex) {
         commitTitleEdits(exceptIndex)
+        commitProductAddressEdits(exceptIndex)
         commitProductDescriptionEdits(exceptIndex)
     }
 
@@ -195,6 +233,13 @@ Item {
                 : hexText(j1939DefaultCanAddress(parsed), 8)
     }
 
+    function j1939SourceAddressText(value) {
+        var parsed = parseConfigNumber(value)
+        if (isNaN(parsed))
+            parsed = 0x33
+        return hexText(j1939SourceAddressFromCanAddress(parsed), 2)
+    }
+
     function canopenNodeIdFromCanAddress(canAddress) {
         if (isNaN(canAddress))
             return NaN
@@ -214,14 +259,110 @@ Item {
                 : hexText(canopenDefaultCanAddress(parsed), 3)
     }
 
-    function productAddressText() {
-        var product = currentConfig.product || {}
+    function canopenNodeIdText(value) {
+        var parsed = parseConfigNumber(value)
+        if (isNaN(parsed))
+            parsed = 0x01
+        return hexText(canopenNodeIdFromCanAddress(parsed), 2)
+    }
+
+    function currentProductProtocol() {
+        if (currentConfig && currentConfig.schemaVersion === 3)
+            return String(currentConfig.protocol || "j1939").toLowerCase()
+        var product = currentConfig && currentConfig.product
+                ? currentConfig.product : {}
         var protocol = String(product.protocol || "j1939").toLowerCase()
-        if (protocol === "can")
+        return protocol === "can" ? "raw_can" : protocol
+    }
+
+    function productAddressEditable() {
+        return !(currentConfig && currentConfig.schemaVersion === 3
+                 && currentProductProtocol() === "raw_can")
+    }
+
+    function productAddressLabel() {
+        var protocol = currentProductProtocol()
+        if (protocol === "canopen")
+            return "CANopen节点ID"
+        if (protocol === "raw_can")
+            return "CAN报文ID"
+        return "J1939源地址"
+    }
+
+    function productAddressText() {
+        productMetadataRevision
+        var protocol = currentProductProtocol()
+        if (currentConfig && currentConfig.schemaVersion === 3) {
+            var bus = currentConfig.bus || {}
+            if (protocol === "canopen")
+                return canopenNodeIdText(bus.nodeId)
+            if (protocol === "raw_can")
+                return "---"
+            return j1939SourceAddressText(bus.sourceAddress)
+        }
+        var product = currentConfig.product || {}
+        if (protocol === "raw_can")
             return product.canAddress || "---"
         if (protocol === "canopen")
-            return canopenCanAddressText(product.canAddress || product.nodeId)
-        return j1939CanAddressText(product.canAddress || product.sourceAddress)
+            return canopenNodeIdText(product.nodeId || product.canAddress)
+        return j1939SourceAddressText(product.sourceAddress || product.canAddress)
+    }
+
+    function setProductAddress(addressText) {
+        if (!currentConfig)
+            return false
+        var parsed = parseConfigNumber(addressText)
+        var protocol = currentProductProtocol()
+        var invalidCanopenAddress = protocol === "canopen"
+                && (parsed < 0x01
+                    || (parsed > 0x7F && (parsed < 0x701 || parsed > 0x77F)))
+        var invalidJ1939Address = protocol === "j1939"
+                && (parsed < 0x00 || parsed > 0xFF)
+        if (isNaN(parsed)
+                || parsed < 0
+                || parsed > 0x1FFFFFFF
+                || invalidCanopenAddress
+                || invalidJ1939Address) {
+            saveProductMessage = protocol === "canopen"
+                    ? "CANopen 请输入节点 ID 0x01～0x7F，或心跳 COB-ID 0x701～0x77F。"
+                    : "J1939 源地址请输入 0x00～0xFF。"
+            saveProductMessageIsError = true
+            return false
+        }
+
+        if (currentConfig.schemaVersion === 3) {
+            var bus = currentConfig.bus || {}
+            if (protocol === "canopen") {
+                bus.nodeId = hexText(canopenNodeIdFromCanAddress(parsed), 2)
+            } else if (protocol === "j1939") {
+                bus.sourceAddress = hexText(
+                            j1939SourceAddressFromCanAddress(parsed), 2)
+            } else {
+                saveProductMessage = "Raw CAN 产品没有单一设备地址，请编辑报文 ID。"
+                saveProductMessageIsError = true
+                return false
+            }
+            currentConfig.bus = bus
+        } else {
+            var product = currentConfig.product || {}
+            if (protocol === "canopen") {
+                product.nodeId = hexText(canopenNodeIdFromCanAddress(parsed), 2)
+                product.canAddress = canopenCanAddressText(parsed)
+            } else if (protocol === "j1939") {
+                product.sourceAddress = hexText(
+                            j1939SourceAddressFromCanAddress(parsed), 2)
+                product.canAddress = j1939CanAddressText(parsed)
+            } else {
+                product.canAddress = hexText(parsed, parsed > 0x7FF ? 8 : 3)
+            }
+            currentConfig.product = product
+        }
+
+        productMetadataRevision++
+        hasUnsavedChanges = true
+        saveProductMessage = ""
+        saveProductMessageIsError = false
+        return true
     }
 
     Component.onCompleted: loadProductList()
@@ -443,6 +584,15 @@ Item {
         if (path.length === 0)
             return
 
+        // Block the draft timer immediately. The visible canvases still belong to
+        // the previous product until doLoadCells() finishes.
+        loadingCells = true
+        loadedCellsPath = ""
+        hasUnsavedChanges = false
+        productLoadGeneration++
+        markLoadedConfigUnsaved = false
+        pendingRecoveredDraft = ({})
+        pendingRecoveredDraftPath = ""
         productList.currentIndex = productIndex
         refreshVersionModel(entry)
         currentVersionIndex = resolvedVersionIndex
@@ -450,19 +600,96 @@ Item {
         currentFilePath = path
         currentConfig = layoutManager.loadProductConfig(currentFilePath)
         migrateLegacyFnrBindings()
-        var recoveredDraft = layoutManager.loadProductDraft
+        var recoveredDraft = root.productDraftsEnabled && layoutManager.loadProductDraft
                 ? layoutManager.loadProductDraft(currentFilePath) : ({})
         if (recoveredDraft && Object.keys(recoveredDraft).length > 0) {
-            currentConfig = recoveredDraft
-            saveProductMessage = "已恢复上次未正式保存的草稿。"
-            saveProductMessageIsError = false
-            hasUnsavedChanges = true
+            var draftCompatibility =
+                    ProductDraftPolicy.compatibility(currentConfig, recoveredDraft)
+            if (draftCompatibility.compatible !== true) {
+                saveProductMessage =
+                        "检测到其他版本或旧格式草稿，已忽略并保留当前正式布局。"
+                saveProductMessageIsError = true
+            } else {
+                var draftValidation = layoutManager.validateProductConfig
+                        ? layoutManager.validateProductConfig(recoveredDraft) : ({ ok: false })
+                if (draftValidation.ok === true) {
+                    pendingRecoveredDraft = deepCopyConfig(recoveredDraft)
+                    pendingRecoveredDraftPath = currentFilePath
+                    saveProductMessage = "检测到未保存草稿，请选择是否恢复。"
+                    saveProductMessageIsError = false
+                    var draftPathAtRequest = currentFilePath
+                    Qt.callLater(function() {
+                        if (pendingRecoveredDraftPath === draftPathAtRequest
+                                && currentFilePath === draftPathAtRequest)
+                            draftRecoveryPopup.open()
+                    })
+                } else {
+                    saveProductMessage = "检测到无效草稿，已保留正式布局且未自动恢复。"
+                    saveProductMessageIsError = true
+                }
+            }
         } else {
             saveProductMessage = ""
             saveProductMessageIsError = false
-            hasUnsavedChanges = false
         }
         loadCells()
+    }
+
+    function handleExternalProductConfigChange(path) {
+        var changedPath = String(path || "").replace(/\\/g, "/").toLowerCase()
+        var selectedPath = String(currentFilePath || "").replace(/\\/g, "/").toLowerCase()
+        if (changedPath.length === 0 || changedPath !== selectedPath)
+            return
+
+        if (hasUnsavedChanges) {
+            saveProductMessage = "检测到 JSON 已被外部修改；当前页面有未保存内容，未自动覆盖，请处理后重新选择该产品。"
+            saveProductMessageIsError = true
+            return
+        }
+
+        var pathAtNotification = currentFilePath
+        var selectedProductIndex = productList.currentIndex
+        var selectedVersionIndex = currentVersionIndex
+        Qt.callLater(function() {
+            if (root.currentFilePath !== pathAtNotification || root.hasUnsavedChanges)
+                return
+            root.loadProductVersion(selectedProductIndex, selectedVersionIndex)
+            if (root.currentFilePath === pathAtNotification) {
+                root.saveProductMessage = "检测到 JSON 外部修改，配置和数据库哈希已同步并重新加载。"
+                root.saveProductMessageIsError = false
+            }
+        })
+    }
+
+    function recoverPendingProductDraft() {
+        if (!pendingRecoveredDraft || Object.keys(pendingRecoveredDraft).length === 0)
+            return
+        if (pendingRecoveredDraftPath !== currentFilePath) {
+            pendingRecoveredDraft = ({})
+            pendingRecoveredDraftPath = ""
+            draftRecoveryPopup.close()
+            return
+        }
+        loadingCells = true
+        loadedCellsPath = ""
+        productLoadGeneration++
+        currentConfig = deepCopyConfig(pendingRecoveredDraft)
+        pendingRecoveredDraft = ({})
+        pendingRecoveredDraftPath = ""
+        migrateLegacyFnrBindings()
+        markLoadedConfigUnsaved = true
+        draftRecoveryPopup.close()
+        saveProductMessage = "已按你的选择恢复草稿，保存前可继续检查。"
+        saveProductMessageIsError = false
+        loadCells()
+    }
+
+    function keepOfficialProductLayout() {
+        pendingRecoveredDraft = ({})
+        pendingRecoveredDraftPath = ""
+        draftRecoveryPopup.close()
+        saveProductMessage = "已保留正式布局，未恢复草稿。"
+        saveProductMessageIsError = false
     }
 
     function openCurrentProductConfig() {
@@ -927,6 +1154,8 @@ Item {
             return "型号不能为空"
         if (versionCode.length === 0)
             return "版本号不能为空"
+        if (!cloneProductCreatesVersion && currentCloneCustomerName().length === 0)
+            return "客户不能为空"
         if (!cloneProductCreatesVersion && layoutManager && layoutManager.productConfigExists && layoutManager.productConfigExists(model))
             return "型号已存在，请使用创建新版本：" + model
         if (layoutManager && layoutManager.productConfigVersionExists
@@ -981,7 +1210,8 @@ Item {
                 if (cloneProductCreatesVersion)
                     return setVersionMetadata(config, versionCode)
                 if (layoutManager && layoutManager.cloneProductConfigV3)
-                    return layoutManager.cloneProductConfigV3(config, model, description)
+                    return layoutManager.cloneProductConfigV3(
+                                config, model, description, versionCode)
                 return ({})
             }
             return applyCloneMetadata(config, model, description, versionCode)
@@ -991,6 +1221,7 @@ Item {
             code: model,
             version: versionCode,
             description: description,
+            customerName: currentCloneCustomerName(),
             calibrationMode: currentCloneCalibrationMode(),
             baudRate: currentCloneBaudRate(),
             joystickTopology: currentCloneJoystickTopology(),
@@ -1011,19 +1242,32 @@ Item {
             return
 
         if (!cloneProductUsesBlankTemplate && currentConfig && currentConfig.product
-                && currentConfig.schemaVersion !== 3)
-            syncCurrentLayoutFromCells()
+                && !syncCurrentLayoutFromCells())
+            return
         var model = sanitizeProductModel(cloneModelField.text)
         var versionCode = normalizedCloneVersionCode()
+        var description = String(cloneDescriptionArea.text || "").trim()
+        if (!cloneProductUsesBlankTemplate
+                && !cloneProductCreatesVersion
+                && currentConfig
+                && currentConfig.schemaVersion === 3
+                && layoutManager
+                && layoutManager.cloneProductConfigVersionWithCustomerAs) {
+            if (!layoutManager.cloneProductConfigVersionWithCustomerAs(
+                        deepCopyConfig(productTemplateConfig()),
+                        model,
+                        versionCode,
+                        description,
+                        currentCloneCustomerName())) {
+                return
+            }
+        } else {
         var config = buildClonedProductConfig()
         if (!config || Object.keys(config).length === 0) {
-            cloneProductError = currentConfig && currentConfig.schemaVersion === 3
-                    && ((currentConfig.operation || {}).mode === "firmware-backed")
-                    ? "固件产品克隆失败：请先放入与新型号、版本同名的真实固件文件。"
-                    : "无法生成产品配置。"
+            cloneProductError = "无法生成产品配置。"
             return
         }
-        if (cloneProductUsesBlankTemplate && layoutManager
+        if (!cloneProductCreatesVersion && layoutManager
                 && layoutManager.saveProductConfigVersionWithCustomerAs) {
             if (!layoutManager.saveProductConfigVersionWithCustomerAs(
                         config, model, versionCode, currentCloneCustomerName()))
@@ -1033,6 +1277,7 @@ Item {
                 return
         } else if (!layoutManager.saveProductConfigAs(config, model)) {
             return
+        }
         }
 
         cloneProductPopup.close()
@@ -1052,9 +1297,17 @@ Item {
     }
 
     // Resolve component IDs to their definitions
+    function editorBindings() {
+        if (!currentConfig)
+            return []
+        if (currentConfig.schemaVersion === 3)
+            return V3EditorAdapter.bindingsFromConfig(currentConfig)
+        return currentConfig.components || []
+    }
+
     function resolveComponents(compIds) {
         var result = []
-        var allComps = currentConfig.components || []
+        var allComps = editorBindings()
         for (var i = 0; i < compIds.length; i++) {
             var id = compIds[i]
             if (isReservedCellComponentId(id)) { result.push({ id: id, type: id }); continue }
@@ -1183,14 +1436,41 @@ Item {
         if (!wrapper || !currentConfig)
             return
         var components = currentConfig.components || []
-        var fnr = fnrComponentForWrapper(wrapper, components)
-        var legacy = FnrMapping.parseLegacyBinding(wrapper.bindingId)
-        var mapping = fnr ? (fnr.buttonMapping || {}) : (legacy || {})
-        var group = legacy ? buttonGroupById(components, legacy.sourceId)
+        var fnr = null
+        var legacy = null
+        var mapping = ({})
+        var group = null
+        var v3FnrId = ""
+        if (currentConfig.schemaVersion === 3) {
+            v3FnrId = String(wrapper.bindingId || "")
+            mapping = V3EditorAdapter.fnrEditorState(
+                        currentConfig, v3FnrId)
+            if (!mapping.source) {
+                if (!v3FnrId)
+                    v3FnrId = uniqueFnrId(currentConfig.controls || [])
+                mapping = V3EditorAdapter.fnrCreationState(
+                            currentConfig, v3FnrId)
+            }
+            if (mapping.source) {
+                group = {
+                    id: mapping.source,
+                    source: mapping.source,
+                    count: mapping.count,
+                    visibleButtonIndices: mapping.visibleButtonIndices
+                }
+            }
+        } else {
+            fnr = fnrComponentForWrapper(wrapper, components)
+            legacy = FnrMapping.parseLegacyBinding(wrapper.bindingId)
+            mapping = fnr ? (fnr.buttonMapping || {}) : (legacy || {})
+            group = legacy ? buttonGroupById(components, legacy.sourceId)
                            : buttonGroupForMapping(components, mapping)
+        }
 
         fnrMappingPopup.targetWrapper = wrapper
-        fnrMappingPopup.targetFnrId = fnr ? String(fnr.id || "") : ""
+        fnrMappingPopup.targetFnrId = currentConfig.schemaVersion === 3
+                ? v3FnrId
+                : (fnr ? String(fnr.id || "") : "")
         fnrMappingPopup.targetButtonGroup = group
         fnrMappingPopup.errorText = group ? "" : "当前产品没有可用于FNR映射的按钮组。"
 
@@ -1228,6 +1508,27 @@ Item {
         }
     }
 
+    function removeButtonVisualsByBindingIds(bindingIds, fnrWrapper) {
+        var selected = ({})
+        bindingIds = bindingIds || []
+        for (var bindingIndex = 0; bindingIndex < bindingIds.length; ++bindingIndex)
+            selected[String(bindingIds[bindingIndex] || "")] = true
+        for (var i = 0; i < cellRepeater.count; ++i) {
+            var cell = cellRepeater.itemAt(i)
+            if (!cell || cell.cellType !== "canvas" || !cell.canvasItem)
+                continue
+            var canvasComponents = cell.canvasItem.components || []
+            for (var j = canvasComponents.length - 1; j >= 0; --j) {
+                var component = canvasComponents[j]
+                if (component === fnrWrapper
+                        || String(component.componentType || "").indexOf("Button") !== 0)
+                    continue
+                if (selected[String(component.bindingId || "")])
+                    cell.canvasItem.removeComponent(component)
+            }
+        }
+    }
+
     function applyFnrMapping() {
         var group = fnrMappingPopup.targetButtonGroup
         var wrapper = fnrMappingPopup.targetWrapper
@@ -1239,6 +1540,26 @@ Item {
         var error = FnrMapping.validateSelection(forward, neutral, reverse)
         if (error.length > 0) {
             fnrMappingPopup.errorText = error
+            return
+        }
+
+        if (currentConfig.schemaVersion === 3) {
+            var mappedChannelIndexes = [forward, reverse]
+            if (neutral >= 0)
+                mappedChannelIndexes.push(neutral)
+            var mappedChannelIds =
+                    V3EditorAdapter.buttonControlIdsForPositions(
+                        currentConfig,
+                        String(group.source || group.id || ""),
+                        mappedChannelIndexes)
+            V3EditorAdapter.applyFnrPositions(
+                        currentConfig, fnrMappingPopup.targetFnrId,
+                        forward, neutral, reverse)
+            wrapper.bindingId = fnrMappingPopup.targetFnrId
+            removeButtonVisualsByBindingIds(mappedChannelIds, wrapper)
+            fnrMappingPopup.close()
+            hasUnsavedChanges = true
+            refreshBindingStatus()
             return
         }
 
@@ -1586,6 +1907,8 @@ Item {
 
         // Use timer to ensure canvas items are created
         cellLoadTimer.cellData = cells
+        cellLoadTimer.targetPath = currentFilePath
+        cellLoadTimer.targetGeneration = productLoadGeneration
         cellLoadTimer.start()
     }
 
@@ -1593,10 +1916,20 @@ Item {
         id: cellLoadTimer
         interval: 100; repeat: false
         property var cellData: []
-        onTriggered: doLoadCells(cellData)
+        property string targetPath: ""
+        property int targetGeneration: 0
+        onTriggered: {
+            if (targetPath !== root.currentFilePath
+                    || targetGeneration !== root.productLoadGeneration)
+                return
+            doLoadCells(cellData, targetPath, targetGeneration)
+        }
     }
 
-    function doLoadCells(cells) {
+    function doLoadCells(cells, targetPath, targetGeneration) {
+        if (targetPath !== currentFilePath
+                || targetGeneration !== productLoadGeneration)
+            return
         loadingCells = true
         for (var i = 0; i < cellRepeater.count && i < cells.length; i++) {
             var cell = cellRepeater.itemAt(i)
@@ -1648,12 +1981,14 @@ Item {
         }
         refreshCanvasMode()
         refreshBindingStatus()
-        hasUnsavedChanges = false
+        hasUnsavedChanges = markLoadedConfigUnsaved
+        markLoadedConfigUnsaved = false
+        loadedCellsPath = targetPath
         loadingCells = false
     }
 
     function syncCurrentLayoutFromCells() {
-        if (!currentConfig) return
+        if (!currentConfig) return false
         commitCellEdits(-1)
         var layout = currentConfig.layout || {}
         var grid = layout.grid || {}
@@ -1696,12 +2031,19 @@ Item {
             cells.push(cd)
         }
         if (currentConfig.schemaVersion === 3) {
+            var bindingErrors = V3EditorAdapter.cellBindingErrors(cells)
+            if (bindingErrors.length > 0) {
+                saveProductMessage = bindingErrors.join("；")
+                saveProductMessageIsError = true
+                return false
+            }
             V3EditorAdapter.applyCellsToConfig(currentConfig, cells)
         } else {
             grid.cells = cells
             layout.grid = grid
             currentConfig.layout = layout
         }
+        return true
     }
 
     function saveProduct() {
@@ -1710,7 +2052,8 @@ Item {
             saveProductMessageIsError = true
             return
         }
-        syncCurrentLayoutFromCells()
+        if (!syncCurrentLayoutFromCells())
+            return
         if (layoutManager.saveProductConfig(currentConfig, currentFilePath)) {
             hasUnsavedChanges = false
             saveProductMessage = "已保存：" + currentFilePath
@@ -1734,6 +2077,9 @@ Item {
                 saveProductMessageIsError = true
             }
         }
+        function onProductConfigExternallyChanged(path) {
+            root.handleExternalProductConfigChange(path)
+        }
         function onProductConfigSaved(path) {
             if (!cloneProductPopup.opened) {
                 saveProductMessage = "已保存：" + path
@@ -1745,8 +2091,10 @@ Item {
     // Collect all bindings from all canvas cells and compare with product components
     function refreshBindingStatus() {
         bindingStatusModel.clear()
-        var allComps = currentConfig.components || []
+        var allComps = editorBindings()
         var usedBindings = []
+        var liveOwners = ({})
+        var liveMiniIndex = 0
 
         // Collect all bindingIds from all canvas cells
         for (var i = 0; i < cellRepeater.count; i++) {
@@ -1754,6 +2102,49 @@ Item {
             if (!cell || cell.cellType !== "canvas" || !cell.canvasItem) continue
             var used = cell.canvasItem.getUsedBindings()
             for (var j = 0; j < used.length; j++) usedBindings.push(used[j])
+            var canvasComponents = cell.canvasItem.components || []
+            for (var componentIndex = 0;
+                 componentIndex < canvasComponents.length;
+                 ++componentIndex) {
+                var component = canvasComponents[componentIndex]
+                if (!component || component.componentType !== "MiniJoystick")
+                    continue
+                ++liveMiniIndex
+                var miniConfig = component.componentConfig || {}
+                var miniLabel = String(miniConfig.label || "")
+                if (!miniLabel || miniLabel === "迷你摇杆")
+                    miniLabel = "迷你摇杆" + liveMiniIndex
+                var xChannelId = String(component.xBindingId || "")
+                var yChannelId = String(component.yBindingId || "")
+                if (xChannelId) {
+                    liveOwners[xChannelId] = {
+                        ownerId: String(component.bindingId
+                                        || component.componentId || ""),
+                        boundTo: miniLabel + " X"
+                    }
+                }
+                if (yChannelId) {
+                    liveOwners[yChannelId] = {
+                        ownerId: String(component.bindingId
+                                        || component.componentId || ""),
+                        boundTo: miniLabel + " Y"
+                    }
+                }
+            }
+        }
+
+        if (currentConfig && currentConfig.schemaVersion === 3) {
+            var statusEntries = V3EditorAdapter.bindingStatusEntries(
+                        currentConfig, usedBindings, liveOwners)
+            for (var statusIndex = 0; statusIndex < statusEntries.length; ++statusIndex) {
+                var status = statusEntries[statusIndex]
+                bindingStatusModel.append({
+                    compId: status.label || status.id,
+                    bound: status.bound === true,
+                    boundTo: status.boundTo || ""
+                })
+            }
+            return
         }
 
         for (var k = 0; k < allComps.length; k++) {
@@ -1773,6 +2164,13 @@ Item {
                         boundTo: fnrBinding.length > 0 ? fnrBinding : (btnBound ? btnId : "")
                     })
                 }
+            } else if (comp.type === "button") {
+                var directButtonBound = usedBindings.indexOf(comp.id) >= 0
+                bindingStatusModel.append({
+                    compId: comp.label || comp.id,
+                    bound: directButtonBound,
+                    boundTo: directButtonBound ? comp.id : ""
+                })
             } else {
                 // Single component
                 var isBound = usedBindings.indexOf(comp.id) >= 0
@@ -2202,6 +2600,9 @@ Item {
                             property string canvasScaleMode: "uniform"
                             property int cellIndex: index
                             property bool titleEditing: false
+                            property bool addressEditing: false
+                            property string addressDraft: ""
+                            property string addressOriginal: ""
                             property bool productDescriptionEditing: false
                             property string productDescriptionDraft: ""
                             property string productDescriptionOriginal: ""
@@ -2222,6 +2623,7 @@ Item {
 
                             function beginTitleEdit() {
                                 root.commitCellEdits(cellIndex)
+                                commitProductAddressEdit()
                                 commitProductDescriptionEdit()
                                 activeCellIndex = cellIndex
                                 syncTitleEditor()
@@ -2244,6 +2646,7 @@ Item {
                             function beginProductDescriptionEdit() {
                                 root.commitCellEdits(cellIndex)
                                 commitTitleEdit()
+                                commitProductAddressEdit()
                                 activeCellIndex = cellIndex
                                 productDescriptionOriginal = root.productDescriptionText()
                                 productDescriptionDraft = productDescriptionOriginal
@@ -2260,6 +2663,35 @@ Item {
                             function cancelProductDescriptionEdit() {
                                 productDescriptionDraft = productDescriptionOriginal
                                 productDescriptionEditing = false
+                            }
+
+                            function beginProductAddressEdit() {
+                                if (!root.productAddressEditable())
+                                    return
+                                root.commitCellEdits(cellIndex)
+                                commitTitleEdit()
+                                commitProductDescriptionEdit()
+                                activeCellIndex = cellIndex
+                                addressOriginal = root.productAddressText()
+                                addressDraft = addressOriginal
+                                addressEditing = true
+                            }
+
+                            function commitProductAddressEdit(editorText) {
+                                if (!addressEditing)
+                                    return true
+                                var value = editorText === undefined
+                                        ? addressDraft : String(editorText)
+                                addressDraft = value
+                                if (!root.setProductAddress(value))
+                                    return false
+                                addressEditing = false
+                                return true
+                            }
+
+                            function cancelProductAddressEdit() {
+                                addressDraft = addressOriginal
+                                addressEditing = false
                             }
 
                             Rectangle {
@@ -2447,6 +2879,7 @@ Item {
                                             onClicked: {
                                                 root.commitCellEdits(index)
                                                 cellCard.commitTitleEdit()
+                                                cellCard.commitProductAddressEdit()
                                                 cellCard.commitProductDescriptionEdit()
                                                 activeCellIndex = index
                                                 cellTypePopup.openFor(cellCard, typeSelector)
@@ -2548,14 +2981,15 @@ Item {
                                         id: recordInfoPanel
                                         visible: cellCard.cellType === "recordInfo"
                                         anchors.fill: parent
-                                        z: cellCard.productDescriptionEditing ? 30 : 0
+                                        z: cellCard.addressEditing
+                                           || cellCard.productDescriptionEditing ? 30 : 0
                                         spacing: Math.max(6, 8 * dtViewport.cardScale)
                                         clip: true
 
                                         readonly property var rows: [
                                             { label: "产品型号", val: currentConfig.product ? currentConfig.product.name || currentConfig.product.model || "---" : "---" },
-                                            { label: "通信协议", val: currentConfig.product ? String(currentConfig.product.protocol || "j1939").toUpperCase() : "---" },
-                                            { label: "CAN地址", val: root.productAddressText() },
+                                            { label: "通信协议", val: root.currentProductProtocol().toUpperCase() },
+                                            { label: root.productAddressLabel(), val: root.productAddressText(), editableAddress: root.productAddressEditable() },
                                             { label: "产品描述", val: "", multiline: true, editableDescription: true }
                                         ]
                                         readonly property real gapHeight: spacing * Math.max(0, rows.length - 1)
@@ -2595,7 +3029,8 @@ Item {
                                                     Text {
                                                         id: recordInfoValue
                                                         anchors.fill: parent
-                                                        visible: !modelData.editableDescription
+                                                        visible: !modelData.editableAddress
+                                                                 && !modelData.editableDescription
                                                         text: modelData.val
                                                         color: dtAccent
                                                         font.pixelSize: dtViewport.cardValueFont
@@ -2605,6 +3040,85 @@ Item {
                                                         elide: Text.ElideNone
                                                         wrapMode: Text.WrapAnywhere
                                                         verticalAlignment: Text.AlignVCenter
+                                                    }
+
+                                                    Text {
+                                                        id: productAddressLabel
+                                                        anchors.fill: parent
+                                                        visible: modelData.editableAddress === true
+                                                                 && !cellCard.addressEditing
+                                                        text: root.productAddressText()
+                                                        color: dtAccent
+                                                        font.pixelSize: dtViewport.cardValueFont
+                                                        fontSizeMode: Text.Fit
+                                                        minimumPixelSize: Math.max(8, dtViewport.cardMetaFont)
+                                                        font.bold: true
+                                                        elide: Text.ElideNone
+                                                        verticalAlignment: Text.AlignVCenter
+
+                                                        MouseArea {
+                                                            anchors.fill: parent
+                                                            hoverEnabled: true
+                                                            cursorShape: Qt.IBeamCursor
+                                                            onClicked: cellCard.beginProductAddressEdit()
+                                                        }
+                                                    }
+
+                                                    Rectangle {
+                                                        id: addressEditFrame
+                                                        anchors.fill: parent
+                                                        visible: modelData.editableAddress === true
+                                                                 && cellCard.addressEditing
+                                                        z: 10
+                                                        radius: 4
+                                                        color: "white"
+                                                        border.width: productAddressEdit.activeFocus ? 1 : 0
+                                                        border.color: dtAccent
+                                                        clip: true
+
+                                                        TextInput {
+                                                            id: productAddressEdit
+                                                            anchors.fill: parent
+                                                            anchors.leftMargin: 5
+                                                            anchors.rightMargin: 5
+                                                            clip: true
+                                                            selectByMouse: true
+                                                            color: dtAccent
+                                                            font.pixelSize: dtViewport.cardValueFont
+                                                            font.bold: true
+                                                            validator: RegularExpressionValidator {
+                                                                regularExpression: /^(?:0[xX])?[0-9A-Fa-f]{1,8}$/
+                                                            }
+
+                                                            onVisibleChanged: {
+                                                                if (visible) {
+                                                                    text = cellCard.addressDraft
+                                                                    forceActiveFocus()
+                                                                    selectAll()
+                                                                } else {
+                                                                    focus = false
+                                                                }
+                                                            }
+                                                            onTextChanged: {
+                                                                if (addressEditFrame.visible)
+                                                                    cellCard.addressDraft = text
+                                                            }
+                                                            onAccepted: {
+                                                                if (acceptableInput)
+                                                                    cellCard.commitProductAddressEdit(text)
+                                                            }
+                                                            onActiveFocusChanged: {
+                                                                if (!activeFocus && cellCard.addressEditing) {
+                                                                    if (!acceptableInput
+                                                                            || !cellCard.commitProductAddressEdit(text))
+                                                                        cellCard.cancelProductAddressEdit()
+                                                                }
+                                                            }
+                                                            Keys.onEscapePressed: function(event) {
+                                                                cellCard.cancelProductAddressEdit()
+                                                                event.accepted = true
+                                                            }
+                                                        }
                                                     }
 
                                                     Text {
@@ -2737,7 +3251,7 @@ Item {
                                                 canvasWidth: cellCard.canvasDesignWidth
                                                 canvasHeight: cellCard.canvasDesignHeight
                                                 scaleMode: cellCard.canvasScaleMode
-                                                productBindings: currentConfig.components || []
+                                                productBindings: root.editorBindings()
                                                 onCanvasPressed: {
                                                     root.activeCellIndex = index
                                                 }
@@ -2994,6 +3508,67 @@ Item {
     }
 
     Popup {
+        id: draftRecoveryPopup
+        parent: root
+        width: Math.min(440, root.width - 32)
+        height: draftRecoveryContent.implicitHeight + 32
+        x: Math.max(16, (root.width - width) / 2)
+        y: Math.max(16, (root.height - height) / 2)
+        padding: 16
+        modal: true
+        focus: true
+        closePolicy: Popup.NoAutoClose
+        z: 10001
+
+        background: Rectangle {
+            radius: 8
+            color: "white"
+            border.width: 1
+            border.color: dtBorder
+        }
+
+        contentItem: ColumnLayout {
+            id: draftRecoveryContent
+            spacing: 12
+
+            Label {
+                Layout.fillWidth: true
+                text: "检测到未保存的产品草稿"
+                color: dtText
+                font.pixelSize: 14
+                font.bold: true
+            }
+
+            Label {
+                Layout.fillWidth: true
+                text: "为防止旧草稿覆盖当前正式布局，系统不会再自动恢复。请选择要继续使用的版本。"
+                color: dtTextSec
+                font.pixelSize: 11
+                wrapMode: Text.Wrap
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 8
+
+                Item { Layout.fillWidth: true }
+
+                Button {
+                    text: "保留正式布局"
+                    onClicked: root.keepOfficialProductLayout()
+                }
+
+                Button {
+                    text: "恢复草稿"
+                    palette.button: dtAccent
+                    palette.buttonText: "white"
+                    onClicked: root.recoverPendingProductDraft()
+                }
+            }
+        }
+    }
+
+    Popup {
         id: cloneProductPopup
         parent: root
         width: Math.min(520, root.width - 32)
@@ -3056,7 +3631,7 @@ Item {
                     text: "客户"
                     color: dtText
                     font.pixelSize: 11
-                    visible: cloneProductUsesBlankTemplate
+                    visible: !cloneProductCreatesVersion
                 }
                 ComboBox {
                     id: cloneCustomerBox
@@ -3067,7 +3642,7 @@ Item {
                     editable: true
                     currentIndex: -1
                     font.pixelSize: 11
-                    visible: cloneProductUsesBlankTemplate
+                    visible: !cloneProductCreatesVersion
                     onActivated: root.cloneProductError = ""
                     onEditTextChanged: root.cloneProductError = ""
                 }
@@ -3196,7 +3771,9 @@ Item {
                           ? "从 J1939 通用模板创建无固件测试产品，可配置按钮、滚轮和基础 CAN 参数。"
                           : (cloneProductCreatesVersion
                              ? "新版本会完整保留当前产品，只修改版本和描述。"
-                             : "新产品会完整保留当前产品的协议、报文、组件、灯光测试和卡片布局，只修改型号、版本和描述。")
+                             : (((currentConfig || {}).operation || {}).mode === "firmware-backed"
+                                ? "新产品会完整保留当前配置，并自动复制原固件，按新型号和版本重命名。"
+                                : "新产品会完整保留当前产品的协议、报文、组件、灯光测试和卡片布局，只修改型号、版本和描述。"))
                     color: root.dtTextSec
                     font.pixelSize: 11
                     wrapMode: Text.WordWrap

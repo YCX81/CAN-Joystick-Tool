@@ -6,7 +6,9 @@ Item {
     id: root
 
     property real value: 0.0
+    property bool invertInput: false
     property string label: ""
+    readonly property real outputValue: invertInput ? -value : value
 
     readonly property real designWidth: 90
     readonly property real designHeight: 240
@@ -28,18 +30,18 @@ Item {
         RollerWheel {
             id: roller
             orientation: "vertical"
-            value: root.value
+            value: root.outputValue
             anchors.horizontalCenter: parent.horizontalCenter
 
             onValueChanged: {
-                root.value = value
+                root.value = root.invertInput ? -value : value
             }
         }
 
         // 数字显示
         DigitalDisplay {
             id: display
-            value: Math.round(root.value * 100)
+            value: Math.round(root.outputValue * 100)
             label: "%"
             anchors.horizontalCenter: parent.horizontalCenter
         }

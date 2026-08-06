@@ -34,9 +34,10 @@ public:
              QStringLiteral("identityPolicy"),
              QStringLiteral("protocol"),
              QStringLiteral("bus"),
-             QStringLiteral("messages"),
-             QStringLiteral("signals"),
-             QStringLiteral("controls"),
+              QStringLiteral("messages"),
+              QStringLiteral("signals"),
+              QStringLiteral("bindingChannels"),
+              QStringLiteral("controls"),
              QStringLiteral("commands"),
              QStringLiteral("tests"),
              QStringLiteral("layout")},
@@ -55,7 +56,9 @@ public:
         const QSet<QString> messageIds = validateMessages(config, protocol);
         const QSet<QString> signalIds = validateSignals(config, messageIds);
         const QSet<QString> commandIds = validateCommands(config);
+        validateBindingChannels(config, signalIds);
         const QSet<QString> controlIds = validateControls(config, signalIds, commandIds);
+        validateBindingChannelCoverage(config);
         validateLayout(config, controlIds);
         validateTests(config, signalIds, commandIds, controlIds);
         validateHm025Safety(config);
@@ -204,10 +207,11 @@ private:
         }
         const int bitsPerPosition =
             packedBitsPerPosition(m_signalEncodings.value(signalId));
-        const int bitLength = m_signalBitLengths.value(signalId);
+        const int logicalPositionCount =
+            m_signalLogicalPositionCounts.value(signalId);
         if (bitsPerPosition <= 0
             || position < 0
-            || position >= bitLength / bitsPerPosition) {
+            || position >= logicalPositionCount) {
             addError(path + QStringLiteral(" position is outside the packed signal"));
             return false;
         }
@@ -653,6 +657,7 @@ private:
             static const QSet<QString> allowedKinds{
                 QStringLiteral("position"),
                 QStringLiteral("status"),
+                QStringLiteral("fnr"),
                 QStringLiteral("button"),
                 QStringLiteral("packedButtons"),
                 QStringLiteral("counter"),
@@ -673,8 +678,9 @@ private:
                                QStringLiteral("startBit"),
                                QStringLiteral("bitLength"),
                                QStringLiteral("endian"),
-                               QStringLiteral("encoding")},
-                              path + QStringLiteral(".source"));
+                               QStringLiteral("encoding"),
+                               QStringLiteral("buttonBitPositions")},
+                               path + QStringLiteral(".source"));
             const QString messageId =
                 requiredString(source, QStringLiteral("messageId"),
                                path + QStringLiteral(".source.messageId"));
@@ -714,6 +720,45 @@ private:
             if (!encoding.isEmpty() && !allowedEncodings.contains(encoding)) {
                 addError(path + QStringLiteral(".source.encoding is unsupported"));
             }
+            QJsonArray buttonBitPositions;
+            if (source.contains(QStringLiteral("buttonBitPositions"))) {
+                const QString positionsPath =
+                    path + QStringLiteral(".source.buttonBitPositions");
+                const QJsonValue positionsValue =
+                    source.value(QStringLiteral("buttonBitPositions"));
+                if (!positionsValue.isArray()) {
+                    addError(positionsPath + QStringLiteral(" must be an array"));
+                } else {
+                    buttonBitPositions = positionsValue.toArray();
+                    if (buttonBitPositions.isEmpty()) {
+                        addError(positionsPath + QStringLiteral(" must not be empty"));
+                    }
+                    QSet<int> uniquePositions;
+                    for (qsizetype positionIndex = 0;
+                         positionIndex < buttonBitPositions.size();
+                         ++positionIndex) {
+                        const QJsonValue positionValue =
+                            buttonBitPositions.at(positionIndex);
+                        const QString positionPath =
+                            QStringLiteral("%1[%2]").arg(positionsPath).arg(positionIndex);
+                        if (!positionValue.isDouble()
+                            || positionValue.toDouble() != positionValue.toInt()) {
+                            addError(positionPath + QStringLiteral(" must be an integer"));
+                            continue;
+                        }
+                        const int position = positionValue.toInt();
+                        if (position < 0 || position > 63) {
+                            addError(positionPath + QStringLiteral(" must be in range 0..63"));
+                            continue;
+                        }
+                        if (uniquePositions.contains(position)) {
+                            addError(positionsPath + QStringLiteral(" values must be unique"));
+                            continue;
+                        }
+                        uniquePositions.insert(position);
+                    }
+                }
+            }
             if (startByte < 0 || startBit < 0 || startBit > 7 || bitLength <= 0) {
                 addError(path + QStringLiteral(
                     ".source bit range requires startByte >= 0, startBit 0..7, bitLength > 0"));
@@ -730,6 +775,31 @@ private:
                 if (bitsPerPosition <= 0 || bitLength % bitsPerPosition != 0) {
                     addError(path + QStringLiteral(
                         " packedButtons bitLength must align with its packed encoding"));
+                } else {
+                    for (qsizetype positionIndex = 0;
+                         positionIndex < buttonBitPositions.size();
+                         ++positionIndex) {
+                        const QJsonValue positionValue =
+                            buttonBitPositions.at(positionIndex);
+                        if (!positionValue.isDouble()
+                            || positionValue.toDouble() != positionValue.toInt()) {
+                            continue;
+                        }
+                        if (positionValue.toInt() + bitsPerPosition > bitLength) {
+                            addError(
+                                QStringLiteral("%1.source.buttonBitPositions[%2] "
+                                               "exceeds bitLength")
+                                    .arg(path)
+                                    .arg(positionIndex));
+                        }
+                    }
+                    if (!id.isEmpty()) {
+                        m_signalLogicalPositionCounts.insert(
+                            id,
+                            buttonBitPositions.isEmpty()
+                                ? bitLength / bitsPerPosition
+                                : buttonBitPositions.size());
+                    }
                 }
             }
 
@@ -840,10 +910,30 @@ private:
                              const QSet<QString> &signalIds)
     {
         const QJsonObject binding = requiredObject(control, key, path);
+        rejectUnknownKeys(binding,
+                          {QStringLiteral("signalId"),
+                           QStringLiteral("statusSignalId"),
+                           QStringLiteral("transform")},
+                          path);
         const QString signalId =
             requiredString(binding, QStringLiteral("signalId"), path + QStringLiteral(".signalId"));
         if (!signalId.isEmpty() && !signalIds.contains(signalId)) {
             addError(path + QStringLiteral(".signalId references missing signal"));
+        }
+        if (binding.contains(QStringLiteral("statusSignalId"))) {
+            const QString statusSignalId =
+                requiredString(binding,
+                               QStringLiteral("statusSignalId"),
+                               path + QStringLiteral(".statusSignalId"));
+            if (!statusSignalId.isEmpty() && !signalIds.contains(statusSignalId)) {
+                addError(path + QStringLiteral(
+                    ".statusSignalId references missing signal"));
+            } else if (!statusSignalId.isEmpty()
+                       && m_signalKinds.value(statusSignalId)
+                           != QStringLiteral("status")) {
+                addError(path + QStringLiteral(
+                    ".statusSignalId must reference a status signal"));
+            }
         }
 
         const QJsonObject transform =
@@ -865,13 +955,333 @@ private:
         const double deadzone =
             requiredNumber(transform, QStringLiteral("deadzone"),
                            path + QStringLiteral(".transform.deadzone"), &deadzoneValid);
-        if (rawMinValid && rawCenterValid && rawMaxValid
-            && !(rawMin < rawCenter && rawCenter < rawMax)) {
-            addError(path + QStringLiteral(
-                ".transform must satisfy rawMin < rawCenter < rawMax"));
+        if (rawMinValid && rawCenterValid && rawMaxValid) {
+            const bool statusMagnitude =
+                binding.contains(QStringLiteral("statusSignalId"))
+                && control.value(QStringLiteral("role")).toString()
+                       != QStringLiteral("potentiometer")
+                && control.value(QStringLiteral("inputMode")).toString()
+                       != QStringLiteral("unipolar");
+            if (statusMagnitude
+                && !(rawMin == rawCenter && rawCenter < rawMax)) {
+                addError(path + QStringLiteral(
+                    ".transform for status+magnitude input must satisfy "
+                    "rawMin == rawCenter < rawMax"));
+            } else if (!statusMagnitude
+                       && !(rawMin < rawCenter && rawCenter < rawMax)) {
+                addError(path + QStringLiteral(
+                    ".transform must satisfy rawMin < rawCenter < rawMax"));
+            }
         }
         if (deadzoneValid && deadzone < 0.0) {
             addError(path + QStringLiteral(".transform.deadzone must be non-negative"));
+        }
+    }
+
+    void validateBindingChannels(const QJsonObject &config,
+                                 const QSet<QString> &signalIds)
+    {
+        if (!config.contains(QStringLiteral("bindingChannels")))
+            return;
+        const QJsonArray channels =
+            requiredArray(config,
+                          QStringLiteral("bindingChannels"),
+                          QStringLiteral("bindingChannels"),
+                          true);
+        QSet<QString> ids;
+        QSet<QString> buttonSources;
+        QSet<QString> axisSignals;
+        for (qsizetype index = 0; index < channels.size(); ++index) {
+            if (!channels.at(index).isObject()) {
+                addError(QStringLiteral("bindingChannels[%1] must be an object")
+                             .arg(index));
+                continue;
+            }
+            const QJsonObject channel = channels.at(index).toObject();
+            const QString path =
+                QStringLiteral("bindingChannels[%1]").arg(index);
+            const QString id =
+                requiredString(channel,
+                               QStringLiteral("id"),
+                               path + QStringLiteral(".id"));
+            if (!id.isEmpty()) {
+                if (ids.contains(id))
+                    addError(path + QStringLiteral(".id is duplicated"));
+                ids.insert(id);
+            }
+            const QString kind =
+                requiredString(channel,
+                               QStringLiteral("kind"),
+                               path + QStringLiteral(".kind"));
+            if (kind == QStringLiteral("button")) {
+                rejectUnknownKeys(channel,
+                                  {QStringLiteral("id"),
+                                   QStringLiteral("kind"),
+                                   QStringLiteral("label"),
+                                   QStringLiteral("signalId"),
+                                   QStringLiteral("position")},
+                                  path);
+                requiredString(channel,
+                               QStringLiteral("label"),
+                               path + QStringLiteral(".label"));
+                const QString signalId =
+                    requiredString(channel,
+                                   QStringLiteral("signalId"),
+                                   path + QStringLiteral(".signalId"));
+                const int position =
+                    requiredInteger(channel,
+                                    QStringLiteral("position"),
+                                    path + QStringLiteral(".position"));
+                if (validateSignalReference(signalId,
+                                             path + QStringLiteral(".signalId"),
+                                             signalIds)
+                    && validatePackedPosition(signalId,
+                                              position,
+                                              path + QStringLiteral(".position"))) {
+                    const QString sourceKey =
+                        QStringLiteral("%1:%2").arg(signalId).arg(position);
+                    if (buttonSources.contains(sourceKey)) {
+                        addError(path + QStringLiteral(
+                            " duplicates a physical button signal position"));
+                    }
+                    buttonSources.insert(sourceKey);
+                    continue;
+                }
+            } else if (kind == QStringLiteral("axis")) {
+                rejectUnknownKeys(channel,
+                                  {QStringLiteral("id"),
+                                   QStringLiteral("kind"),
+                                    QStringLiteral("role"),
+                                    QStringLiteral("inputMode"),
+                                    QStringLiteral("zeroAsNeutral"),
+                                    QStringLiteral("display"),
+                                    QStringLiteral("label"),
+                                   QStringLiteral("topology"),
+                                   QStringLiteral("axis")},
+                                  path);
+                const QString role =
+                    requiredString(channel,
+                                   QStringLiteral("role"),
+                                   path + QStringLiteral(".role"));
+                if (role != QStringLiteral("roller")
+                    && role != QStringLiteral("potentiometer")
+                    && role != QStringLiteral("auxiliary")) {
+                    addError(path + QStringLiteral(".role is unsupported"));
+                }
+                const QString inputMode =
+                    requiredString(channel,
+                                   QStringLiteral("inputMode"),
+                                   path + QStringLiteral(".inputMode"));
+                if (inputMode != QStringLiteral("centered")
+                    && inputMode != QStringLiteral("signed")
+                    && inputMode != QStringLiteral("unipolar")) {
+                    addError(path + QStringLiteral(".inputMode is unsupported"));
+                }
+                if (channel.contains(QStringLiteral("zeroAsNeutral"))
+                    && !channel.value(QStringLiteral("zeroAsNeutral")).isBool()) {
+                    addError(path + QStringLiteral(".zeroAsNeutral must be boolean"));
+                }
+                if (role == QStringLiteral("potentiometer")
+                    || channel.contains(QStringLiteral("display"))) {
+                    const QJsonObject display =
+                        requiredObject(channel,
+                                       QStringLiteral("display"),
+                                       path + QStringLiteral(".display"));
+                    rejectUnknownKeys(display,
+                                      {QStringLiteral("valueMin"),
+                                       QStringLiteral("valueMax"),
+                                       QStringLiteral("angleMinDegrees"),
+                                       QStringLiteral("angleMaxDegrees"),
+                                       QStringLiteral("unit")},
+                                      path + QStringLiteral(".display"));
+                    bool valueMinValid = false;
+                    bool valueMaxValid = false;
+                    bool angleMinValid = false;
+                    bool angleMaxValid = false;
+                    const double valueMin =
+                        requiredNumber(display,
+                                       QStringLiteral("valueMin"),
+                                       path + QStringLiteral(".display.valueMin"),
+                                       &valueMinValid);
+                    const double valueMax =
+                        requiredNumber(display,
+                                       QStringLiteral("valueMax"),
+                                       path + QStringLiteral(".display.valueMax"),
+                                       &valueMaxValid);
+                    const double angleMin =
+                        requiredNumber(display,
+                                       QStringLiteral("angleMinDegrees"),
+                                       path + QStringLiteral(".display.angleMinDegrees"),
+                                       &angleMinValid);
+                    const double angleMax =
+                        requiredNumber(display,
+                                       QStringLiteral("angleMaxDegrees"),
+                                       path + QStringLiteral(".display.angleMaxDegrees"),
+                                       &angleMaxValid);
+                    requiredString(display,
+                                   QStringLiteral("unit"),
+                                   path + QStringLiteral(".display.unit"));
+                    if (valueMinValid && valueMaxValid && !(valueMin < valueMax)) {
+                        addError(path + QStringLiteral(
+                            ".display must satisfy valueMin < valueMax"));
+                    }
+                    if (angleMinValid && angleMaxValid && !(angleMin < angleMax)) {
+                        addError(path + QStringLiteral(
+                            ".display must satisfy angleMinDegrees < angleMaxDegrees"));
+                    }
+                }
+                requiredString(channel,
+                               QStringLiteral("label"),
+                               path + QStringLiteral(".label"));
+                const QJsonObject topology =
+                    requiredObject(channel,
+                                   QStringLiteral("topology"),
+                                   path + QStringLiteral(".topology"));
+                rejectUnknownKeys(topology,
+                                  {QStringLiteral("kind"),
+                                   QStringLiteral("orientation")},
+                                  path + QStringLiteral(".topology"));
+                if (topology.value(QStringLiteral("kind")).toString()
+                    != QStringLiteral("singleAxis")) {
+                    addError(path
+                             + QStringLiteral(".topology.kind must be singleAxis"));
+                }
+                const QString orientation =
+                    topology.value(QStringLiteral("orientation")).toString();
+                if (orientation != QStringLiteral("horizontal")
+                    && orientation != QStringLiteral("vertical")) {
+                    addError(path
+                             + QStringLiteral(
+                                 ".topology.orientation must be horizontal or vertical"));
+                }
+                validateAxisBinding(channel,
+                                    QStringLiteral("axis"),
+                                    path + QStringLiteral(".axis"),
+                                    signalIds);
+                const QString axisSignalId =
+                    channel.value(QStringLiteral("axis"))
+                        .toObject()
+                        .value(QStringLiteral("signalId"))
+                        .toString();
+                if (!axisSignalId.isEmpty()) {
+                    if (axisSignals.contains(axisSignalId)) {
+                        addError(path + QStringLiteral(
+                            " duplicates a physical axis signal"));
+                    }
+                    axisSignals.insert(axisSignalId);
+                }
+            } else {
+                addError(path + QStringLiteral(".kind must be button or axis"));
+            }
+        }
+    }
+
+    void validateBindingChannelCoverage(const QJsonObject &config)
+    {
+        if (!config.contains(QStringLiteral("bindingChannels")))
+            return;
+
+        QSet<QString> buttonSources;
+        QSet<QString> axisSignals;
+        const QJsonArray channels =
+            config.value(QStringLiteral("bindingChannels")).toArray();
+        for (const QJsonValue &value : channels) {
+            const QJsonObject channel = value.toObject();
+            if (channel.value(QStringLiteral("kind")).toString()
+                == QStringLiteral("button")) {
+                buttonSources.insert(
+                    QStringLiteral("%1:%2")
+                        .arg(channel.value(QStringLiteral("signalId")).toString())
+                        .arg(channel.value(QStringLiteral("position")).toInt(-1)));
+            } else if (channel.value(QStringLiteral("kind")).toString()
+                       == QStringLiteral("axis")) {
+                axisSignals.insert(
+                    channel.value(QStringLiteral("axis"))
+                        .toObject()
+                        .value(QStringLiteral("signalId"))
+                        .toString());
+            }
+        }
+
+        const auto requireButtonChannel =
+            [this, &buttonSources](const QString &signalId,
+                                   int position,
+                                   const QString &path) {
+                const QString sourceKey =
+                    QStringLiteral("%1:%2").arg(signalId).arg(position);
+                if (!buttonSources.contains(sourceKey)) {
+                    addError(path + QStringLiteral(
+                        " has no matching physical button channel"));
+                }
+            };
+        const auto requireAxisChannel =
+            [this, &axisSignals](const QString &signalId,
+                                 const QString &path) {
+                if (!signalId.isEmpty() && !axisSignals.contains(signalId)) {
+                    addError(path + QStringLiteral(
+                        " has no matching physical axis channel"));
+                }
+            };
+
+        const QJsonArray controls = config.value(QStringLiteral("controls")).toArray();
+        for (qsizetype index = 0; index < controls.size(); ++index) {
+            const QJsonObject control = controls.at(index).toObject();
+            const QString path = QStringLiteral("controls[%1]").arg(index);
+            const QString type = control.value(QStringLiteral("type")).toString();
+            if (type == QStringLiteral("button")) {
+                requireButtonChannel(
+                    control.value(QStringLiteral("signalId")).toString(),
+                    control.value(QStringLiteral("position")).toInt(-1),
+                    path);
+            } else if (type == QStringLiteral("fnr")) {
+                const QString signalId =
+                    control.value(QStringLiteral("signalId")).toString();
+                const QJsonObject positions =
+                    control.value(QStringLiteral("positions")).toObject();
+                requireButtonChannel(signalId,
+                                     positions.value(QStringLiteral("forward"))
+                                         .toInt(-1),
+                                     path + QStringLiteral(".positions.forward"));
+                requireButtonChannel(signalId,
+                                     positions.value(QStringLiteral("reverse"))
+                                         .toInt(-1),
+                                     path + QStringLiteral(".positions.reverse"));
+                if (positions.value(QStringLiteral("neutralMode")).toString()
+                    == QStringLiteral("signal")) {
+                    requireButtonChannel(signalId,
+                                         positions.value(QStringLiteral("neutral"))
+                                             .toInt(-1),
+                                         path + QStringLiteral(".positions.neutral"));
+                }
+            } else if (type == QStringLiteral("axis")) {
+                const QString role =
+                    control.value(QStringLiteral("role")).toString();
+                if (role == QStringLiteral("roller")
+                    || role == QStringLiteral("potentiometer")
+                    || role == QStringLiteral("auxiliary")) {
+                    requireAxisChannel(
+                        control.value(QStringLiteral("axis"))
+                            .toObject()
+                            .value(QStringLiteral("signalId"))
+                            .toString(),
+                        path + QStringLiteral(".axis"));
+                }
+            } else if (type == QStringLiteral("joystick")) {
+                const QString xSignal =
+                    control.value(QStringLiteral("xAxis"))
+                        .toObject()
+                        .value(QStringLiteral("signalId"))
+                        .toString();
+                const QString ySignal =
+                    control.value(QStringLiteral("yAxis"))
+                        .toObject()
+                        .value(QStringLiteral("signalId"))
+                        .toString();
+                if (axisSignals.contains(xSignal) || axisSignals.contains(ySignal)) {
+                    requireAxisChannel(xSignal, path + QStringLiteral(".xAxis"));
+                    requireAxisChannel(ySignal, path + QStringLiteral(".yAxis"));
+                }
+            }
         }
     }
 
@@ -883,6 +1293,7 @@ private:
             requiredArray(config, QStringLiteral("controls"), QStringLiteral("controls"), false);
         QSet<QString> ids;
         QHash<QString, QHash<int, QString>> packedPositionOwners;
+        QHash<QString, QString> analogSignalOwners;
         const auto claimPackedPosition =
             [this, &packedPositionOwners](const QString &signalId,
                                           int position,
@@ -897,6 +1308,21 @@ private:
                     return;
                 }
                 packedPositionOwners[signalId].insert(position, path);
+            };
+        const auto claimAnalogSignal =
+            [this, &analogSignalOwners](const QString &signalId,
+                                        const QString &path) {
+                if (signalId.isEmpty())
+                    return;
+                const QString previousOwner = analogSignalOwners.value(signalId);
+                if (!previousOwner.isEmpty()) {
+                    addError(path
+                             + QStringLiteral(
+                                 " is assigned more than once; first assigned by %1")
+                                   .arg(previousOwner));
+                    return;
+                }
+                analogSignalOwners.insert(signalId, path);
             };
         for (qsizetype index = 0; index < controls.size(); ++index) {
             if (!controls.at(index).isObject()) {
@@ -1007,6 +1433,15 @@ private:
                                     QStringLiteral("axis"),
                                     path + QStringLiteral(".axis"),
                                     signalIds);
+                const QString axisSignalId =
+                    control.value(QStringLiteral("axis"))
+                        .toObject()
+                        .value(QStringLiteral("signalId"))
+                        .toString();
+                if (signalIds.contains(axisSignalId)) {
+                    claimAnalogSignal(axisSignalId,
+                                      path + QStringLiteral(".axis.signalId"));
+                }
             } else if (type == QStringLiteral("joystick")) {
                 rejectUnknownKeys(control,
                                   {QStringLiteral("id"),
@@ -1068,6 +1503,24 @@ private:
                                     QStringLiteral("yAxis"),
                                     path + QStringLiteral(".yAxis"),
                                     signalIds);
+                const QString xSignalId =
+                    control.value(QStringLiteral("xAxis"))
+                        .toObject()
+                        .value(QStringLiteral("signalId"))
+                        .toString();
+                const QString ySignalId =
+                    control.value(QStringLiteral("yAxis"))
+                        .toObject()
+                        .value(QStringLiteral("signalId"))
+                        .toString();
+                if (signalIds.contains(xSignalId)) {
+                    claimAnalogSignal(xSignalId,
+                                      path + QStringLiteral(".xAxis.signalId"));
+                }
+                if (signalIds.contains(ySignalId)) {
+                    claimAnalogSignal(ySignalId,
+                                      path + QStringLiteral(".yAxis.signalId"));
+                }
             } else if (type == QStringLiteral("button")) {
                 rejectUnknownKeys(control,
                                   {QStringLiteral("id"),
@@ -1866,6 +2319,7 @@ private:
     QHash<QString, QString> m_signalKinds;
     QHash<QString, int> m_signalBitLengths;
     QHash<QString, QString> m_signalEncodings;
+    QHash<QString, int> m_signalLogicalPositionCounts;
 };
 
 } // namespace

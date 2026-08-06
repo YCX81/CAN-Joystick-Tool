@@ -14,6 +14,9 @@ Item {
     property real maxValue: 1.0
     property bool readOnly: true
     property bool animationEnabled: true
+    property bool invertX: false
+    property bool invertY: false
+    property string gateMode: "omnidirectional"
     property bool isDragging: false
     property color housingColor: Constants.rollerHousingColor
 
@@ -37,11 +40,13 @@ Item {
     readonly property real contentScale: width > 0 && height > 0
                                          ? Math.min(width / designWidth, height / designHeight)
                                          : 1
+    readonly property real normalizedX: clampToUnit(normalizeAxis(xValue))
+    readonly property real normalizedY: clampToUnit(normalizeAxis(yValue))
     readonly property real visualX: clampToUnit(animatedX)
     readonly property real visualY: clampToUnit(animatedY)
 
-    property real animatedX: clampToUnit(normalizeAxis(xValue))
-    property real animatedY: clampToUnit(normalizeAxis(yValue))
+    property real animatedX: 0.0
+    property real animatedY: 0.0
 
     implicitWidth: designWidth
     implicitHeight: designHeight
@@ -69,8 +74,18 @@ Item {
     }
 
     function syncAnimatedValues() {
-        animatedX = clampToUnit(normalizeAxis(xValue))
-        animatedY = clampToUnit(normalizeAxis(yValue))
+        var currentX = clampToUnit(normalizeAxis(xValue))
+        var currentY = clampToUnit(normalizeAxis(yValue))
+        var nextX = invertX ? -currentX : currentX
+        var nextY = invertY ? -currentY : currentY
+        if (gateMode === "cross") {
+            if (Math.abs(nextX) >= Math.abs(nextY))
+                nextY = 0
+            else
+                nextX = 0
+        }
+        animatedX = clampToUnit(nextX)
+        animatedY = clampToUnit(nextY)
     }
 
     function setInteractivePosition(mouseX, mouseY) {
@@ -88,6 +103,10 @@ Item {
     onYValueChanged: syncAnimatedValues()
     onMinValueChanged: syncAnimatedValues()
     onMaxValueChanged: syncAnimatedValues()
+    onInvertXChanged: syncAnimatedValues()
+    onInvertYChanged: syncAnimatedValues()
+    onGateModeChanged: syncAnimatedValues()
+    Component.onCompleted: syncAnimatedValues()
 
     Behavior on animatedX {
         enabled: root.animationEnabled && !root.isDragging

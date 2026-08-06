@@ -7,8 +7,11 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QFile>
+#include <QFileSystemWatcher>
 #include <QDir>
+#include <QSet>
 #include <QStandardPaths>
+#include <QTimer>
 #include <QQmlEngine>
 
 class QSqlDatabase;
@@ -138,7 +141,8 @@ public:
     Q_INVOKABLE QJsonObject buildStandardProductConfigV3(const QJsonObject &spec) const;
     Q_INVOKABLE QJsonObject cloneProductConfigV3(const QJsonObject &sourceConfig,
                                                  const QString &productCode,
-                                                 const QString &description) const;
+                                                 const QString &description,
+                                                 const QString &versionCode) const;
     Q_INVOKABLE QString sanitizeProductModel(const QString &model) const;
     Q_INVOKABLE bool productConfigExists(const QString &model) const;
     Q_INVOKABLE QString productConfigVersionPath(const QString &model, const QString &versionCode) const;
@@ -149,6 +153,12 @@ public:
                                                             const QString &model,
                                                             const QString &versionCode,
                                                             const QString &customerName);
+    Q_INVOKABLE bool cloneProductConfigVersionWithCustomerAs(
+        const QJsonObject &sourceConfig,
+        const QString &model,
+        const QString &versionCode,
+        const QString &description,
+        const QString &customerName);
     Q_INVOKABLE QString productConfigPath(const QString &model) const;
     Q_INVOKABLE bool openProductConfigFile(const QString &model) const;
     Q_INVOKABLE bool openProductConfigPath(const QString &filePath);
@@ -180,6 +190,7 @@ signals:
     void productsDirectoryChanged();
     void productCatalogRootChanged();
     void productConfigSaved(const QString &path);
+    void productConfigExternallyChanged(const QString &path);
     void productConfigLoaded(const QString &path);
     void currentLayoutPathChanged();
     void hasUnsavedChangesChanged();
@@ -197,17 +208,33 @@ private:
     QString m_productCatalogRoot;
     QString m_currentLayoutPath;
     bool m_hasUnsavedChanges = false;
+    QFileSystemWatcher m_productConfigWatcher;
+    QTimer m_externalProductConfigSyncTimer;
+    QSet<QString> m_pendingExternalProductConfigPaths;
 
     // 初始化默认目录
     void initDefaultDirectories();
+    bool hydrateCatalogActiveFromCurrent();
+    void refreshProductConfigWatchers(bool queueExistingFiles = false);
+    void queueExternalProductConfigSync(const QString &filePath);
+    void synchronizePendingExternalProductConfigs();
+    bool synchronizeExternalProductConfig(const QString &filePath);
 
     QString productionDatabasePath() const;
     QString customerDatabasePath() const;
     QString productConfigPathForDatabase(const QString &filePath) const;
+    bool registeredProductConfigFileNeedsSync(const QString &filePath,
+                                              bool *needsSync) const;
+    bool registeredProductConfigMatchesDatabase(const QJsonObject &configJson,
+                                                const QString &filePath,
+                                                bool *matches) const;
     bool validateProductionDatabaseSchema(QSqlDatabase &db);
     bool syncProductConfigToDatabase(const QJsonObject &configJson,
                                      const QString &filePath,
-                                     const QString &customerName = QString());
+                                     const QString &customerName = QString(),
+                                     bool makeDefault = true);
+    bool removeProductConfigFromDatabase(const QJsonObject &configJson,
+                                         const QString &filePath);
     QString catalogActiveDirectory() const;
     bool isCatalogActivePath(const QString &filePath) const;
     bool persistCatalogProductConfig(const QJsonObject &configJson,

@@ -66,6 +66,19 @@ QJsonObject findCell(const QJsonArray &cells, int row, int column)
     return {};
 }
 
+QJsonObject findCard(const QJsonArray &cards, int row, int column)
+{
+    for (const QJsonValue &entry : cards) {
+        const QJsonObject card = entry.toObject();
+        const QJsonObject grid = card.value(QStringLiteral("grid")).toObject();
+        if (grid.value(QStringLiteral("row")).toInt(-1) == row
+            && grid.value(QStringLiteral("column")).toInt(-1) == column) {
+            return card;
+        }
+    }
+    return {};
+}
+
 QString uniqueConnectionName(const QString &prefix)
 {
     return prefix + QLatin1Char('_')
@@ -229,6 +242,80 @@ bool verifyTypedCustomerPersistence()
     return ok;
 }
 
+bool verifyCloneCustomerReplacementPersistence()
+{
+    QTemporaryDir root;
+    if (!expect(root.isValid(), QStringLiteral("could not create clone customer temp directory"))) {
+        return false;
+    }
+
+    const QString productsDirectory = QDir(root.path()).filePath(QStringLiteral("firmware"));
+    if (!expect(QDir().mkpath(productsDirectory), QStringLiteral("could not create clone product directory"))) {
+        return false;
+    }
+
+    const QString databasePath = QDir(root.path()).filePath(QStringLiteral("production_data.db"));
+    if (!expect(createCanonicalDatabase(databasePath),
+                QStringLiteral("could not create clone customer database"))) {
+        return false;
+    }
+
+    constexpr auto environmentName = "CANJOYSTICK_DATABASE_PATH";
+    const bool hadPreviousDatabasePath = qEnvironmentVariableIsSet(environmentName);
+    const QByteArray previousDatabasePath = qgetenv(environmentName);
+    qputenv(environmentName, databasePath.toUtf8());
+
+    LayoutManager manager;
+    manager.setProductsDirectory(productsDirectory);
+    const QString productName = QStringLiteral("GENERIC-CLONED-CUSTOMER");
+    const QString oldCustomer = QStringLiteral("OLD-CUSTOMER");
+    const QString newCustomer = QStringLiteral("NEW-CUSTOMER");
+    const QJsonObject source = manager.buildStandardProductConfigV3(QJsonObject{
+        {QStringLiteral("code"), QStringLiteral("GENERIC-SOURCE-CUSTOMER")},
+        {QStringLiteral("customerName"), oldCustomer},
+        {QStringLiteral("buttonCount"), 1},
+        {QStringLiteral("rollerCount"), 0}
+    });
+    const QJsonObject cloned =
+        manager.cloneProductConfigV3(source,
+                                     productName,
+                                     QStringLiteral("customer replacement"),
+                                     QStringLiteral("V1"));
+    const bool saved = manager.saveProductConfigVersionWithCustomerAs(
+        cloned, productName, QStringLiteral("V1"), newCustomer);
+
+    if (hadPreviousDatabasePath) {
+        qputenv(environmentName, previousDatabasePath);
+    } else {
+        qunsetenv(environmentName);
+    }
+
+    bool ok = expect(saved, QStringLiteral("source-based clone with changed customer did not save"));
+    const QString savedConfigPath = QDir(productsDirectory).filePath(
+        productName + QLatin1Char('/') + productName + QStringLiteral("_V1.json"));
+    QFile savedConfigFile(savedConfigPath);
+    ok &= expect(savedConfigFile.open(QIODevice::ReadOnly),
+                 QStringLiteral("could not read source-based cloned config"));
+    if (savedConfigFile.isOpen()) {
+        const QJsonArray bindings =
+            QJsonDocument::fromJson(savedConfigFile.readAll())
+                .object()
+                .value(QStringLiteral("product"))
+                .toObject()
+                .value(QStringLiteral("customerBindings"))
+                .toArray();
+        ok &= expect(bindings.size() == 1
+                         && bindings.first().toObject().value(QStringLiteral("name")).toString()
+                                == newCustomer,
+                     QStringLiteral("changed clone customer must replace the inherited JSON binding"));
+    }
+    ok &= expect(customerBindingCount(databasePath, newCustomer, productName) == 1,
+                 QStringLiteral("changed clone customer was not bound in the database"));
+    ok &= expect(customerBindingCount(databasePath, oldCustomer, productName) == 0,
+                 QStringLiteral("inherited clone customer remained bound in the database"));
+    return ok;
+}
+
 QJsonObject workLightCommand(const QJsonObject &config, const QString &commandId)
 {
     return findObject(config.value(QStringLiteral("commands")).toArray(),
@@ -244,6 +331,7 @@ bool verifyV3BuilderAndClone()
     const QJsonObject basic = manager.buildStandardProductConfigV3(QJsonObject{
         {QStringLiteral("code"), QStringLiteral("JC6000-BGA-C0009")},
         {QStringLiteral("description"), QStringLiteral("无固件测试产品")},
+        {QStringLiteral("customerName"), QStringLiteral("测试客户")},
         {QStringLiteral("buttonCount"), 1},
         {QStringLiteral("buttonNumbers"), QJsonArray{1}},
         {QStringLiteral("rollerCount"), 0}
@@ -256,6 +344,34 @@ bool verifyV3BuilderAndClone()
                  QStringLiteral("V3 builder did not persist product.code"));
     ok &= expect(product.value(QStringLiteral("version")).toString() == QStringLiteral("V1"),
                  QStringLiteral("V3 builder must default product.version to V1"));
+    const QJsonArray customerBindings =
+        product.value(QStringLiteral("customerBindings")).toArray();
+    ok &= expect(customerBindings.size() == 1
+                     && customerBindings.first()
+                            .toObject()
+                            .value(QStringLiteral("name"))
+                            .toString()
+                         == QStringLiteral("测试客户")
+                     && customerBindings.first()
+                            .toObject()
+                            .value(QStringLiteral("isDefault"))
+                            .toBool(),
+                 QStringLiteral("V3 builder must persist the typed default customer"));
+    const QJsonArray basicBindingChannels =
+        basic.value(QStringLiteral("bindingChannels")).toArray();
+    ok &= expect(basicBindingChannels.size() == 1
+                     && basicBindingChannels.first()
+                            .toObject()
+                            .value(QStringLiteral("id"))
+                            .toString()
+                         == QStringLiteral("button1")
+                     && basicBindingChannels.first()
+                            .toObject()
+                            .value(QStringLiteral("kind"))
+                            .toString()
+                         == QStringLiteral("button"),
+                 QStringLiteral(
+                     "V3 builder must persist the selected physical button inventory"));
     ok &= expect(basic.value(QStringLiteral("lifecycle")).toObject()
                      .value(QStringLiteral("status")).toString()
                      == QStringLiteral("active"),
@@ -274,7 +390,49 @@ bool verifyV3BuilderAndClone()
     ok &= expect(basic.value(QStringLiteral("layout")).toObject()
                       .value(QStringLiteral("mode")).toString()
                       == QStringLiteral("designed"),
-                  QStringLiteral("V3 builder must generate designed layout"));
+                   QStringLiteral("V3 builder must generate designed layout"));
+    const QJsonArray blankCards =
+        basic.value(QStringLiteral("layout")).toObject()
+            .value(QStringLiteral("cards")).toArray();
+    const QJsonObject frontCard = findCard(blankCards, 0, 0);
+    const QJsonObject busStatsCard = findCard(blankCards, 0, 1);
+    const QJsonObject backCard = findCard(blankCards, 1, 0);
+    const QJsonObject recordInfoCard = findCard(blankCards, 1, 1);
+    ok &= expect(blankCards.size() == 4
+                     && frontCard.value(QStringLiteral("kind")).toString()
+                            == QStringLiteral("controls")
+                     && frontCard.value(QStringLiteral("title")).toString()
+                            == QStringLiteral("正面")
+                     && backCard.value(QStringLiteral("kind")).toString()
+                            == QStringLiteral("controls")
+                     && backCard.value(QStringLiteral("title")).toString()
+                            == QStringLiteral("背面"),
+                 QStringLiteral(
+                     "blank V3 products must place front/back canvases in the left column"));
+    ok &= expect(busStatsCard.value(QStringLiteral("kind")).toString()
+                         == QStringLiteral("system")
+                     && busStatsCard.value(QStringLiteral("systemType")).toString()
+                            == QStringLiteral("busStats")
+                     && busStatsCard.value(QStringLiteral("title")).toString()
+                            == QStringLiteral("总线统计")
+                     && recordInfoCard.value(QStringLiteral("kind")).toString()
+                            == QStringLiteral("system")
+                     && recordInfoCard.value(QStringLiteral("systemType")).toString()
+                            == QStringLiteral("recordInfo")
+                     && recordInfoCard.value(QStringLiteral("title")).toString()
+                            == QStringLiteral("记录信息"),
+                 QStringLiteral(
+                     "blank V3 products must place bus/record cards in the right column"));
+    ok &= expect(frontCard.value(QStringLiteral("elements")).toArray().isEmpty()
+                     && backCard.value(QStringLiteral("elements")).toArray().isEmpty(),
+                 QStringLiteral(
+                     "blank V3 products must not place or bind visual components by default"));
+    ok &= expect(countObjects(blankCards,
+                              QStringLiteral("kind"),
+                              QStringLiteral("leftRegion"))
+                     == 0,
+                 QStringLiteral(
+                     "blank V3 products must not create an implicit bound left-region component"));
     const QJsonObject basicJoystick =
         findObject(basic.value(QStringLiteral("controls")).toArray(),
                    QStringLiteral("id"),
@@ -288,11 +446,115 @@ bool verifyV3BuilderAndClone()
                  QStringLiteral("V3 builder must default to an omnidirectional XY joystick"));
     const QJsonObject basicValidation = manager.validateProductConfig(basic);
     ok &= expect(basicValidation.value(QStringLiteral("ok")).toBool(),
-                 QStringLiteral("V3 builder output failed validation: %1")
-                     .arg(QString::fromUtf8(
-                         QJsonDocument(basicValidation).toJson(QJsonDocument::Compact))));
+                  QStringLiteral("V3 builder output failed validation: %1")
+                      .arg(QString::fromUtf8(
+                          QJsonDocument(basicValidation).toJson(QJsonDocument::Compact))));
     ok &= expect(workLightCommand(basic, QStringLiteral("workLightOn")).isEmpty(),
-                  QStringLiteral("V3 builder added work-light commands when disabled"));
+                   QStringLiteral("V3 builder added work-light commands when disabled"));
+
+    const QJsonObject physicalMapping =
+        manager.buildStandardProductConfigV3(QJsonObject{
+            {QStringLiteral("code"), QStringLiteral("JC6000-PHYSICAL-MAPPING")},
+            {QStringLiteral("buttonCount"), 5},
+            {QStringLiteral("buttonNumbers"), QJsonArray{1, 2, 3, 4, 5}},
+            {QStringLiteral("rollerCount"), 4}
+        });
+    const QJsonArray physicalSignals =
+        physicalMapping.value(QStringLiteral("signals")).toArray();
+    const QJsonArray physicalControls =
+        physicalMapping.value(QStringLiteral("controls")).toArray();
+    const QJsonArray physicalBindingChannels =
+        physicalMapping.value(QStringLiteral("bindingChannels")).toArray();
+    ok &= expect(physicalBindingChannels.size() == 9
+                     && !findObject(physicalBindingChannels,
+                                    QStringLiteral("id"),
+                                    QStringLiteral("button5")).isEmpty()
+                     && !findObject(physicalBindingChannels,
+                                    QStringLiteral("id"),
+                                    QStringLiteral("roller4")).isEmpty(),
+                 QStringLiteral(
+                     "selected five buttons and four rollers must remain nine stable binding channels"));
+    const QJsonObject axisXStatus =
+        findObject(physicalSignals, QStringLiteral("id"), QStringLiteral("axisXStatus"));
+    const QJsonObject axisX =
+        findObject(physicalSignals, QStringLiteral("id"), QStringLiteral("axisX"));
+    const QJsonObject physicalJoystick =
+        findObject(physicalControls, QStringLiteral("id"), QStringLiteral("joystickXY"));
+    ok &= expect(axisXStatus.value(QStringLiteral("kind")).toString()
+                         == QStringLiteral("status")
+                     && axisXStatus.value(QStringLiteral("source")).toObject()
+                            .value(QStringLiteral("startBit")).toInt()
+                         == 0
+                     && axisXStatus.value(QStringLiteral("source")).toObject()
+                            .value(QStringLiteral("bitLength")).toInt()
+                         == 6
+                     && axisXStatus.value(QStringLiteral("source")).toObject()
+                            .value(QStringLiteral("encoding")).toString()
+                         == QStringLiteral("j1939_axis_status")
+                     && axisX.value(QStringLiteral("source")).toObject()
+                            .value(QStringLiteral("startBit")).toInt()
+                         == 6
+                     && axisX.value(QStringLiteral("source")).toObject()
+                            .value(QStringLiteral("bitLength")).toInt()
+                         == 10
+                     && physicalJoystick.value(QStringLiteral("xAxis")).toObject()
+                            .value(QStringLiteral("statusSignalId")).toString()
+                         == QStringLiteral("axisXStatus")
+                     && physicalJoystick.value(QStringLiteral("xAxis")).toObject()
+                            .value(QStringLiteral("transform")).toObject()
+                            .value(QStringLiteral("rawMin")).toInt()
+                         == 0
+                     && physicalJoystick.value(QStringLiteral("xAxis")).toObject()
+                            .value(QStringLiteral("transform")).toObject()
+                            .value(QStringLiteral("rawCenter")).toInt()
+                         == 0
+                     && physicalJoystick.value(QStringLiteral("xAxis")).toObject()
+                            .value(QStringLiteral("transform")).toObject()
+                            .value(QStringLiteral("rawMax")).toInt()
+                         == 1000,
+                 QStringLiteral("V3 BJM X axis must retain separate status and magnitude signals"));
+
+    const QJsonObject buttonSignal =
+        findObject(physicalSignals, QStringLiteral("id"), QStringLiteral("buttons"));
+    const QJsonObject buttonSource =
+        buttonSignal.value(QStringLiteral("source")).toObject();
+    ok &= expect(buttonSource.value(QStringLiteral("bitLength")).toInt() == 16
+                     && buttonSource.value(QStringLiteral("buttonBitPositions")).toArray()
+                         == QJsonArray{6, 4, 2, 0, 14},
+                 QStringLiteral("five J1939 buttons must use byte-local reverse positions over 16 bits"));
+
+    const QJsonObject roller1Status =
+        findObject(physicalSignals, QStringLiteral("id"), QStringLiteral("roller1Status"));
+    const QJsonObject roller1Position =
+        findObject(physicalSignals, QStringLiteral("id"), QStringLiteral("roller1Position"));
+    const QJsonObject roller1 =
+        findObject(physicalControls, QStringLiteral("id"), QStringLiteral("roller1"));
+    ok &= expect(roller1Status.value(QStringLiteral("source")).toObject()
+                         .value(QStringLiteral("startBit")).toInt()
+                         == 0
+                     && roller1Status.value(QStringLiteral("source")).toObject()
+                            .value(QStringLiteral("bitLength")).toInt()
+                         == 6
+                     && roller1Position.value(QStringLiteral("source")).toObject()
+                            .value(QStringLiteral("startBit")).toInt()
+                         == 6
+                     && roller1Position.value(QStringLiteral("source")).toObject()
+                            .value(QStringLiteral("bitLength")).toInt()
+                         == 10
+                     && roller1.value(QStringLiteral("axis")).toObject()
+                            .value(QStringLiteral("statusSignalId")).toString()
+                         == QStringLiteral("roller1Status")
+                     && roller1.value(QStringLiteral("axis")).toObject()
+                            .value(QStringLiteral("transform")).toObject()
+                            .value(QStringLiteral("rawCenter")).toInt()
+                         == 0,
+                 QStringLiteral("V3 EJM rollers must split six-bit status from ten-bit travel"));
+    const QJsonObject physicalValidation =
+        manager.validateProductConfig(physicalMapping);
+    ok &= expect(physicalValidation.value(QStringLiteral("ok")).toBool(),
+                 QStringLiteral("physical J1939 V3 output failed validation: %1")
+                     .arg(QString::fromUtf8(
+                         QJsonDocument(physicalValidation).toJson(QJsonDocument::Compact))));
 
     const QJsonObject singleX = manager.buildStandardProductConfigV3(QJsonObject{
         {QStringLiteral("code"), QStringLiteral("JC6000-SINGLE-X")},
@@ -394,11 +656,13 @@ bool verifyV3BuilderAndClone()
     const QJsonObject cloned = manager.cloneProductConfigV3(
         withLight,
         QStringLiteral("JC6000-BGA-HM099"),
-        QStringLiteral("克隆产品"));
+        QStringLiteral("克隆产品"),
+        QStringLiteral("V3"));
     QJsonObject expected = withLight;
     QJsonObject expectedProduct = expected.value(QStringLiteral("product")).toObject();
     expectedProduct.insert(QStringLiteral("code"), QStringLiteral("JC6000-BGA-HM099"));
     expectedProduct.insert(QStringLiteral("description"), QStringLiteral("克隆产品"));
+    expectedProduct.insert(QStringLiteral("version"), QStringLiteral("V3"));
     expected.insert(QStringLiteral("product"), expectedProduct);
     ok &= expect(cloned == expected,
                  QStringLiteral("test_only V3 clone changed fields beyond code/description"));
@@ -432,30 +696,20 @@ bool verifyV3BuilderAndClone()
              }}
         });
 
-    const QJsonObject missingArtifactClone = manager.cloneProductConfigV3(
-        firmwareBacked,
-        QStringLiteral("TARGET-FIRMWARE"),
-        QStringLiteral("目标固件产品"));
-    ok &= expect(missingArtifactClone.isEmpty(),
-                 QStringLiteral("firmware-backed clone succeeded without a real target artifact"));
-
-    const QString targetDirectory =
-        QDir(firmwareRoot.path()).filePath(QStringLiteral("TARGET-FIRMWARE"));
-    ok &= expect(QDir().mkpath(targetDirectory),
-                 QStringLiteral("could not create target firmware directory"));
-    const QString targetArtifact =
-        QDir(targetDirectory).filePath(QStringLiteral("TARGET-FIRMWARE_V2.0.2.elf"));
-    ok &= expect(writeBytes(targetArtifact, QByteArrayLiteral("firmware")),
-                 QStringLiteral("could not create target firmware artifact"));
     const QJsonObject firmwareClone = manager.cloneProductConfigV3(
         firmwareBacked,
         QStringLiteral("TARGET-FIRMWARE"),
-        QStringLiteral("目标固件产品"));
+        QStringLiteral("目标固件产品"),
+        QStringLiteral("V3"));
     ok &= expect(firmwareClone.value(QStringLiteral("operation")).toObject()
-                     .value(QStringLiteral("firmware")).toObject()
-                     .value(QStringLiteral("artifact")).toString()
-                     == QStringLiteral("TARGET-FIRMWARE_V2.0.2.elf"),
-                 QStringLiteral("firmware-backed clone did not bind the matching real artifact"));
+                      .value(QStringLiteral("firmware")).toObject()
+                      .value(QStringLiteral("artifact")).toString()
+                      == QStringLiteral("TARGET-FIRMWARE_V3.elf"),
+                 QStringLiteral("firmware-backed clone did not rename its artifact metadata"));
+    ok &= expect(firmwareClone.value(QStringLiteral("product")).toObject()
+                      .value(QStringLiteral("version")).toString()
+                      == QStringLiteral("V3"),
+                 QStringLiteral("firmware-backed clone ignored the requested target version"));
 
     return ok;
 }
@@ -854,6 +1108,7 @@ int main(int argc, char *argv[])
     ok &= verifyGenericConfig(manager, emptyConfig, 0, 0, QString());
     ok &= verifyMiniJoystickDualBindingValidation(manager);
     ok &= verifyTypedCustomerPersistence();
+    ok &= verifyCloneCustomerReplacementPersistence();
     ok &= verifyV3BuilderAndClone();
     ok &= verifyCatalogStorePersistence();
 

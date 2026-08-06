@@ -15,6 +15,9 @@ Item {
     property string label: ""
     property bool readOnly: true
     property bool animationEnabled: true
+    property bool invertX: false
+    property bool invertY: false
+    property string gateMode: "omnidirectional"
     property real unitScale: 1.0
 
     signal moved(real x, real y)
@@ -27,8 +30,8 @@ Item {
                                          : 1
     readonly property real visualX: joystick.visualX
     readonly property real visualY: joystick.visualY
-    readonly property real displayXValue: visualX * 100
-    readonly property real displayYValue: visualY * 100
+    readonly property real displayXValue: joystick.normalizedX * 100
+    readonly property real displayYValue: joystick.normalizedY * 100
 
     implicitWidth: designWidth
     implicitHeight: designHeight
@@ -55,6 +58,9 @@ Item {
             maxValue: root.maxValue
             readOnly: root.readOnly
             animationEnabled: root.animationEnabled
+            invertX: root.invertX
+            invertY: root.invertY
+            gateMode: root.gateMode
 
             onMoved: function(x, y) {
                 if (!root.readOnly) {

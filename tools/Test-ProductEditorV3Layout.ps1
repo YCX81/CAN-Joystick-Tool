@@ -7,6 +7,15 @@ param(
 $ErrorActionPreference = 'Stop'
 
 $editor = Get-Content -Raw -LiteralPath $ProductEditorPath
+if ($editor -notmatch 'readonly\s+property\s+bool\s+productDraftsEnabled\s*:\s*false') {
+    throw 'Product draft autosave and recovery must remain paused.'
+}
+if ($editor -notmatch 'running\s*:\s*root\.productDraftsEnabled\s*&&\s*root\.hasUnsavedChanges') {
+    throw 'The product draft timer must be disabled by the draft feature switch.'
+}
+if ($editor -notmatch 'root\.productDraftsEnabled\s*&&\s*layoutManager\.loadProductDraft') {
+    throw 'Paused product drafts must not be loaded or offered for recovery.'
+}
 if ($editor -notmatch 'ProductConfigV3EditorAdapter\.js') {
     throw 'ProductEditor must import the V3 editor layout adapter.'
 }
@@ -15,6 +24,70 @@ if ($editor -notmatch 'V3EditorAdapter\.cellsFromConfig\s*\(\s*currentConfig\s*\
 }
 if ($editor -notmatch 'V3EditorAdapter\.applyCellsToConfig\s*\(') {
     throw 'ProductEditor must save edited cells back to V3 layout.cards.'
+}
+if ($editor -notmatch 'V3EditorAdapter\.bindingsFromConfig\s*\(\s*currentConfig\s*\)') {
+    throw 'ProductEditor must expose V3 controls to the canvas binding editor.'
+}
+if ($editor -match 'currentConfig\s*=\s*recoveredDraft') {
+    throw 'ProductEditor must never replace the official config with a draft automatically.'
+}
+$loadFunction = [regex]::Match(
+    $editor,
+    'function\s+loadProductVersion\s*\([^)]*\)\s*\{(?<body>[\s\S]*?)\n\s*\}\n\s*\n\s*function\s+openCurrentProductConfig')
+if (-not $loadFunction.Success) {
+    throw 'Unable to inspect loadProductVersion draft-safety behavior.'
+}
+$loadBody = $loadFunction.Groups['body'].Value
+$loadingGuardIndex = $loadBody.IndexOf('loadingCells = true')
+$pathSwitchIndex = $loadBody.IndexOf('currentFilePath = path')
+if ($loadingGuardIndex -lt 0 -or $pathSwitchIndex -lt 0 -or $loadingGuardIndex -gt $pathSwitchIndex) {
+    throw 'ProductEditor must block draft autosave before switching the product path.'
+}
+if ($loadBody -notmatch 'validateProductConfig\s*\(\s*recoveredDraft\s*\)') {
+    throw 'ProductEditor must validate a recovered draft before offering it to the user.'
+}
+if ($editor -notmatch 'function\s+recoverPendingProductDraft\s*\(') {
+    throw 'ProductEditor must require an explicit action before restoring a valid draft.'
+}
+if ($editor -notmatch 'ProductDraftPolicy\.compatibility\s*\(\s*currentConfig\s*,\s*recoveredDraft\s*\)') {
+    throw 'ProductEditor must reject drafts from another schema, product, or version.'
+}
+if ($editor -notmatch 'loadedCellsPath\s*===\s*root\.currentFilePath') {
+    throw 'Draft autosave must only run after the current product canvases finish loading.'
+}
+$draftTimerIndex = $editor.IndexOf('id: productDraftTimer')
+$draftSyncIndex = $editor.IndexOf('root.syncCurrentLayoutFromCells()', $draftTimerIndex)
+$inlineEditGuardIndex = $editor.IndexOf('root.hasActiveCellEdit()', $draftTimerIndex)
+if (($draftTimerIndex -lt 0) -or
+        ($draftSyncIndex -lt 0) -or
+        ($inlineEditGuardIndex -lt $draftTimerIndex) -or
+        ($inlineEditGuardIndex -gt $draftSyncIndex)) {
+    throw 'Draft autosave must defer while a card title or description is being edited.'
+}
+if ($editor -notmatch 'V3EditorAdapter\.cellBindingErrors\s*\(\s*cells\s*\)') {
+    throw 'ProductEditor must reject unbound V3 visuals before adapting the layout.'
+}
+if ($editor -notmatch 'if\s*\(\s*!syncCurrentLayoutFromCells\s*\(\s*\)\s*\)\s*return') {
+    throw 'ProductEditor save must stop when canvas binding validation fails.'
+}
+if ($editor -notmatch 'function\s+handleExternalProductConfigChange\s*\(\s*path\s*\)') {
+    throw 'ProductEditor must handle a validated external product-config change.'
+}
+if ($editor -notmatch 'function\s+onProductConfigExternallyChanged\s*\(\s*path\s*\)\s*\{\s*root\.handleExternalProductConfigChange\s*\(\s*path\s*\)') {
+    throw 'ProductEditor must subscribe to LayoutManager external-change notifications.'
+}
+$externalHandler = [regex]::Match(
+    $editor,
+    'function\s+handleExternalProductConfigChange\s*\(\s*path\s*\)\s*\{(?<body>[\s\S]*?)\n\s*\}\n\s*\n\s*function\s+recoverPendingProductDraft')
+if (-not $externalHandler.Success) {
+    throw 'Unable to inspect ProductEditor external-change safety behavior.'
+}
+$externalBody = $externalHandler.Groups['body'].Value
+if ($externalBody -notmatch 'hasUnsavedChanges') {
+    throw 'An external JSON change must not overwrite unsaved editor state.'
+}
+if ($externalBody -notmatch 'loadProductVersion\s*\(') {
+    throw 'A clean editor must reload the externally changed JSON.'
 }
 
 if (-not (Test-Path -LiteralPath $AdapterPath)) {
@@ -30,6 +103,15 @@ foreach ($runtimeOnlyProperty in @('xValue', 'yValue', 'minValue', 'maxValue')) 
     if ($adapter -notmatch [regex]::Escape('delete properties.' + $runtimeOnlyProperty)) {
         throw "V3 editor adapter must not persist runtime-only '$runtimeOnlyProperty'."
     }
+}
+if ($adapter -notmatch 'function\s+bindingsFromConfig\s*\(') {
+    throw 'V3 editor adapter must convert controls into canvas bindings.'
+}
+
+$designCanvasPath = Join-Path $PSScriptRoot '..\CANJoystickTool\DesignCanvas.qml'
+$designCanvas = Get-Content -Raw -LiteralPath $designCanvasPath
+if ($designCanvas -notmatch 'cat\s*===\s*"button"\s*&&\s*comp\.type\s*===\s*"button"') {
+    throw 'DesignCanvas must offer direct V3 button controls as button bindings.'
 }
 
 $config = Get-Content -Raw -LiteralPath $C0031Path | ConvertFrom-Json -Depth 100

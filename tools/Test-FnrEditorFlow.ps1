@@ -29,6 +29,24 @@ if ($editor -notmatch 'function\s+openFnrMappingEditor\s*\(\s*wrapper\s*\)') {
 if ($editor -notmatch 'function\s+applyFnrMapping\s*\(') {
     throw 'ProductEditor must persist FNR buttonMapping data.'
 }
+if ($editor -notmatch 'schemaVersion\s*===\s*3[\s\S]*V3EditorAdapter\.fnrEditorState') {
+    throw 'Schema v3 FNR controls must expose their packed button positions.'
+}
+if ($editor -notmatch 'V3EditorAdapter\.applyFnrPositions') {
+    throw 'Schema v3 FNR mappings must persist through the v3 adapter.'
+}
+if ($editor -notmatch 'V3EditorAdapter\.fnrCreationState') {
+    throw 'A newly placed schema v3 FNR must be able to claim physical button channels.'
+}
+if ($editor -notmatch 'V3EditorAdapter\.buttonControlIdsForPositions') {
+    throw 'Schema v3 FNR mapping must resolve the exact physical button channel ids.'
+}
+if ($editor -notmatch 'removeButtonVisualsByBindingIds\s*\(\s*mappedChannelIds\s*,\s*wrapper\s*\)') {
+    throw 'Buttons consumed by a schema v3 FNR must be removed from the live canvas.'
+}
+if ($editor -notmatch 'wrapper\.bindingId\s*=\s*fnrMappingPopup\.targetFnrId') {
+    throw 'A newly created schema v3 FNR visual must bind to its logical FNR control.'
+}
 if ($editor -notmatch 'buttonMapping\s*:\s*FnrMapping\.buildButtonMapping') {
     throw 'FNR persistence must use the tested mapping builder.'
 }

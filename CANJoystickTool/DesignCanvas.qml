@@ -173,6 +173,59 @@ AluminumPanel {
                     }
                 }
 
+                ContextMenuItem {
+                    objectName: "miniJoystickXOutputDirectionMenuItem"
+                    visible: root.isMiniJoystick(contextMenu.targetComponent)
+                    height: visible ? 30 : 0
+                    text: root.miniJoystickAxisOutputReversed(
+                              contextMenu.targetComponent, "x")
+                          ? "X轴输出：反向" : "X轴输出：正常"
+                    onTriggered: {
+                        root.toggleMiniJoystickXAxisOutputDirection(
+                                    contextMenu.targetComponent)
+                        contextMenu.close()
+                    }
+                }
+
+                ContextMenuItem {
+                    objectName: "miniJoystickYOutputDirectionMenuItem"
+                    visible: root.isMiniJoystick(contextMenu.targetComponent)
+                    height: visible ? 30 : 0
+                    text: root.miniJoystickAxisOutputReversed(
+                              contextMenu.targetComponent, "y")
+                          ? "Y轴输出：反向" : "Y轴输出：正常"
+                    onTriggered: {
+                        root.toggleMiniJoystickYAxisOutputDirection(
+                                    contextMenu.targetComponent)
+                        contextMenu.close()
+                    }
+                }
+
+                ContextMenuItem {
+                    objectName: "miniJoystickGateModeMenuItem"
+                    visible: root.isMiniJoystick(contextMenu.targetComponent)
+                    height: visible ? 30 : 0
+                    text: root.miniJoystickGateMode(contextMenu.targetComponent) === "cross"
+                          ? "摇杆模式：十字" : "摇杆模式：万向"
+                    onTriggered: {
+                        root.toggleMiniJoystickGateMode(contextMenu.targetComponent)
+                        contextMenu.close()
+                    }
+                }
+
+                ContextMenuItem {
+                    objectName: "rollerOutputDirectionMenuItem"
+                    visible: root.isRoller(contextMenu.targetComponent)
+                    height: visible ? 30 : 0
+                    text: root.rollerOutputReversed(contextMenu.targetComponent)
+                          ? "输出方向：反向" : "输出方向：正常"
+                    onTriggered: {
+                        root.toggleRollerOutputDirection(
+                                    contextMenu.targetComponent)
+                        contextMenu.close()
+                    }
+                }
+
                 Rectangle {
                     width: parent.width - 12
                     anchors.horizontalCenter: parent.horizontalCenter
@@ -594,6 +647,12 @@ AluminumPanel {
                 for (var b = 0; b < count; b++) {
                     result.push({ bindId: comp.id + "." + b, desc: "按钮" + (b+1), color: "#ff3b30" })
                 }
+            } else if (cat === "button" && comp.type === "button") {
+                result.push({
+                    bindId: comp.id,
+                    desc: comp.label || "按钮",
+                    color: "#ff3b30"
+                })
             } else if (cat === "roller" && (comp.type === "roller"
                        || comp.type === "potentiometer")) {
                 result.push({ bindId: comp.id, desc: comp.label || "轴", color: "#ff9500" })
@@ -831,6 +890,64 @@ AluminumPanel {
         if (bindingEditor.opened) bindingEditor.close()
         placePopupFromRootPoint(contextMenu, mx, my, 180)
         contextMenu.open()
+    }
+
+    function isMiniJoystick(wrapper) {
+        return wrapper && wrapper.componentType === "MiniJoystick"
+    }
+
+    function isRoller(wrapper) {
+        return wrapper && (wrapper.componentType === "VerticalRoller"
+                           || wrapper.componentType === "HorizontalRoller")
+    }
+
+    function miniJoystickAxisOutputReversed(wrapper, axis) {
+        var config = wrapper ? (wrapper.componentConfig || {}) : {}
+        return axis === "y" ? config.invertY === true : config.invertX === true
+    }
+
+    function miniJoystickGateMode(wrapper) {
+        var config = wrapper ? (wrapper.componentConfig || {}) : {}
+        return config.gateMode === "cross" ? "cross" : "omnidirectional"
+    }
+
+    function toggleMiniJoystickXAxisOutputDirection(wrapper) {
+        if (!isMiniJoystick(wrapper))
+            return
+        wrapper.updateConfig({
+            invertX: !miniJoystickAxisOutputReversed(wrapper, "x")
+        })
+        layoutModified()
+    }
+
+    function toggleMiniJoystickYAxisOutputDirection(wrapper) {
+        if (!isMiniJoystick(wrapper))
+            return
+        wrapper.updateConfig({
+            invertY: !miniJoystickAxisOutputReversed(wrapper, "y")
+        })
+        layoutModified()
+    }
+
+    function toggleMiniJoystickGateMode(wrapper) {
+        if (!isMiniJoystick(wrapper))
+            return
+        var nextMode = miniJoystickGateMode(wrapper) === "cross"
+                ? "omnidirectional" : "cross"
+        wrapper.updateConfig({ gateMode: nextMode })
+        layoutModified()
+    }
+
+    function rollerOutputReversed(wrapper) {
+        var config = wrapper ? (wrapper.componentConfig || {}) : {}
+        return config.invertInput === true
+    }
+
+    function toggleRollerOutputDirection(wrapper) {
+        if (!isRoller(wrapper))
+            return
+        wrapper.updateConfig({ invertInput: !rollerOutputReversed(wrapper) })
+        layoutModified()
     }
 
     function showLabelEditor(wrapper) {

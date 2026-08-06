@@ -64,6 +64,12 @@
         "$ref": "#/definitions/signal"
       }
     },
+    "bindingChannels": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/bindingChannel"
+      }
+    },
     "controls": {
       "type": "array",
       "minItems": 1,
@@ -566,6 +572,7 @@
           "enum": [
             "position",
             "status",
+            "fnr",
             "button",
             "packedButtons",
             "counter",
@@ -629,6 +636,16 @@
                 "selfCheck",
                 "identity"
               ]
+            },
+            "buttonBitPositions": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 63
+              }
             }
           }
         }
@@ -650,7 +667,8 @@
           "type": "number"
         },
         "rawCenter": {
-          "type": "number"
+          "type": "number",
+          "description": "Neutral raw value for centered scalar axes; zero magnitude for bindings whose statusSignalId carries direction."
         },
         "rawMax": {
           "type": "number"
@@ -689,10 +707,155 @@
         "signalId": {
           "$ref": "#/definitions/id"
         },
+        "statusSignalId": {
+          "$ref": "#/definitions/id"
+        },
         "transform": {
           "$ref": "#/definitions/axisTransform"
         }
       }
+    },
+    "bindingChannel": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "kind",
+            "label",
+            "signalId",
+            "position"
+          ],
+          "properties": {
+            "id": {
+              "$ref": "#/definitions/id"
+            },
+            "kind": {
+              "const": "button"
+            },
+            "label": {
+              "type": "string",
+              "minLength": 1
+            },
+            "signalId": {
+              "$ref": "#/definitions/id"
+            },
+            "position": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "kind",
+            "role",
+            "inputMode",
+            "label",
+            "topology",
+            "axis"
+          ],
+          "properties": {
+            "id": {
+              "$ref": "#/definitions/id"
+            },
+            "kind": {
+              "const": "axis"
+            },
+            "role": {
+              "enum": [
+                "roller",
+                "potentiometer",
+                "auxiliary"
+              ]
+            },
+            "inputMode": {
+              "enum": [
+                "centered",
+                "signed",
+                "unipolar"
+              ]
+            },
+            "zeroAsNeutral": {
+              "type": "boolean"
+            },
+            "display": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "valueMin",
+                "valueMax",
+                "angleMinDegrees",
+                "angleMaxDegrees",
+                "unit"
+              ],
+              "properties": {
+                "valueMin": {
+                  "type": "number"
+                },
+                "valueMax": {
+                  "type": "number"
+                },
+                "angleMinDegrees": {
+                  "type": "number"
+                },
+                "angleMaxDegrees": {
+                  "type": "number"
+                },
+                "unit": {
+                  "type": "string"
+                }
+              }
+            },
+            "label": {
+              "type": "string",
+              "minLength": 1
+            },
+            "topology": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind",
+                "orientation"
+              ],
+              "properties": {
+                "kind": {
+                  "const": "singleAxis"
+                },
+                "orientation": {
+                  "enum": [
+                    "horizontal",
+                    "vertical"
+                  ]
+                }
+              }
+            },
+            "axis": {
+              "$ref": "#/definitions/axisBinding"
+            }
+          },
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "role": {
+                    "const": "potentiometer"
+                  }
+                }
+              },
+              "then": {
+                "required": [
+                  "display"
+                ]
+              }
+            }
+          ]
+        }
+      ]
     },
     "control": {
       "oneOf": [

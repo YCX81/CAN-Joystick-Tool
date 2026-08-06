@@ -114,6 +114,12 @@ int main(int argc, char *argv[])
     bool ok = true;
     ok &= expect(root->setProperty("animationEnabled", false),
                  "MiniJoystickUnit should expose animationEnabled");
+    ok &= expect(root->setProperty("invertX", false),
+                 "MiniJoystickUnit should expose invertX");
+    ok &= expect(root->setProperty("invertY", false),
+                 "MiniJoystickUnit should expose invertY");
+    ok &= expect(root->setProperty("gateMode", QStringLiteral("omnidirectional")),
+                 "MiniJoystickUnit should expose gateMode");
     ok &= expect(root->setProperty("readOnly", true),
                  "MiniJoystickUnit should expose readOnly");
     ok &= expectNear(root->property("minValue").toDouble(), -1.0, 0.001,
@@ -290,6 +296,39 @@ int main(int argc, char *argv[])
     ok &= expectNear(root->property("visualY").toDouble(), -1.0, 0.001,
                      "Visual Y should clamp to its negative limit");
 
+    ok &= expect(setAxes(0.8, -0.3), "Failed to set directional axis values");
+    ok &= expect(root->setProperty("invertX", true),
+                  "Failed to reverse the mini joystick X output");
+    processPendingEvents();
+    ok &= expectNear(root->property("visualX").toDouble(), -0.8, 0.001,
+                      "Reversed X output should mirror only the X direction");
+    ok &= expectNear(root->property("visualY").toDouble(), -0.3, 0.001,
+                      "Normal Y output must remain unchanged when only X is reversed");
+    ok &= expect(root->setProperty("invertY", true),
+                  "Failed to reverse the mini joystick Y output");
+    processPendingEvents();
+    ok &= expectNear(root->property("visualX").toDouble(), -0.8, 0.001,
+                      "Reversing Y must preserve the selected X direction");
+    ok &= expectNear(root->property("visualY").toDouble(), 0.3, 0.001,
+                      "Reversed Y output should mirror the Y direction");
+    ok &= expect(root->setProperty("invertX", false),
+                 "Failed to restore normal mini joystick animation");
+    ok &= expect(root->setProperty("invertY", false),
+                 "Failed to restore normal mini joystick animation");
+    ok &= expect(root->setProperty("gateMode", QStringLiteral("cross")),
+                 "Failed to select cross mini joystick mode");
+    processPendingEvents();
+    ok &= expectNear(root->property("visualX").toDouble(), 0.8, 0.001,
+                     "Cross mode should retain the dominant X direction");
+    ok &= expectNear(root->property("visualY").toDouble(), 0.0, 0.001,
+                     "Cross mode should suppress the weaker Y direction");
+    ok &= expectNear(root->property("displayXValue").toDouble(), 80.0, 0.001,
+                     "Animation settings must not alter the X data readout");
+    ok &= expectNear(root->property("displayYValue").toDouble(), -30.0, 0.001,
+                     "Animation settings must not alter the Y data readout");
+    ok &= expect(root->setProperty("gateMode", QStringLiteral("omnidirectional")),
+                 "Failed to restore omnidirectional mini joystick mode");
+
     ok &= expect(setAxes(0.82, -0.72), "Failed to set preview axis values");
     ok &= expectNear(root->property("displayXValue").toDouble(), 82.0, 0.001,
                      "X readout must show a -100 to 100 percentage");
@@ -319,6 +358,77 @@ int main(int argc, char *argv[])
             wrapper->setProperty("xBindingId", QStringLiteral("ejm_handleX"));
             wrapper->setProperty("yBindingId", QStringLiteral("ejm_handleY"));
 
+            QQmlComponent canvasComponent(
+                &engine,
+                QUrl::fromLocalFile(sourceDir
+                                    + QStringLiteral("/CANJoystickTool/DesignCanvas.qml")));
+            ok &= expect(canvasComponent.isReady(),
+                         "DesignCanvas should load with MiniJoystick menu settings");
+            const std::unique_ptr<QObject> canvas(
+                canvasComponent.isReady() ? canvasComponent.create() : nullptr);
+            ok &= expect(canvas != nullptr, "Failed to create DesignCanvas");
+            if (canvas) {
+                ok &= expect(canvas->findChild<QObject *>(
+                                 QStringLiteral("miniJoystickXOutputDirectionMenuItem"))
+                                 != nullptr,
+                             "MiniJoystick context menu must expose X output direction");
+                ok &= expect(canvas->findChild<QObject *>(
+                                 QStringLiteral("miniJoystickYOutputDirectionMenuItem"))
+                                 != nullptr,
+                             "MiniJoystick context menu must expose Y output direction");
+                ok &= expect(canvas->findChild<QObject *>(
+                                 QStringLiteral("miniJoystickGateModeMenuItem"))
+                                 != nullptr,
+                             "MiniJoystick context menu must expose gate mode");
+
+                const QVariant wrapperArgument = QVariant::fromValue(wrapper.get());
+                const bool xReversed = QMetaObject::invokeMethod(
+                    canvas.get(), "toggleMiniJoystickXAxisOutputDirection",
+                    Q_ARG(QVariant, wrapperArgument));
+                const QVariantMap xOnlyConfig =
+                    wrapper->property("componentConfig").toMap();
+                ok &= expect(xReversed
+                                 && xOnlyConfig.value(QStringLiteral("invertX")).toBool()
+                                 && !xOnlyConfig.value(QStringLiteral("invertY")).toBool(),
+                             "MiniJoystick X menu action must not change Y output direction");
+                const bool yReversed = QMetaObject::invokeMethod(
+                    canvas.get(), "toggleMiniJoystickYAxisOutputDirection",
+                    Q_ARG(QVariant, wrapperArgument));
+                const bool gateChanged = QMetaObject::invokeMethod(
+                    canvas.get(), "toggleMiniJoystickGateMode",
+                    Q_ARG(QVariant, wrapperArgument));
+                ok &= expect(yReversed && gateChanged,
+                              "MiniJoystick context menu actions should be invokable");
+
+                const std::unique_ptr<QObject> rollerWrapper(
+                    wrapperComponent.create());
+                ok &= expect(rollerWrapper != nullptr,
+                             "Failed to create roller wrapper");
+                if (rollerWrapper) {
+                    rollerWrapper->setProperty(
+                        "componentType", QStringLiteral("VerticalRoller"));
+                    ok &= expect(canvas->findChild<QObject *>(
+                                     QStringLiteral("rollerOutputDirectionMenuItem"))
+                                     != nullptr,
+                                 "Roller context menu must expose output direction");
+                    const QVariant rollerArgument =
+                        QVariant::fromValue(rollerWrapper.get());
+                    const bool rollerReversed = QMetaObject::invokeMethod(
+                        canvas.get(), "toggleRollerOutputDirection",
+                        Q_ARG(QVariant, rollerArgument));
+                    ok &= expect(
+                        rollerReversed
+                            && rollerWrapper->property("componentConfig")
+                                   .toMap()
+                                   .value(QStringLiteral("invertInput"))
+                                   .toBool(),
+                        "Roller menu action must persist reversed output");
+                }
+            } else {
+                for (const QQmlError &error : canvasComponent.errors())
+                    std::cerr << error.toString().toStdString() << '\n';
+            }
+
             QVariant serialized;
             const bool invoked = QMetaObject::invokeMethod(
                 wrapper.get(), "toJSON", Q_RETURN_ARG(QVariant, serialized));
@@ -330,9 +440,41 @@ int main(int argc, char *argv[])
             ok &= expect(serializedMap.value(QStringLiteral("yBindingId")).toString()
                              == QStringLiteral("ejm_handleY"),
                          "Serialized MiniJoystick must retain its Y binding");
+            const QVariantMap serializedConfig =
+                serializedMap.value(QStringLiteral("config")).toMap();
+            ok &= expect(serializedConfig.value(QStringLiteral("invertX")).toBool()
+                              && serializedConfig.value(QStringLiteral("invertY")).toBool(),
+                          "Serialized MiniJoystick must retain independent reversed axes");
+            ok &= expect(serializedConfig.value(QStringLiteral("gateMode")).toString()
+                             == QStringLiteral("cross"),
+                         "Serialized MiniJoystick must retain its cross gate mode");
         }
     } else {
         for (const QQmlError &error : wrapperComponent.errors())
+            std::cerr << error.toString().toStdString() << '\n';
+    }
+
+    QQmlComponent verticalRollerComponent(
+        &engine,
+        QUrl::fromLocalFile(
+            sourceDir + QStringLiteral("/CANJoystickTool/VerticalRollerUnit.qml")));
+    ok &= expect(verticalRollerComponent.isReady(),
+                 "VerticalRollerUnit should load for output inversion");
+    if (verticalRollerComponent.isReady()) {
+        const std::unique_ptr<QObject> roller(verticalRollerComponent.create());
+        ok &= expect(roller != nullptr, "Failed to create VerticalRollerUnit");
+        if (roller) {
+            ok &= expect(roller->setProperty("value", 0.6),
+                         "Failed to set roller input value");
+            ok &= expectNear(roller->property("outputValue").toDouble(), 0.6, 0.001,
+                             "Normal roller output must preserve its input");
+            ok &= expect(roller->setProperty("invertInput", true),
+                         "Failed to reverse roller output");
+            ok &= expectNear(roller->property("outputValue").toDouble(), -0.6, 0.001,
+                             "Reversed roller output must mirror its input");
+        }
+    } else {
+        for (const QQmlError &error : verticalRollerComponent.errors())
             std::cerr << error.toString().toStdString() << '\n';
     }
 

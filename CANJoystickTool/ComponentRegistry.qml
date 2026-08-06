@@ -137,6 +137,7 @@ QtObject {
             thumbnailScale: 0.30,
             defaultConfig: {
                 value: 0,
+                invertInput: false,
                 label: ""
             },
             hasLabel: true
@@ -176,6 +177,7 @@ QtObject {
             thumbnailScale: 0.35,
             defaultConfig: {
                 value: 0,
+                invertInput: false,
                 label: ""
             },
             hasLabel: true
@@ -210,6 +212,9 @@ QtObject {
                 yValue: 0,
                 minValue: -1,
                 maxValue: 1,
+                invertX: false,
+                invertY: false,
+                gateMode: "omnidirectional",
                 label: ""
             },
             hasLabel: true

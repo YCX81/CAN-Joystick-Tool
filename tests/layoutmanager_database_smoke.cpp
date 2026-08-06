@@ -1,16 +1,22 @@
 #include "LayoutManager.h"
 
 #include <QCoreApplication>
+#include <QCryptographicHash>
 #include <QDir>
+#include <QElapsedTimer>
+#include <QEventLoop>
 #include <QFile>
 #include <QFileInfo>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QSaveFile>
 #include <QSqlDatabase>
 #include <QSqlQuery>
 #include <QTemporaryDir>
+#include <QThread>
 #include <QDebug>
 #include <cstdio>
+#include <functional>
 
 namespace {
 
@@ -18,6 +24,38 @@ bool writeBytes(const QString &path, const QByteArray &bytes)
 {
     QFile file(path);
     return file.open(QIODevice::WriteOnly) && file.write(bytes) == bytes.size();
+}
+
+bool writeBytesAtomically(const QString &path, const QByteArray &bytes)
+{
+    QSaveFile file(path);
+    return file.open(QIODevice::WriteOnly)
+        && file.write(bytes) == bytes.size()
+        && file.commit();
+}
+
+bool waitUntil(const std::function<bool()> &condition, int timeoutMs = 3000)
+{
+    QElapsedTimer elapsed;
+    elapsed.start();
+    while (elapsed.elapsed() < timeoutMs) {
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+        if (condition())
+            return true;
+        QThread::msleep(10);
+    }
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    return condition();
+}
+
+void processEventsFor(int durationMs)
+{
+    QElapsedTimer elapsed;
+    elapsed.start();
+    while (elapsed.elapsed() < durationMs) {
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+        QThread::msleep(10);
+    }
 }
 
 bool databaseHasColumn(const QString &databasePath, const QString &table, const QString &column)
@@ -224,9 +262,20 @@ int main(int argc, char *argv[])
 
     LayoutManager manager;
     manager.setProductsDirectory(productsDir);
-    QObject::connect(&manager, &LayoutManager::errorOccurred, [](const QString &message) {
+    manager.setProductCatalogRoot(QDir(root.path()).filePath(QStringLiteral("catalog")));
+    QStringList reportedErrors;
+    QObject::connect(&manager, &LayoutManager::errorOccurred, [&reportedErrors](const QString &message) {
+        reportedErrors.append(message);
         std::fprintf(stderr, "%s\n", qPrintable(message));
     });
+    int externalChangeCount = 0;
+    QString lastExternalChangePath;
+    QObject::connect(&manager,
+                     &LayoutManager::productConfigExternallyChanged,
+                     [&externalChangeCount, &lastExternalChangePath](const QString &path) {
+                         ++externalChangeCount;
+                         lastExternalChangePath = path;
+                     });
 
     const QString unusableDatabasePath = QDir(root.path()).filePath(QStringLiteral("database-directory"));
     if (!QDir().mkpath(unusableDatabasePath))
@@ -269,6 +318,93 @@ int main(int argc, char *argv[])
         return 9;
     qputenv("CANJOYSTICK_DATABASE_PATH", databasePath.toUtf8());
 
+    const QString cloneSourceCode = QStringLiteral("SOURCE-FIRMWARE");
+    const QString cloneSourceArtifactName = QStringLiteral("SOURCE-FIRMWARE_V1.elf");
+    const QString cloneSourceDirectory = QDir(productsDir).filePath(cloneSourceCode);
+    if (!QDir().mkpath(cloneSourceDirectory))
+        return 70;
+    const QByteArray cloneSourceBytes = QByteArrayLiteral("source-firmware-bytes");
+    if (!writeBytes(QDir(cloneSourceDirectory).filePath(cloneSourceArtifactName),
+                    cloneSourceBytes)) {
+        return 71;
+    }
+    const QJsonObject cloneSourceConfig =
+        firmwareBackedV3Config(manager,
+                               cloneSourceCode,
+                               QStringLiteral("V1"),
+                               cloneSourceArtifactName);
+    const QString cloneTargetCode = QStringLiteral("TARGET-FIRMWARE");
+    if (!manager.cloneProductConfigVersionWithCustomerAs(
+            cloneSourceConfig,
+            cloneTargetCode,
+            QStringLiteral("V3"),
+            QStringLiteral("复制固件产品"),
+            QStringLiteral("测试客户"))) {
+        return 72;
+    }
+    const QString cloneTargetConfigPath =
+        manager.productConfigVersionPath(cloneTargetCode, QStringLiteral("V3"));
+    const QString cloneTargetArtifactPath =
+        QDir(QFileInfo(cloneTargetConfigPath).absolutePath())
+            .filePath(QStringLiteral("TARGET-FIRMWARE_V3.elf"));
+    QFile cloneTargetArtifact(cloneTargetArtifactPath);
+    QFile cloneTargetConfigFile(cloneTargetConfigPath);
+    if (!cloneTargetArtifact.open(QIODevice::ReadOnly)
+        || cloneTargetArtifact.readAll() != cloneSourceBytes
+        || !cloneTargetConfigFile.open(QIODevice::ReadOnly)) {
+        return 73;
+    }
+    const QJsonObject clonedFirmwareConfig =
+        QJsonDocument::fromJson(cloneTargetConfigFile.readAll()).object();
+    if (clonedFirmwareConfig.value(QStringLiteral("operation")).toObject()
+            .value(QStringLiteral("firmware")).toObject()
+            .value(QStringLiteral("artifact")).toString()
+        != QStringLiteral("TARGET-FIRMWARE_V3.elf")) {
+        return 74;
+    }
+
+    const QString conflictCode = QStringLiteral("CONFLICT-FIRMWARE");
+    const QString conflictDirectory = QDir(productsDir).filePath(conflictCode);
+    if (!QDir().mkpath(conflictDirectory))
+        return 75;
+    const QString conflictArtifactPath =
+        QDir(conflictDirectory).filePath(QStringLiteral("CONFLICT-FIRMWARE_V3.elf"));
+    const QByteArray conflictBytes = QByteArrayLiteral("do-not-overwrite");
+    if (!writeBytes(conflictArtifactPath, conflictBytes)
+        || manager.cloneProductConfigVersionWithCustomerAs(
+            cloneSourceConfig,
+            conflictCode,
+            QStringLiteral("V3"),
+            QStringLiteral("冲突产品"),
+            QStringLiteral("测试客户"))) {
+        return 76;
+    }
+    QFile conflictArtifact(conflictArtifactPath);
+    if (!conflictArtifact.open(QIODevice::ReadOnly)
+        || conflictArtifact.readAll() != conflictBytes) {
+        return 77;
+    }
+
+    qputenv("CANJOYSTICK_DATABASE_PATH", unusableDatabasePath.toUtf8());
+    const QString failedCloneCode = QStringLiteral("FAILED-FIRMWARE");
+    const QString failedCloneConfigPath =
+        manager.productConfigVersionPath(failedCloneCode, QStringLiteral("V3"));
+    const QString failedCloneDirectory = QFileInfo(failedCloneConfigPath).absolutePath();
+    const QString failedCloneArtifactPath =
+        QDir(failedCloneDirectory).filePath(QStringLiteral("FAILED-FIRMWARE_V3.elf"));
+    if (manager.cloneProductConfigVersionWithCustomerAs(
+            cloneSourceConfig,
+            failedCloneCode,
+            QStringLiteral("V3"),
+            QStringLiteral("数据库失败产品"),
+            QStringLiteral("测试客户"))
+        || QFileInfo::exists(failedCloneConfigPath)
+        || QFileInfo::exists(failedCloneArtifactPath)
+        || QDir(failedCloneDirectory).exists()) {
+        return 78;
+    }
+    qputenv("CANJOYSTICK_DATABASE_PATH", databasePath.toUtf8());
+
     const QString syncedPath = QDir(productsDir).filePath(QStringLiteral("RELEASED-PRODUCT_V2.json"));
     if (!manager.saveProductConfig(released, syncedPath))
         return 10;
@@ -283,9 +419,123 @@ int main(int argc, char *argv[])
     const QJsonObject testOnlyConfig = testOnlyV3Config(manager, testOnlyCode);
     const QString testOnlyPath =
         manager.productConfigVersionPath(testOnlyCode, QStringLiteral("V1"));
+    if (!manager.saveProductDraft(testOnlyConfig, testOnlyPath)
+        || !QFileInfo::exists(manager.productDraftPath(testOnlyPath))) {
+        return 35;
+    }
     if (!manager.saveProductConfigVersionWithCustomerAs(
             testOnlyConfig, testOnlyCode, QStringLiteral("V1"), QStringLiteral("安徽好运来叉车"))) {
         return 23;
+    }
+    if (QFileInfo::exists(manager.productDraftPath(testOnlyPath))) {
+        return 36;
+    }
+    QFile persistedTestOnlyFile(testOnlyPath);
+    if (!persistedTestOnlyFile.open(QIODevice::ReadOnly)) {
+        return 37;
+    }
+    const QJsonObject persistedTestOnlyConfig =
+        QJsonDocument::fromJson(persistedTestOnlyFile.readAll()).object();
+    persistedTestOnlyFile.close();
+    const QJsonArray persistedCustomerBindings =
+        persistedTestOnlyConfig.value(QStringLiteral("product"))
+            .toObject()
+            .value(QStringLiteral("customerBindings"))
+            .toArray();
+    if (persistedCustomerBindings.size() != 1
+        || persistedCustomerBindings.first()
+                   .toObject()
+                   .value(QStringLiteral("name"))
+                   .toString()
+            != QStringLiteral("安徽好运来叉车")
+        || !persistedCustomerBindings.first()
+                .toObject()
+                .value(QStringLiteral("isDefault"))
+                .toBool()) {
+        return 38;
+    }
+
+    QJsonObject reboundConfig = persistedTestOnlyConfig;
+    QJsonObject reboundProduct = reboundConfig.value(QStringLiteral("product")).toObject();
+    reboundProduct.insert(
+        QStringLiteral("customerBindings"),
+        QJsonArray{QJsonObject{{QStringLiteral("name"), QStringLiteral("重新绑定客户")},
+                               {QStringLiteral("isDefault"), true}}});
+    reboundConfig.insert(QStringLiteral("product"), reboundProduct);
+    if (!manager.saveProductConfig(reboundConfig, testOnlyPath)) {
+        return 81;
+    }
+    if (scalar(databasePath,
+               QStringLiteral(
+                   "SELECT COUNT(*) FROM product_customer_bindings pcb "
+                   "JOIN products p ON p.id = pcb.product_id "
+                   "JOIN customers c ON c.id = pcb.customer_id "
+                   "WHERE p.name = 'JC6000-BGA-C0009' AND c.name = '重新绑定客户' "
+                   "AND pcb.is_default = 1"))
+            .toInt()
+        != 1
+        || scalar(databasePath,
+                  QStringLiteral(
+                      "SELECT COUNT(*) FROM product_customer_bindings pcb "
+                      "JOIN products p ON p.id = pcb.product_id "
+                      "JOIN customers c ON c.id = pcb.customer_id "
+                      "WHERE p.name = 'JC6000-BGA-C0009' AND c.name = '安徽好运来叉车'"))
+               .toInt()
+            != 0) {
+        return 82;
+    }
+    if (!manager.saveProductConfig(persistedTestOnlyConfig, testOnlyPath)) {
+        return 83;
+    }
+    const QJsonArray persistedCards =
+        persistedTestOnlyConfig.value(QStringLiteral("layout"))
+            .toObject()
+            .value(QStringLiteral("cards"))
+            .toArray();
+    bool hasBlankFront = false;
+    bool hasBlankBack = false;
+    bool hasBusStats = false;
+    bool hasRecordInfo = false;
+    bool hasUnexpectedBinding = false;
+    for (const QJsonValue &cardValue : persistedCards) {
+        const QJsonObject card = cardValue.toObject();
+        const QJsonObject grid = card.value(QStringLiteral("grid")).toObject();
+        const int row = grid.value(QStringLiteral("row")).toInt(-1);
+        const int column = grid.value(QStringLiteral("column")).toInt(-1);
+        const QString kind = card.value(QStringLiteral("kind")).toString();
+        if (kind == QStringLiteral("leftRegion")
+            || !card.value(QStringLiteral("elements")).toArray().isEmpty()) {
+            hasUnexpectedBinding = true;
+        }
+        if (row == 0 && column == 0) {
+            hasBlankFront =
+                kind == QStringLiteral("controls")
+                && card.value(QStringLiteral("title")).toString()
+                       == QStringLiteral("正面");
+        } else if (row == 1 && column == 0) {
+            hasBlankBack =
+                kind == QStringLiteral("controls")
+                && card.value(QStringLiteral("title")).toString()
+                       == QStringLiteral("背面");
+        } else if (row == 0 && column == 1) {
+            hasBusStats =
+                kind == QStringLiteral("system")
+                && card.value(QStringLiteral("systemType")).toString()
+                       == QStringLiteral("busStats");
+        } else if (row == 1 && column == 1) {
+            hasRecordInfo =
+                kind == QStringLiteral("system")
+                && card.value(QStringLiteral("systemType")).toString()
+                       == QStringLiteral("recordInfo");
+        }
+    }
+    if (persistedCards.size() != 4
+        || !hasBlankFront
+        || !hasBlankBack
+        || !hasBusStats
+        || !hasRecordInfo
+        || hasUnexpectedBinding) {
+        return 39;
     }
     if (scalar(databasePath,
                QStringLiteral(
@@ -340,6 +590,118 @@ int main(int argc, char *argv[])
         return 32;
     }
 
+    // A valid external repair of an already registered JSON must update the
+    // database hash/metadata and notify the editor to reload its in-memory copy.
+    manager.getProductFiles();
+    QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+    QJsonObject externallyModified = persistedTestOnlyConfig;
+    QJsonObject externallyModifiedProduct =
+        externallyModified.value(QStringLiteral("product")).toObject();
+    externallyModifiedProduct.insert(QStringLiteral("description"),
+                                     QStringLiteral("外部映射修复后的配置"));
+    externallyModified.insert(QStringLiteral("product"), externallyModifiedProduct);
+    const QByteArray externallyModifiedBytes =
+        QJsonDocument(externallyModified).toJson(QJsonDocument::Indented);
+    const QString externallyModifiedHash = QString::fromLatin1(
+        QCryptographicHash::hash(externallyModifiedBytes, QCryptographicHash::Sha256).toHex());
+    if (!writeBytesAtomically(testOnlyPath, externallyModifiedBytes)) {
+        return 84;
+    }
+    if (!waitUntil([&]() {
+            return scalar(databasePath,
+                          QStringLiteral(
+                              "SELECT config_sha256 FROM product_config_versions pcv "
+                              "JOIN products p ON p.id = pcv.product_id "
+                              "WHERE p.name = 'JC6000-BGA-C0009' AND pcv.version_code = 'V1'"))
+                       .toString()
+                    == externallyModifiedHash
+                && scalar(databasePath,
+                          QStringLiteral(
+                              "SELECT pcv.description FROM product_config_versions pcv "
+                              "JOIN products p ON p.id = pcv.product_id "
+                              "WHERE p.name = 'JC6000-BGA-C0009' AND pcv.version_code = 'V1'"))
+                       .toString()
+                    == QStringLiteral("外部映射修复后的配置")
+                && externalChangeCount == 1;
+        })) {
+        std::fprintf(stderr,
+                     "external sync state: hash=%s description=%s changes=%d\n",
+                     qPrintable(scalar(databasePath,
+                                       QStringLiteral(
+                                           "SELECT config_sha256 FROM product_config_versions pcv "
+                                           "JOIN products p ON p.id = pcv.product_id "
+                                           "WHERE p.name = 'JC6000-BGA-C0009' AND pcv.version_code = 'V1'"))
+                                    .toString()),
+                     qPrintable(scalar(databasePath,
+                                       QStringLiteral(
+                                           "SELECT pcv.description FROM product_config_versions pcv "
+                                           "JOIN products p ON p.id = pcv.product_id "
+                                           "WHERE p.name = 'JC6000-BGA-C0009' AND pcv.version_code = 'V1'"))
+                                    .toString()),
+                     externalChangeCount);
+        return 85;
+    }
+    if (QFileInfo(lastExternalChangePath).absoluteFilePath()
+        != QFileInfo(testOnlyPath).absoluteFilePath()) {
+        return 86;
+    }
+
+    // An invalid or half-written external file must never replace the last
+    // known-good database hash, nor tell the editor to reload it.
+    reportedErrors.clear();
+    const int validExternalChangeCount = externalChangeCount;
+    if (!writeBytesAtomically(testOnlyPath, QByteArrayLiteral("{ invalid json\n"))) {
+        return 87;
+    }
+    if (!waitUntil([&reportedErrors]() {
+            for (const QString &message : reportedErrors) {
+                if (message.contains(QStringLiteral("external product config"),
+                                     Qt::CaseInsensitive)) {
+                    return true;
+                }
+            }
+            return false;
+        })) {
+        return 88;
+    }
+    if (externalChangeCount != validExternalChangeCount
+        || scalar(databasePath,
+                  QStringLiteral(
+                      "SELECT config_sha256 FROM product_config_versions pcv "
+                      "JOIN products p ON p.id = pcv.product_id "
+                      "WHERE p.name = 'JC6000-BGA-C0009' AND pcv.version_code = 'V1'"))
+               .toString()
+            != externallyModifiedHash) {
+        return 89;
+    }
+    if (!writeBytesAtomically(testOnlyPath, externallyModifiedBytes)) {
+        return 90;
+    }
+
+    // Merely dropping a new valid JSON into the directory must not publish a
+    // new product implicitly. Only an already registered product/version is
+    // eligible for automatic reconciliation.
+    const QString unregisteredCode = QStringLiteral("UNREGISTERED-PRODUCT");
+    const QJsonObject unregisteredConfig =
+        testOnlyV3Config(manager, unregisteredCode, QStringLiteral("未登记产品"));
+    const QString unregisteredPath =
+        QDir(productsDir).filePath(unregisteredCode + QStringLiteral("_V1.json"));
+    const int externalChangesBeforeUnregistered = externalChangeCount;
+    if (!writeBytesAtomically(
+            unregisteredPath,
+            QJsonDocument(unregisteredConfig).toJson(QJsonDocument::Indented))) {
+        return 91;
+    }
+    processEventsFor(500);
+    if (externalChangeCount != externalChangesBeforeUnregistered
+        || scalar(databasePath,
+                  QStringLiteral(
+                      "SELECT COUNT(*) FROM products WHERE name = 'UNREGISTERED-PRODUCT'"))
+               .toInt()
+            != 0) {
+        return 92;
+    }
+
     QJsonObject deprecatedConfig =
         testOnlyV3Config(manager, testOnlyCode, QStringLiteral("历史测试配置"));
     QJsonObject deprecatedProduct =
@@ -368,6 +730,52 @@ int main(int argc, char *argv[])
                .toInt()
             != 1) {
         return 34;
+    }
+
+    // Reconciliation of V1 must not steal the default flag from V2 merely
+    // because V1 happened to be the file that changed.
+    QJsonObject externallyModifiedAgain = externallyModified;
+    QJsonObject externallyModifiedAgainProduct =
+        externallyModifiedAgain.value(QStringLiteral("product")).toObject();
+    externallyModifiedAgainProduct.insert(QStringLiteral("description"),
+                                          QStringLiteral("二次外部映射修复"));
+    externallyModifiedAgain.insert(QStringLiteral("product"), externallyModifiedAgainProduct);
+    const QByteArray externallyModifiedAgainBytes =
+        QJsonDocument(externallyModifiedAgain).toJson(QJsonDocument::Indented);
+    const QString externallyModifiedAgainHash = QString::fromLatin1(
+        QCryptographicHash::hash(externallyModifiedAgainBytes, QCryptographicHash::Sha256)
+            .toHex());
+    const int externalChangesBeforeSecondRepair = externalChangeCount;
+    if (!writeBytesAtomically(testOnlyPath, externallyModifiedAgainBytes)
+        || !waitUntil([&]() {
+               return scalar(databasePath,
+                             QStringLiteral(
+                                 "SELECT config_sha256 FROM product_config_versions pcv "
+                                 "JOIN products p ON p.id = pcv.product_id "
+                                 "WHERE p.name = 'JC6000-BGA-C0009' AND pcv.version_code = 'V1'"))
+                          .toString()
+                       == externallyModifiedAgainHash
+                   && externalChangeCount == externalChangesBeforeSecondRepair + 1;
+           })) {
+        return 93;
+    }
+    if (scalar(databasePath,
+               QStringLiteral(
+                   "SELECT COUNT(*) FROM product_config_versions pcv "
+                   "JOIN products p ON p.id = pcv.product_id "
+                   "WHERE p.name = 'JC6000-BGA-C0009' AND pcv.version_code = 'V2' "
+                   "AND pcv.is_default = 1"))
+            .toInt()
+            != 1
+        || scalar(databasePath,
+                  QStringLiteral(
+                      "SELECT COUNT(*) FROM product_config_versions pcv "
+                      "JOIN products p ON p.id = pcv.product_id "
+                      "WHERE p.name = 'JC6000-BGA-C0009' AND pcv.version_code = 'V1' "
+                      "AND pcv.is_default = 0"))
+               .toInt()
+            != 1) {
+        return 94;
     }
 
     const QString firmwareCode = QStringLiteral("JC6000-AR000003");
