@@ -1214,7 +1214,6 @@ void LayoutManager::setProductCatalogRoot(const QString &path)
     m_productCatalogRoot = cleanPath;
     ensureDirectoryExists(catalogActiveDirectory());
     ensureDirectoryExists(QDir(m_productCatalogRoot).filePath(QStringLiteral("backups")));
-    ensureDirectoryExists(QDir(m_productCatalogRoot).filePath(QStringLiteral("drafts")));
     hydrateCatalogActiveFromCurrent();
     emit productCatalogRootChanged();
 }
@@ -2245,33 +2244,131 @@ QJsonObject LayoutManager::buildStandardProductConfig(const QJsonObject &spec) c
     return config;
 }
 
-QJsonObject LayoutManager::buildStandardProductConfigV3(const QJsonObject &spec) const
+QJsonObject LayoutManager::validateStandardProductSpecV3(const QJsonObject &spec) const
 {
+    QJsonArray errors;
+    QJsonObject normalized = spec;
+
     const QString productCode = sanitizeProductModel(
         spec.value(QStringLiteral("code"))
             .toString(spec.value(QStringLiteral("model")).toString()))
                                     .toUpper();
-    const QString description = spec.value(QStringLiteral("description")).toString().trimmed();
-    const QString customerName =
-        spec.value(QStringLiteral("customerName")).toString().trimmed();
-    const QString productVersion = normalizedVersionCode(
-        spec.value(QStringLiteral("version")).toString(QStringLiteral("V1")));
-    const QString calibrationMode =
-        spec.value(QStringLiteral("calibrationMode")).toString(QStringLiteral("centerOnly")).trimmed();
-    const int bitrateKbps = boundedJsonInt(spec, QStringLiteral("baudRate"), 250, 10, 1000);
-    const int buttonCount = boundedJsonInt(spec, QStringLiteral("buttonCount"), 10, 0, 12);
-    const QJsonArray buttonNumbers = normalizedButtonNumbers(spec, buttonCount);
-    const int decoderButtonCount = decodedButtonCount(buttonNumbers);
-    const int rollerCount = boundedJsonInt(spec, QStringLiteral("rollerCount"), 4, 0, 4);
-    const bool hasWorkLight = spec.value(QStringLiteral("hasWorkLight")).toBool(false);
-    QString joystickTopology =
-        spec.value(QStringLiteral("joystickTopology")).toString(QStringLiteral("xy2D")).trimmed();
-    if (joystickTopology != QStringLiteral("xy2D")
-        && joystickTopology != QStringLiteral("crossXY")
-        && joystickTopology != QStringLiteral("singleAxisX")
-        && joystickTopology != QStringLiteral("singleAxisY")) {
-        joystickTopology = QStringLiteral("xy2D");
+    if (productCode.isEmpty())
+        errors.append(tr("Product code is required"));
+    normalized.insert(QStringLiteral("code"), productCode);
+    normalized.insert(QStringLiteral("version"), normalizedVersionCode(
+                          spec.value(QStringLiteral("version")).toString(QStringLiteral("V1"))));
+
+    const auto strictInteger = [&](const QString &key, int fallback, int minimum,
+                                   int maximum) {
+        const QJsonValue raw = spec.value(key);
+        int value = fallback;
+        bool valid = raw.isUndefined();
+        if (raw.isDouble()) {
+            value = raw.toInt(fallback);
+            valid = raw.toDouble() == static_cast<double>(value);
+        } else if (raw.isString()) {
+            bool parsed = false;
+            value = raw.toString().trimmed().toInt(&parsed, 10);
+            valid = parsed;
+        }
+        if (!valid || value < minimum || value > maximum) {
+            errors.append(tr("%1 must be an integer from %2 to %3")
+                              .arg(key).arg(minimum).arg(maximum));
+            return fallback;
+        }
+        normalized.insert(key, value);
+        return value;
+    };
+
+    const int bitrateKbps = strictInteger(QStringLiteral("baudRate"), 250, 10, 1000);
+    const int buttonCount = strictInteger(QStringLiteral("buttonCount"), 10, 0, 12);
+    const int rollerCount = strictInteger(QStringLiteral("rollerCount"), 4, 0, 4);
+    Q_UNUSED(bitrateKbps)
+    Q_UNUSED(rollerCount)
+
+    const QJsonValue requestedButtonNumbers = spec.value(QStringLiteral("buttonNumbers"));
+    QJsonArray buttonNumbers;
+    if (requestedButtonNumbers.isUndefined()
+        || (requestedButtonNumbers.isArray() && requestedButtonNumbers.toArray().isEmpty()
+            && buttonCount > 0)) {
+        for (int number = 1; number <= buttonCount; ++number)
+            buttonNumbers.append(number);
+    } else if (!requestedButtonNumbers.isArray()) {
+        errors.append(tr("buttonNumbers must be an array"));
+    } else {
+        QSet<int> seen;
+        const QJsonArray requested = requestedButtonNumbers.toArray();
+        for (const QJsonValue &entry : requested) {
+            const int number = entry.toInt(-1);
+            if (!entry.isDouble() || entry.toDouble() != static_cast<double>(number)
+                || number < 1 || number > 12 || seen.contains(number)) {
+                errors.append(tr("buttonNumbers must contain unique integers from 1 to 12"));
+                buttonNumbers = {};
+                break;
+            }
+            seen.insert(number);
+            buttonNumbers.append(number);
+        }
+        if (!buttonNumbers.isEmpty() && buttonNumbers.size() != buttonCount) {
+            errors.append(tr("buttonNumbers count must equal buttonCount"));
+        }
     }
+    if (buttonCount == 0 && requestedButtonNumbers.isArray()
+        && !requestedButtonNumbers.toArray().isEmpty()) {
+        errors.append(tr("buttonNumbers must be empty when buttonCount is zero"));
+    }
+    normalized.insert(QStringLiteral("buttonNumbers"), buttonNumbers);
+
+    const QString topology = spec.value(QStringLiteral("joystickTopology"))
+                                 .toString(QStringLiteral("xy2D")).trimmed();
+    const QSet<QString> supportedTopologies{
+        QStringLiteral("xy2D"), QStringLiteral("crossXY"),
+        QStringLiteral("singleAxisX"), QStringLiteral("singleAxisY")};
+    if (!supportedTopologies.contains(topology))
+        errors.append(tr("Unsupported primary joystick topology: %1").arg(topology));
+    normalized.insert(QStringLiteral("joystickTopology"), topology);
+
+    const QString calibrationMode = spec.value(QStringLiteral("calibrationMode"))
+                                        .toString(QStringLiteral("centerOnly")).trimmed();
+    const QSet<QString> supportedCalibrationModes{
+        QStringLiteral("centerOnly"), QStringLiteral("minCenterMax"),
+        QStringLiteral("disabled")};
+    if (!supportedCalibrationModes.contains(calibrationMode))
+        errors.append(tr("Unsupported calibration mode: %1").arg(calibrationMode));
+    normalized.insert(QStringLiteral("calibrationMode"), calibrationMode);
+
+    return QJsonObject{{QStringLiteral("ok"), errors.isEmpty()},
+                       {QStringLiteral("errors"), errors},
+                       {QStringLiteral("normalizedSpec"), normalized}};
+}
+
+QJsonObject LayoutManager::buildStandardProductConfigV3(const QJsonObject &spec) const
+{
+    const QJsonObject specValidation = validateStandardProductSpecV3(spec);
+    if (!specValidation.value(QStringLiteral("ok")).toBool())
+        return {};
+    const QJsonObject normalizedSpec =
+        specValidation.value(QStringLiteral("normalizedSpec")).toObject();
+    const QString productCode = sanitizeProductModel(
+        normalizedSpec.value(QStringLiteral("code"))
+            .toString(normalizedSpec.value(QStringLiteral("model")).toString()))
+                                    .toUpper();
+    const QString description = normalizedSpec.value(QStringLiteral("description")).toString().trimmed();
+    const QString customerName =
+        normalizedSpec.value(QStringLiteral("customerName")).toString().trimmed();
+    const QString productVersion = normalizedVersionCode(
+        normalizedSpec.value(QStringLiteral("version")).toString(QStringLiteral("V1")));
+    const QString calibrationMode =
+        normalizedSpec.value(QStringLiteral("calibrationMode")).toString(QStringLiteral("centerOnly")).trimmed();
+    const int bitrateKbps = normalizedSpec.value(QStringLiteral("baudRate")).toInt(250);
+    const int buttonCount = normalizedSpec.value(QStringLiteral("buttonCount")).toInt(10);
+    const QJsonArray buttonNumbers = normalizedSpec.value(QStringLiteral("buttonNumbers")).toArray();
+    const int decoderButtonCount = decodedButtonCount(buttonNumbers);
+    const int rollerCount = normalizedSpec.value(QStringLiteral("rollerCount")).toInt(4);
+    const bool hasWorkLight = normalizedSpec.value(QStringLiteral("hasWorkLight")).toBool(false);
+    QString joystickTopology =
+        normalizedSpec.value(QStringLiteral("joystickTopology")).toString(QStringLiteral("xy2D")).trimmed();
 
     QJsonObject product{
         {QStringLiteral("code"), productCode},
@@ -2627,6 +2724,157 @@ QJsonObject LayoutManager::buildStandardProductConfigV3(const QJsonObject &spec)
     };
 }
 
+QJsonObject LayoutManager::summarizeProductConfigV3(const QJsonObject &configJson) const
+{
+    const ProductConfigV3Validator::Result validation =
+        ProductConfigV3Validator::validate(configJson);
+    if (!validation.ok) {
+        QJsonArray errors;
+        for (const QString &error : validation.errors)
+            errors.append(error);
+        return QJsonObject{{QStringLiteral("ok"), false},
+                           {QStringLiteral("errors"), errors}};
+    }
+
+    const QJsonObject product = configJson.value(QStringLiteral("product")).toObject();
+    const QJsonArray customerBindings =
+        product.value(QStringLiteral("customerBindings")).toArray();
+    const QJsonArray controls = configJson.value(QStringLiteral("controls")).toArray();
+    QJsonArray buttonNumbers;
+    int rollerCount = 0;
+    bool hasWorkLight = false;
+    QString joystickTopology;
+    bool xInverted = false;
+    bool yInverted = false;
+
+    for (const QJsonValue &entry : controls) {
+        const QJsonObject control = entry.toObject();
+        const QString type = control.value(QStringLiteral("type")).toString();
+        const QString role = control.value(QStringLiteral("role")).toString();
+        if (type == QStringLiteral("button")) {
+            buttonNumbers.append(control.value(QStringLiteral("position")).toInt(-1) + 1);
+        } else if (type == QStringLiteral("axis") && role == QStringLiteral("roller")) {
+            ++rollerCount;
+        } else if (control.value(QStringLiteral("id")).toString()
+                   == QStringLiteral("workLight")) {
+            hasWorkLight = true;
+        }
+
+        const QJsonObject topology = control.value(QStringLiteral("topology")).toObject();
+        if (type == QStringLiteral("joystick") && joystickTopology.isEmpty()) {
+            joystickTopology = topology.value(QStringLiteral("kind")).toString()
+                                       == QStringLiteral("cross2D")
+                ? QStringLiteral("crossXY") : QStringLiteral("xy2D");
+            xInverted = control.value(QStringLiteral("xAxis")).toObject()
+                            .value(QStringLiteral("transform")).toObject()
+                            .value(QStringLiteral("invert")).toBool(false);
+            yInverted = control.value(QStringLiteral("yAxis")).toObject()
+                            .value(QStringLiteral("transform")).toObject()
+                            .value(QStringLiteral("invert")).toBool(false);
+        } else if (type == QStringLiteral("axis") && role == QStringLiteral("joystick")
+                   && joystickTopology.isEmpty()) {
+            const QString orientation =
+                topology.value(QStringLiteral("orientation")).toString();
+            const bool inverted = control.value(QStringLiteral("axis")).toObject()
+                                      .value(QStringLiteral("transform")).toObject()
+                                      .value(QStringLiteral("invert")).toBool(false);
+            if (orientation == QStringLiteral("horizontal")) {
+                joystickTopology = QStringLiteral("singleAxisX");
+                xInverted = inverted;
+            } else {
+                joystickTopology = QStringLiteral("singleAxisY");
+                yInverted = inverted;
+            }
+        }
+    }
+
+    QString customerName;
+    if (!customerBindings.isEmpty())
+        customerName = customerBindings.at(0).toObject()
+                           .value(QStringLiteral("name")).toString();
+    return QJsonObject{
+        {QStringLiteral("ok"), true},
+        {QStringLiteral("productCode"), product.value(QStringLiteral("code"))},
+        {QStringLiteral("version"), product.value(QStringLiteral("version"))},
+        {QStringLiteral("description"), product.value(QStringLiteral("description"))},
+        {QStringLiteral("customerName"), customerName},
+        {QStringLiteral("protocol"), configJson.value(QStringLiteral("protocol"))},
+        {QStringLiteral("bitrateKbps"), configJson.value(QStringLiteral("bus")).toObject()
+                                               .value(QStringLiteral("bitrateKbps"))},
+        {QStringLiteral("calibrationMode"),
+         configJson.value(QStringLiteral("calibration")).toObject()
+             .value(QStringLiteral("mode"))},
+        {QStringLiteral("joystickTopology"), joystickTopology},
+        {QStringLiteral("buttonNumbers"), buttonNumbers},
+        {QStringLiteral("rollerCount"), rollerCount},
+        {QStringLiteral("hasWorkLight"), hasWorkLight},
+        {QStringLiteral("xInverted"), xInverted},
+        {QStringLiteral("yInverted"), yInverted}
+    };
+}
+
+QJsonObject LayoutManager::setPrimaryJoystickAxisInvertedV3(
+    const QJsonObject &configJson, const QString &axisName, bool inverted) const
+{
+    const QString requestedAxis = axisName.trimmed().toLower();
+    if (requestedAxis != QStringLiteral("x") && requestedAxis != QStringLiteral("y")) {
+        return QJsonObject{{QStringLiteral("ok"), false},
+                           {QStringLiteral("error"), tr("Axis must be X or Y")}};
+    }
+    if (!ProductConfigV3Validator::validate(configJson).ok) {
+        return QJsonObject{{QStringLiteral("ok"), false},
+                           {QStringLiteral("error"), tr("Source V3 config is invalid")}};
+    }
+
+    QJsonObject updated = configJson;
+    QJsonArray controls = updated.value(QStringLiteral("controls")).toArray();
+    bool changed = false;
+    for (int index = 0; index < controls.size(); ++index) {
+        QJsonObject control = controls.at(index).toObject();
+        const QString type = control.value(QStringLiteral("type")).toString();
+        const QString role = control.value(QStringLiteral("role")).toString();
+        QString bindingKey;
+        if (type == QStringLiteral("joystick")) {
+            bindingKey = requestedAxis == QStringLiteral("x")
+                ? QStringLiteral("xAxis") : QStringLiteral("yAxis");
+        } else if (type == QStringLiteral("axis") && role == QStringLiteral("joystick")) {
+            const QString orientation = control.value(QStringLiteral("topology")).toObject()
+                                            .value(QStringLiteral("orientation")).toString();
+            const bool matchingAxis =
+                (requestedAxis == QStringLiteral("x")
+                 && orientation == QStringLiteral("horizontal"))
+                || (requestedAxis == QStringLiteral("y")
+                    && orientation == QStringLiteral("vertical"));
+            if (matchingAxis)
+                bindingKey = QStringLiteral("axis");
+        }
+        if (bindingKey.isEmpty() || !control.value(bindingKey).isObject())
+            continue;
+
+        QJsonObject binding = control.value(bindingKey).toObject();
+        QJsonObject transform = binding.value(QStringLiteral("transform")).toObject();
+        transform.insert(QStringLiteral("invert"), inverted);
+        binding.insert(QStringLiteral("transform"), transform);
+        control.insert(bindingKey, binding);
+        controls.replace(index, control);
+        changed = true;
+        break;
+    }
+    if (!changed) {
+        return QJsonObject{{QStringLiteral("ok"), false},
+                           {QStringLiteral("error"),
+                            tr("The primary joystick does not provide the %1 axis")
+                                .arg(requestedAxis.toUpper())}};
+    }
+    updated.insert(QStringLiteral("controls"), controls);
+    if (!ProductConfigV3Validator::validate(updated).ok) {
+        return QJsonObject{{QStringLiteral("ok"), false},
+                           {QStringLiteral("error"), tr("Axis inversion produced an invalid V3 config")}};
+    }
+    return QJsonObject{{QStringLiteral("ok"), true},
+                       {QStringLiteral("config"), updated}};
+}
+
 QJsonObject LayoutManager::cloneProductConfigV3(const QJsonObject &sourceConfig,
                                                  const QString &productCode,
                                                  const QString &description,
@@ -2820,6 +3068,247 @@ bool LayoutManager::openProductConfigPath(const QString &filePath)
     return QDesktopServices::openUrl(QUrl::fromLocalFile(cleanPath));
 }
 
+QJsonObject LayoutManager::analyzeProductConfigDeletion(const QString &filePath)
+{
+    const QString cleanPath = QFileInfo(filePath).absoluteFilePath();
+    QJsonArray blockers;
+    QJsonObject references;
+    if (!QFileInfo(cleanPath).isFile()) {
+        return QJsonObject{{QStringLiteral("ok"), false},
+                           {QStringLiteral("allowed"), false},
+                           {QStringLiteral("blockers"), QJsonArray{tr("Product config file not found")}}};
+    }
+    const QJsonDocument document = readJsonFileQuiet(cleanPath);
+    if (!document.isObject() || !ProductConfigV3Validator::validate(document.object()).ok) {
+        return QJsonObject{{QStringLiteral("ok"), false},
+                           {QStringLiteral("allowed"), false},
+                           {QStringLiteral("blockers"), QJsonArray{tr("Product config is not a valid V3 document")}}};
+    }
+    const QJsonObject product = document.object().value(QStringLiteral("product")).toObject();
+    const QString productCode = product.value(QStringLiteral("code")).toString().trimmed();
+    const QString versionCode = normalizedVersionCode(
+        product.value(QStringLiteral("version")).toString());
+    const QString databasePath = productionDatabasePath();
+    if (databasePath.isEmpty() || !QFileInfo(databasePath).isFile()) {
+        return QJsonObject{{QStringLiteral("ok"), false},
+                           {QStringLiteral("allowed"), false},
+                           {QStringLiteral("productCode"), productCode},
+                           {QStringLiteral("version"), versionCode},
+                           {QStringLiteral("blockers"), QJsonArray{tr("Production database is unavailable")}}};
+    }
+
+    const QString connectionName = QStringLiteral("product_delete_analysis_%1")
+        .arg(QUuid::createUuid().toString(QUuid::WithoutBraces));
+    bool databaseOk = false;
+    qint64 productId = 0;
+    qint64 versionId = 0;
+    int remainingVersions = 0;
+    {
+        QSqlDatabase db = QSqlDatabase::addDatabase(QStringLiteral("QSQLITE"), connectionName);
+        db.setConnectOptions(QStringLiteral("QSQLITE_OPEN_READONLY"));
+        db.setDatabaseName(databasePath);
+        if (db.open() && validateProductionDatabaseSchema(db)) {
+            QSqlQuery locate(db);
+            locate.prepare(QStringLiteral(
+                "SELECT id, product_id FROM product_config_versions "
+                "WHERE config_file = ? LIMIT 1"));
+            const QString databaseConfigPath = productConfigPathForDatabase(cleanPath);
+            locate.addBindValue(databaseConfigPath);
+            if (locate.exec() && locate.next()) {
+                versionId = locate.value(0).toLongLong();
+                productId = locate.value(1).toLongLong();
+                QSqlQuery versions(db);
+                versions.prepare(QStringLiteral(
+                    "SELECT COUNT(*) FROM product_config_versions WHERE product_id = ?"));
+                versions.addBindValue(productId);
+                databaseOk = versions.exec() && versions.next();
+                if (databaseOk)
+                    remainingVersions = versions.value(0).toInt();
+            }
+
+            const auto countReferences = [&](const QString &table,
+                                             const QString &jsonKey,
+                                             bool includeProduct) {
+                qint64 count = 0;
+                if (versionId > 0
+                    && databaseTableHasColumn(db, table, QStringLiteral("product_version_id"))) {
+                    QString sql = QStringLiteral("SELECT COUNT(*) FROM %1 WHERE product_version_id = ?")
+                                      .arg(table);
+                    const bool hasProductColumn = includeProduct
+                        && databaseTableHasColumn(db, table, QStringLiteral("product_id"));
+                    if (hasProductColumn)
+                        sql.append(QStringLiteral(" OR product_id = ?"));
+                    QSqlQuery query(db);
+                    query.prepare(sql);
+                    query.addBindValue(versionId);
+                    if (hasProductColumn)
+                        query.addBindValue(productId);
+                    if (!query.exec() || !query.next()) {
+                        blockers.append(tr("Could not audit %1 references").arg(table));
+                    } else {
+                        count = query.value(0).toLongLong();
+                    }
+                }
+                references.insert(jsonKey, count);
+                if (count > 0)
+                    blockers.append(tr("%1 contains %2 dependent record(s)").arg(table).arg(count));
+            };
+
+            const bool deletingLastVersion = remainingVersions == 1;
+            countReferences(QStringLiteral("production_records"),
+                            QStringLiteral("productionRecords"), deletingLastVersion);
+            countReferences(QStringLiteral("flash_records"),
+                            QStringLiteral("flashRecords"), deletingLastVersion);
+            countReferences(QStringLiteral("calibration_records"),
+                            QStringLiteral("calibrationRecords"), deletingLastVersion);
+            countReferences(QStringLiteral("functional_test_records"),
+                            QStringLiteral("functionalTestRecords"), deletingLastVersion);
+            countReferences(QStringLiteral("functional_device_bindings"),
+                            QStringLiteral("functionalDeviceBindings"), deletingLastVersion);
+            countReferences(QStringLiteral("product_version_firmwares"),
+                            QStringLiteral("firmwareMappings"), false);
+
+            qint64 productFirmwares = 0;
+            if (deletingLastVersion && productId > 0
+                && databaseTableHasColumn(db, QStringLiteral("firmwares"),
+                                          QStringLiteral("product_id"))) {
+                QSqlQuery query(db);
+                query.prepare(QStringLiteral("SELECT COUNT(*) FROM firmwares WHERE product_id = ?"));
+                query.addBindValue(productId);
+                if (!query.exec() || !query.next()) {
+                    blockers.append(tr("Could not audit product firmware references"));
+                } else {
+                    productFirmwares = query.value(0).toLongLong();
+                }
+            }
+            references.insert(QStringLiteral("productFirmwares"), productFirmwares);
+            if (productFirmwares > 0)
+                blockers.append(tr("Product has %1 firmware artifact(s)").arg(productFirmwares));
+            db.close();
+        }
+    }
+    QSqlDatabase::removeDatabase(connectionName);
+
+    if (!databaseOk || versionId <= 0 || productId <= 0)
+        blockers.prepend(tr("Product version is not registered consistently in the production database"));
+    return QJsonObject{
+        {QStringLiteral("ok"), databaseOk && versionId > 0 && productId > 0},
+        {QStringLiteral("allowed"), databaseOk && versionId > 0 && productId > 0
+                                          && blockers.isEmpty()},
+        {QStringLiteral("productCode"), productCode},
+        {QStringLiteral("version"), versionCode},
+        {QStringLiteral("confirmationText"),
+         QStringLiteral("%1/%2").arg(productCode, versionCode)},
+        {QStringLiteral("isLastVersion"), remainingVersions == 1},
+        {QStringLiteral("isCatalogActive"), isCatalogActivePath(cleanPath)},
+        {QStringLiteral("references"), references},
+        {QStringLiteral("blockers"), blockers}
+    };
+}
+
+bool LayoutManager::deleteProductConfigVersion(const QString &filePath,
+                                               const QString &confirmationText)
+{
+    const QString cleanPath = QFileInfo(filePath).absoluteFilePath();
+    const QJsonObject analysis = analyzeProductConfigDeletion(cleanPath);
+    if (!analysis.value(QStringLiteral("allowed")).toBool()) {
+        emit errorOccurred(tr("Product deletion is blocked by dependencies or inconsistent data"));
+        return false;
+    }
+    if (confirmationText.trimmed()
+        != analysis.value(QStringLiteral("confirmationText")).toString()) {
+        emit errorOccurred(tr("Product deletion confirmation text does not match"));
+        return false;
+    }
+
+    QFile source(cleanPath);
+    if (!source.open(QIODevice::ReadOnly)) {
+        emit errorOccurred(tr("Failed to read product config before deletion: %1").arg(cleanPath));
+        return false;
+    }
+    const QByteArray contents = source.readAll();
+    source.close();
+    const QJsonDocument document = QJsonDocument::fromJson(contents);
+    if (!document.isObject())
+        return false;
+
+    const QString backupDirectory = QDir(m_productCatalogRoot).filePath(
+        QStringLiteral("backups/deleted"));
+    if (!ensureDirectoryExists(backupDirectory))
+        return false;
+    const QString timestamp =
+        QDateTime::currentDateTimeUtc().toString(QStringLiteral("yyyyMMddTHHmmsszzzZ"));
+    const QString shortHash = QString::fromLatin1(
+        QCryptographicHash::hash(contents, QCryptographicHash::Sha256).toHex().left(12));
+    const QString backupPath = QDir(backupDirectory).filePath(
+        QStringLiteral("%1_%2_%3").arg(timestamp, shortHash, QFileInfo(cleanPath).fileName()));
+    QSaveFile backup(backupPath);
+    if (!backup.open(QIODevice::WriteOnly)
+        || backup.write(contents) != contents.size() || !backup.commit()) {
+        emit errorOccurred(tr("Failed to create recoverable deletion backup: %1").arg(backupPath));
+        return false;
+    }
+
+    QString rollbackToken;
+    if (analysis.value(QStringLiteral("isCatalogActive")).toBool()) {
+        const CatalogPublisherReply remove = postCatalogPublisher(
+            QStringLiteral("remove"),
+            QJsonObject{{QStringLiteral("productCode"), analysis.value(QStringLiteral("productCode"))},
+                        {QStringLiteral("version"), analysis.value(QStringLiteral("version"))},
+                        {QStringLiteral("expectedSha256"), QString::fromLatin1(
+                             QCryptographicHash::hash(contents, QCryptographicHash::Sha256).toHex())}});
+        if (!remove.ok) {
+            emit errorOccurred(tr("Catalog publisher rejected product deletion: %1").arg(remove.error));
+            return false;
+        }
+        rollbackToken = remove.body.value(QStringLiteral("rollbackToken")).toString();
+    }
+    const auto rollbackCatalog = [&]() {
+        return rollbackToken.isEmpty()
+            || postCatalogPublisher(QStringLiteral("rollback"),
+                                    QJsonObject{{QStringLiteral("rollbackToken"), rollbackToken}}).ok;
+    };
+    const auto restoreFile = [&]() {
+        QSaveFile restore(cleanPath);
+        return restore.open(QIODevice::WriteOnly)
+            && restore.write(contents) == contents.size() && restore.commit();
+    };
+
+    if (!removeProductConfigFromDatabase(document.object(), cleanPath, true)) {
+        rollbackCatalog();
+        emit errorOccurred(tr("Product database deletion failed; JSON was not removed"));
+        return false;
+    }
+    if (!QFile::remove(cleanPath)) {
+        syncProductConfigToDatabase(document.object(), cleanPath);
+        rollbackCatalog();
+        emit errorOccurred(tr("Product JSON could not be removed; database deletion was rolled back"));
+        return false;
+    }
+    if (!rollbackToken.isEmpty()) {
+        const CatalogPublisherReply commit = postCatalogPublisher(
+            QStringLiteral("commit"),
+            QJsonObject{{QStringLiteral("rollbackToken"), rollbackToken}});
+        if (!commit.ok) {
+            const bool fileRestored = restoreFile();
+            const bool databaseRestored = fileRestored
+                && syncProductConfigToDatabase(document.object(), cleanPath);
+            const bool catalogRestored = rollbackCatalog();
+            emit errorOccurred(tr("Catalog deletion commit failed: %1; rollback file=%2 database=%3 catalog=%4")
+                                   .arg(commit.error,
+                                        fileRestored ? tr("ok") : tr("failed"),
+                                        databaseRestored ? tr("ok") : tr("failed"),
+                                        catalogRestored ? tr("ok") : tr("failed")));
+            return false;
+        }
+    }
+
+    refreshProductConfigWatchers();
+    emit productConfigDeleted(cleanPath);
+    emit productsDirectoryChanged();
+    return true;
+}
+
 QString LayoutManager::catalogActiveDirectory() const
 {
     return QDir(m_productCatalogRoot).filePath(QStringLiteral("active"));
@@ -2837,57 +3326,6 @@ bool LayoutManager::isCatalogActivePath(const QString &filePath) const
     const QString candidate =
         QFileInfo(filePath).absoluteFilePath().replace(QLatin1Char('\\'), QLatin1Char('/'));
     return candidate.startsWith(activePrefix, Qt::CaseInsensitive);
-}
-
-QString LayoutManager::productDraftPath(const QString &filePath) const
-{
-    if (filePath.trimmed().isEmpty() || m_productCatalogRoot.trimmed().isEmpty()) {
-        return QString();
-    }
-
-    const QString cleanTarget = QDir::cleanPath(QFileInfo(filePath).absoluteFilePath());
-    const QString targetHash = QString::fromLatin1(
-        QCryptographicHash::hash(cleanTarget.toUtf8(), QCryptographicHash::Sha256)
-            .toHex()
-            .left(12));
-    const QString baseName = sanitizeProductModel(QFileInfo(filePath).completeBaseName());
-    return QDir(m_productCatalogRoot).filePath(
-        QStringLiteral("drafts/%1-%2.json").arg(baseName, targetHash));
-}
-
-bool LayoutManager::saveProductDraft(const QJsonObject &configJson, const QString &filePath)
-{
-    const QString draftPath = productDraftPath(filePath);
-    if (draftPath.isEmpty()) {
-        return false;
-    }
-    if (!ensureDirectoryExists(QFileInfo(draftPath).absolutePath())) {
-        emit errorOccurred(tr("Failed to create product draft directory"));
-        return false;
-    }
-    return writeJsonFile(draftPath, QJsonDocument(configJson));
-}
-
-QJsonObject LayoutManager::loadProductDraft(const QString &filePath) const
-{
-    const QString draftPath = productDraftPath(filePath);
-    if (draftPath.isEmpty() || !QFileInfo::exists(draftPath)) {
-        return {};
-    }
-    return readJsonFileQuiet(draftPath).object();
-}
-
-bool LayoutManager::discardProductDraft(const QString &filePath)
-{
-    const QString draftPath = productDraftPath(filePath);
-    if (draftPath.isEmpty() || !QFileInfo::exists(draftPath)) {
-        return true;
-    }
-    if (!QFile::remove(draftPath)) {
-        emit errorOccurred(tr("Failed to remove product draft: %1").arg(draftPath));
-        return false;
-    }
-    return true;
 }
 
 bool LayoutManager::saveProductConfigAs(const QJsonObject &configJson, const QString &model)
@@ -3255,7 +3693,6 @@ bool LayoutManager::persistCatalogProductConfig(const QJsonObject &configJson,
         }
     }
 
-    discardProductDraft(filePath);
     emit productConfigSaved(filePath);
     return true;
 }
@@ -3299,7 +3736,6 @@ bool LayoutManager::persistProductConfig(const QJsonObject &configJson,
     }
 
     if (syncProductConfigToDatabase(configJson, filePath, customerName)) {
-        discardProductDraft(filePath);
         emit productConfigSaved(filePath);
         return true;
     }
@@ -4155,7 +4591,8 @@ bool LayoutManager::syncProductConfigToDatabase(const QJsonObject &configJson,
 }
 
 bool LayoutManager::removeProductConfigFromDatabase(const QJsonObject &configJson,
-                                                    const QString &filePath)
+                                                    const QString &filePath,
+                                                    bool requireNoDependencies)
 {
     Q_UNUSED(configJson)
     const QString databasePath = productionDatabasePath();
@@ -4187,21 +4624,44 @@ bool LayoutManager::removeProductConfigFromDatabase(const QJsonObject &configJso
             }
 
             bool referenced = false;
+            bool deletingLastVersion = false;
+            if (versionId > 0 && requireNoDependencies) {
+                QSqlQuery versionCount(db);
+                versionCount.prepare(QStringLiteral(
+                    "SELECT COUNT(*) FROM product_config_versions WHERE product_id = ?"));
+                versionCount.addBindValue(productId);
+                if (!versionCount.exec() || !versionCount.next()) {
+                    referenced = true;
+                } else {
+                    deletingLastVersion = versionCount.value(0).toInt() == 1;
+                }
+            }
+
             const QStringList referenceTables = {
                 QStringLiteral("production_records"),
                 QStringLiteral("flash_records"),
                 QStringLiteral("calibration_records"),
-                QStringLiteral("functional_test_records")};
+                QStringLiteral("functional_test_records"),
+                QStringLiteral("functional_device_bindings")};
             for (const QString &table : referenceTables) {
+                if (referenced)
+                    break;
                 if (versionId <= 0
                     || !databaseTableHasColumn(db, table, QStringLiteral("product_version_id"))) {
                     continue;
                 }
                 QSqlQuery references(db);
-                references.prepare(
+                QString referenceSql =
                     QStringLiteral("SELECT COUNT(*) FROM %1 WHERE product_version_id = ?")
-                        .arg(table));
+                        .arg(table);
+                const bool checkProduct = requireNoDependencies && deletingLastVersion
+                    && databaseTableHasColumn(db, table, QStringLiteral("product_id"));
+                if (checkProduct)
+                    referenceSql.append(QStringLiteral(" OR product_id = ?"));
+                references.prepare(referenceSql);
                 references.addBindValue(versionId);
+                if (checkProduct)
+                    references.addBindValue(productId);
                 if (!references.exec() || !references.next()) {
                     referenced = true;
                     break;
@@ -4209,6 +4669,24 @@ bool LayoutManager::removeProductConfigFromDatabase(const QJsonObject &configJso
                 referenced = references.value(0).toLongLong() > 0;
                 if (referenced)
                     break;
+            }
+            if (!referenced && requireNoDependencies && versionId > 0) {
+                QSqlQuery firmwareMappings(db);
+                firmwareMappings.prepare(QStringLiteral(
+                    "SELECT COUNT(*) FROM product_version_firmwares WHERE product_version_id = ?"));
+                firmwareMappings.addBindValue(versionId);
+                referenced = !firmwareMappings.exec() || !firmwareMappings.next()
+                    || firmwareMappings.value(0).toLongLong() > 0;
+            }
+            if (!referenced && requireNoDependencies && deletingLastVersion
+                && databaseTableHasColumn(db, QStringLiteral("firmwares"),
+                                          QStringLiteral("product_id"))) {
+                QSqlQuery firmwares(db);
+                firmwares.prepare(QStringLiteral(
+                    "SELECT COUNT(*) FROM firmwares WHERE product_id = ?"));
+                firmwares.addBindValue(productId);
+                referenced = !firmwares.exec() || !firmwares.next()
+                    || firmwares.value(0).toLongLong() > 0;
             }
 
             if (referenced) {
@@ -4256,6 +4734,20 @@ bool LayoutManager::removeProductConfigFromDatabase(const QJsonObject &configJso
                                 db.close();
                                 QSqlDatabase::removeDatabase(connectionName);
                                 return false;
+                            }
+                        } else {
+                            QSqlQuery chooseDefault(db);
+                            chooseDefault.prepare(QStringLiteral(
+                                "UPDATE product_config_versions "
+                                "SET is_default = CASE WHEN id = ("
+                                "SELECT id FROM product_config_versions "
+                                "WHERE product_id = ? ORDER BY CASE WHEN status = 'active' THEN 0 ELSE 1 END, "
+                                "updated_at DESC, id DESC LIMIT 1) THEN 1 ELSE 0 END "
+                                "WHERE product_id = ?"));
+                            chooseDefault.addBindValue(productId);
+                            chooseDefault.addBindValue(productId);
+                            if (!chooseDefault.exec()) {
+                                db.rollback();
                             }
                         }
                         success = db.commit();

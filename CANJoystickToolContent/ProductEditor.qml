@@ -5,7 +5,6 @@ import QtQuick.Effects
 import CANJoystickTool
 import "../CANJoystickTool/FnrMapping.js" as FnrMapping
 import "ProductConfigV3EditorAdapter.js" as V3EditorAdapter
-import "ProductDraftPolicy.js" as ProductDraftPolicy
 
 Item {
     id: root
@@ -24,16 +23,19 @@ Item {
     property string cloneProductError: ""
     property bool cloneProductCreatesVersion: false
     property bool cloneProductUsesBlankTemplate: false
+    property var pendingCloneProductConfig: ({})
+    property var pendingCloneProductSummary: ({})
+    property string pendingCloneProductModel: ""
+    property string pendingCloneProductVersion: ""
+    property string pendingCloneProductCustomer: ""
+    property string pendingCloneProductDescription: ""
+    property bool pendingCloneUsesSourceConfig: false
+    property var pendingCloneSourceConfig: ({})
+    property var pendingProductDeletion: ({})
     property string saveProductMessage: ""
     property bool saveProductMessageIsError: false
-    property var pendingRecoveredDraft: ({})
-    property string pendingRecoveredDraftPath: ""
-    property bool markLoadedConfigUnsaved: false
     property string loadedCellsPath: ""
     property int productLoadGeneration: 0
-    // Temporarily pause product draft autosave and recovery. Keep the
-    // implementation in place so it can be re-enabled deliberately later.
-    readonly property bool productDraftsEnabled: false
     readonly property int defaultCanvasWidth: Constants.homeCardDesignSize
     readonly property int defaultCanvasHeight: Constants.homeCardDesignSize
     readonly property real panelWidth: 320
@@ -57,29 +59,6 @@ Item {
     readonly property color dtSuccess: "#34c759"
     readonly property color dtWarning: "#ff9500"
     readonly property color dtBorder: "#d2d2d7"
-
-    Timer {
-        id: productDraftTimer
-        interval: 2000
-        repeat: true
-        running: root.productDraftsEnabled
-                  && root.hasUnsavedChanges
-                  && root.currentFilePath.length > 0
-                  && !root.loadingCells
-                  && root.loadedCellsPath === root.currentFilePath
-                  && root.layoutManager !== null
-        onTriggered: {
-            if (root.loadingCells
-                    || root.loadedCellsPath !== root.currentFilePath
-                    || root.hasActiveCellEdit()
-                    || !root.layoutManager.saveProductDraft)
-                return
-            if (!root.syncCurrentLayoutFromCells())
-                return
-            root.layoutManager.saveProductDraft(
-                        root.currentConfig, root.currentFilePath)
-        }
-    }
 
     readonly property var cellTypeOptions: [
         { value: "canvas",     label: "画布" },
@@ -584,15 +563,10 @@ Item {
         if (path.length === 0)
             return
 
-        // Block the draft timer immediately. The visible canvases still belong to
-        // the previous product until doLoadCells() finishes.
         loadingCells = true
         loadedCellsPath = ""
         hasUnsavedChanges = false
         productLoadGeneration++
-        markLoadedConfigUnsaved = false
-        pendingRecoveredDraft = ({})
-        pendingRecoveredDraftPath = ""
         productList.currentIndex = productIndex
         refreshVersionModel(entry)
         currentVersionIndex = resolvedVersionIndex
@@ -600,38 +574,8 @@ Item {
         currentFilePath = path
         currentConfig = layoutManager.loadProductConfig(currentFilePath)
         migrateLegacyFnrBindings()
-        var recoveredDraft = root.productDraftsEnabled && layoutManager.loadProductDraft
-                ? layoutManager.loadProductDraft(currentFilePath) : ({})
-        if (recoveredDraft && Object.keys(recoveredDraft).length > 0) {
-            var draftCompatibility =
-                    ProductDraftPolicy.compatibility(currentConfig, recoveredDraft)
-            if (draftCompatibility.compatible !== true) {
-                saveProductMessage =
-                        "检测到其他版本或旧格式草稿，已忽略并保留当前正式布局。"
-                saveProductMessageIsError = true
-            } else {
-                var draftValidation = layoutManager.validateProductConfig
-                        ? layoutManager.validateProductConfig(recoveredDraft) : ({ ok: false })
-                if (draftValidation.ok === true) {
-                    pendingRecoveredDraft = deepCopyConfig(recoveredDraft)
-                    pendingRecoveredDraftPath = currentFilePath
-                    saveProductMessage = "检测到未保存草稿，请选择是否恢复。"
-                    saveProductMessageIsError = false
-                    var draftPathAtRequest = currentFilePath
-                    Qt.callLater(function() {
-                        if (pendingRecoveredDraftPath === draftPathAtRequest
-                                && currentFilePath === draftPathAtRequest)
-                            draftRecoveryPopup.open()
-                    })
-                } else {
-                    saveProductMessage = "检测到无效草稿，已保留正式布局且未自动恢复。"
-                    saveProductMessageIsError = true
-                }
-            }
-        } else {
-            saveProductMessage = ""
-            saveProductMessageIsError = false
-        }
+        saveProductMessage = ""
+        saveProductMessageIsError = false
         loadCells()
     }
 
@@ -659,37 +603,6 @@ Item {
                 root.saveProductMessageIsError = false
             }
         })
-    }
-
-    function recoverPendingProductDraft() {
-        if (!pendingRecoveredDraft || Object.keys(pendingRecoveredDraft).length === 0)
-            return
-        if (pendingRecoveredDraftPath !== currentFilePath) {
-            pendingRecoveredDraft = ({})
-            pendingRecoveredDraftPath = ""
-            draftRecoveryPopup.close()
-            return
-        }
-        loadingCells = true
-        loadedCellsPath = ""
-        productLoadGeneration++
-        currentConfig = deepCopyConfig(pendingRecoveredDraft)
-        pendingRecoveredDraft = ({})
-        pendingRecoveredDraftPath = ""
-        migrateLegacyFnrBindings()
-        markLoadedConfigUnsaved = true
-        draftRecoveryPopup.close()
-        saveProductMessage = "已按你的选择恢复草稿，保存前可继续检查。"
-        saveProductMessageIsError = false
-        loadCells()
-    }
-
-    function keepOfficialProductLayout() {
-        pendingRecoveredDraft = ({})
-        pendingRecoveredDraftPath = ""
-        draftRecoveryPopup.close()
-        saveProductMessage = "已保留正式布局，未恢复草稿。"
-        saveProductMessageIsError = false
     }
 
     function openCurrentProductConfig() {
@@ -1236,6 +1149,57 @@ Item {
         return applyCloneMetadata(defaultProductConfig(), model, description, versionCode)
     }
 
+    function finishProductCreation(model, versionCode) {
+        cloneProductPopup.close()
+        createProductConfirmationPopup.close()
+        loadProductList()
+        var idx = findProductIndexByName(model)
+        if (idx >= 0) {
+            productList.currentIndex = idx
+            var targetPath = layoutManager && layoutManager.productConfigVersionPath
+                    ? layoutManager.productConfigVersionPath(model, versionCode)
+                    : ""
+            var entry = productEntryAt(idx)
+            var versionIndex = targetPath.length > 0
+                    ? findVersionIndexByPath(entry ? entry.versions : [], targetPath) : -1
+            loadProductVersion(idx, versionIndex)
+        }
+        if (layoutManager && layoutManager.openProductConfigPath
+                && layoutManager.productConfigVersionPath) {
+            layoutManager.openProductConfigPath(
+                        layoutManager.productConfigVersionPath(model, versionCode))
+        }
+    }
+
+    function confirmPendingProductCreation() {
+        var config = pendingCloneProductConfig
+        var model = pendingCloneProductModel
+        var versionCode = pendingCloneProductVersion
+        if (!config || Object.keys(config).length === 0)
+            return
+        if ((layoutManager.productConfigExists && layoutManager.productConfigExists(model))
+                || (layoutManager.productConfigVersionExists
+                    && layoutManager.productConfigVersionExists(model, versionCode))) {
+            cloneProductError = "确认期间产品或版本已被创建，请重新检查型号和版本。"
+            createProductConfirmationPopup.close()
+            cloneProductPopup.open()
+            return
+        }
+        if (pendingCloneUsesSourceConfig) {
+            if (!layoutManager.cloneProductConfigVersionWithCustomerAs(
+                        pendingCloneSourceConfig, model, versionCode,
+                        pendingCloneProductDescription, pendingCloneProductCustomer))
+                return
+        } else if (!layoutManager.saveProductConfigVersionWithCustomerAs(
+                       config, model, versionCode, pendingCloneProductCustomer)) {
+            return
+        }
+        pendingCloneProductConfig = ({})
+        pendingCloneSourceConfig = ({})
+        pendingCloneUsesSourceConfig = false
+        finishProductCreation(model, versionCode)
+    }
+
     function saveCloneProduct() {
         cloneProductError = validateCloneProductForm()
         if (cloneProductError.length > 0)
@@ -1247,24 +1211,34 @@ Item {
         var model = sanitizeProductModel(cloneModelField.text)
         var versionCode = normalizedCloneVersionCode()
         var description = String(cloneDescriptionArea.text || "").trim()
-        if (!cloneProductUsesBlankTemplate
-                && !cloneProductCreatesVersion
-                && currentConfig
-                && currentConfig.schemaVersion === 3
-                && layoutManager
-                && layoutManager.cloneProductConfigVersionWithCustomerAs) {
-            if (!layoutManager.cloneProductConfigVersionWithCustomerAs(
-                        deepCopyConfig(productTemplateConfig()),
-                        model,
-                        versionCode,
-                        description,
-                        currentCloneCustomerName())) {
-                return
-            }
-        } else {
         var config = buildClonedProductConfig()
         if (!config || Object.keys(config).length === 0) {
             cloneProductError = "无法生成产品配置。"
+            return
+        }
+        if (!cloneProductCreatesVersion && config.schemaVersion === 3) {
+            var validation = layoutManager.validateProductConfig(config)
+            if (!validation.ok) {
+                cloneProductError = "生成配置校验失败：" + (validation.errors || []).join("；")
+                return
+            }
+            var summary = layoutManager.summarizeProductConfigV3(config)
+            if (!summary.ok) {
+                cloneProductError = "无法核对生成后的产品配置。"
+                return
+            }
+            pendingCloneProductConfig = deepCopyConfig(config)
+            pendingCloneProductSummary = summary
+            pendingCloneProductModel = model
+            pendingCloneProductVersion = versionCode
+            pendingCloneProductCustomer = currentCloneCustomerName()
+            pendingCloneProductDescription = description
+            pendingCloneUsesSourceConfig = !cloneProductUsesBlankTemplate
+                    && layoutManager.cloneProductConfigVersionWithCustomerAs
+            pendingCloneSourceConfig = pendingCloneUsesSourceConfig
+                    ? deepCopyConfig(productTemplateConfig()) : ({})
+            cloneProductPopup.close()
+            createProductConfirmationPopup.open()
             return
         }
         if (!cloneProductCreatesVersion && layoutManager
@@ -1278,22 +1252,68 @@ Item {
         } else if (!layoutManager.saveProductConfigAs(config, model)) {
             return
         }
-        }
+        finishProductCreation(model, versionCode)
+    }
 
-        cloneProductPopup.close()
-        loadProductList()
-        var idx = findProductIndexByName(model)
-        if (idx >= 0) {
-            productList.currentIndex = idx
-            var targetPath = layoutManager && layoutManager.productConfigVersionPath
-                    ? layoutManager.productConfigVersionPath(model, versionCode)
-                    : ""
-            var entry = productEntryAt(idx)
-            var versionIndex = targetPath.length > 0 ? findVersionIndexByPath(entry ? entry.versions : [], targetPath) : -1
-            loadProductVersion(idx, versionIndex)
+    function currentPrimaryJoystickSummary() {
+        if (!layoutManager || !layoutManager.summarizeProductConfigV3
+                || !currentConfig || currentConfig.schemaVersion !== 3)
+            return ({ ok: false })
+        return layoutManager.summarizeProductConfigV3(currentConfig)
+    }
+
+    function primaryJoystickHasAxis(axisName) {
+        var summary = currentPrimaryJoystickSummary()
+        var topology = String(summary.joystickTopology || "")
+        return summary.ok && (topology === "xy2D" || topology === "crossXY"
+                              || (axisName === "x" && topology === "singleAxisX")
+                              || (axisName === "y" && topology === "singleAxisY"))
+    }
+
+    function primaryJoystickAxisInverted(axisName) {
+        var summary = currentPrimaryJoystickSummary()
+        return axisName === "x" ? summary.xInverted === true : summary.yInverted === true
+    }
+
+    function setPrimaryJoystickAxisInverted(axisName, inverted) {
+        var result = layoutManager.setPrimaryJoystickAxisInvertedV3(
+                    currentConfig, axisName, inverted)
+        if (!result.ok) {
+            saveProductMessage = result.error || "轴反转修改失败"
+            saveProductMessageIsError = true
+            return
         }
-        if (layoutManager && layoutManager.openProductConfigPath && layoutManager.productConfigVersionPath)
-            layoutManager.openProductConfigPath(layoutManager.productConfigVersionPath(model, versionCode))
+        currentConfig = result.config
+        productMetadataRevision++
+        hasUnsavedChanges = true
+        saveProductMessage = axisName.toUpperCase() + "轴反转已修改，保存后生效"
+        saveProductMessageIsError = false
+    }
+
+    function openDeleteProductPopup() {
+        if (!layoutManager || !layoutManager.analyzeProductConfigDeletion
+                || currentFilePath.length === 0)
+            return
+        pendingProductDeletion = layoutManager.analyzeProductConfigDeletion(currentFilePath)
+        deleteConfirmationField.text = ""
+        deleteProductPopup.open()
+    }
+
+    function confirmProductDeletion() {
+        if (!pendingProductDeletion.allowed)
+            return
+        var deletedPath = currentFilePath
+        if (!layoutManager.deleteProductConfigVersion(
+                    deletedPath, deleteConfirmationField.text))
+            return
+        deleteProductPopup.close()
+        currentConfig = ({})
+        currentFilePath = ""
+        currentVersionIndex = -1
+        cellsModel.clear()
+        loadProductList()
+        if (productEntries.length > 0)
+            loadProductVersion(0, -1)
     }
 
     // Resolve component IDs to their definitions
@@ -1981,8 +2001,7 @@ Item {
         }
         refreshCanvasMode()
         refreshBindingStatus()
-        hasUnsavedChanges = markLoadedConfigUnsaved
-        markLoadedConfigUnsaved = false
+        hasUnsavedChanges = false
         loadedCellsPath = targetPath
         loadingCells = false
     }
@@ -2211,6 +2230,32 @@ Item {
                 Layout.maximumWidth: 360
             }
             Item { Layout.fillWidth: true }
+            CheckBox {
+                text: "X反转"
+                visible: {
+                    root.productMetadataRevision
+                    return root.primaryJoystickHasAxis("x")
+                }
+                checked: {
+                    root.productMetadataRevision
+                    return root.primaryJoystickAxisInverted("x")
+                }
+                font.pixelSize: 10
+                onClicked: root.setPrimaryJoystickAxisInverted("x", checked)
+            }
+            CheckBox {
+                text: "Y反转"
+                visible: {
+                    root.productMetadataRevision
+                    return root.primaryJoystickHasAxis("y")
+                }
+                checked: {
+                    root.productMetadataRevision
+                    return root.primaryJoystickAxisInverted("y")
+                }
+                font.pixelSize: 10
+                onClicked: root.setPrimaryJoystickAxisInverted("y", checked)
+            }
             ComboBox {
                 id: versionSelector
                 visible: root.currentFilePath !== "" && currentVersionModel.count > 0
@@ -2279,6 +2324,15 @@ Item {
                 ToolTip.visible: hovered
                 ToolTip.text: "复制当前 JSON 并保存为该产品的新版本"
                 onClicked: openCloneProductVersionPopup()
+            }
+            Button {
+                text: "删除"
+                enabled: currentFilePath !== "" && !!currentConfig.product
+                font.pixelSize: 11
+                palette.buttonText: "#d70015"
+                ToolTip.visible: hovered
+                ToolTip.text: "仅允许删除没有生产、烧录、测试、设备或固件依赖的版本"
+                onClicked: openDeleteProductPopup()
             }
             Button {
                 text: hasUnsavedChanges ? "保存 *" : "保存"
@@ -3508,67 +3562,6 @@ Item {
     }
 
     Popup {
-        id: draftRecoveryPopup
-        parent: root
-        width: Math.min(440, root.width - 32)
-        height: draftRecoveryContent.implicitHeight + 32
-        x: Math.max(16, (root.width - width) / 2)
-        y: Math.max(16, (root.height - height) / 2)
-        padding: 16
-        modal: true
-        focus: true
-        closePolicy: Popup.NoAutoClose
-        z: 10001
-
-        background: Rectangle {
-            radius: 8
-            color: "white"
-            border.width: 1
-            border.color: dtBorder
-        }
-
-        contentItem: ColumnLayout {
-            id: draftRecoveryContent
-            spacing: 12
-
-            Label {
-                Layout.fillWidth: true
-                text: "检测到未保存的产品草稿"
-                color: dtText
-                font.pixelSize: 14
-                font.bold: true
-            }
-
-            Label {
-                Layout.fillWidth: true
-                text: "为防止旧草稿覆盖当前正式布局，系统不会再自动恢复。请选择要继续使用的版本。"
-                color: dtTextSec
-                font.pixelSize: 11
-                wrapMode: Text.Wrap
-            }
-
-            RowLayout {
-                Layout.fillWidth: true
-                spacing: 8
-
-                Item { Layout.fillWidth: true }
-
-                Button {
-                    text: "保留正式布局"
-                    onClicked: root.keepOfficialProductLayout()
-                }
-
-                Button {
-                    text: "恢复草稿"
-                    palette.button: dtAccent
-                    palette.buttonText: "white"
-                    onClicked: root.recoverPendingProductDraft()
-                }
-            }
-        }
-    }
-
-    Popup {
         id: cloneProductPopup
         parent: root
         width: Math.min(520, root.width - 32)
@@ -3804,6 +3797,172 @@ Item {
                     palette.button: dtAccent
                     palette.buttonText: "white"
                     onClicked: saveCloneProduct()
+                }
+            }
+        }
+    }
+
+    Popup {
+        id: createProductConfirmationPopup
+        parent: root
+        width: Math.min(520, root.width - 32)
+        height: Math.min(root.height - 32, createProductConfirmationContent.implicitHeight + 32)
+        x: Math.max(16, (root.width - width) / 2)
+        y: Math.max(16, (root.height - height) / 2)
+        padding: 16
+        modal: true
+        focus: true
+        closePolicy: Popup.CloseOnEscape
+        z: 10001
+
+        background: Rectangle {
+            radius: 8
+            color: "white"
+            border.width: 1
+            border.color: dtBorder
+        }
+
+        contentItem: ColumnLayout {
+            id: createProductConfirmationContent
+            spacing: 10
+            Label {
+                text: "确认新建产品"
+                color: dtText
+                font.pixelSize: 15
+                font.bold: true
+            }
+            Label {
+                Layout.fillWidth: true
+                text: "下面是由程序实际生成并校验通过的配置。请核对后再写入产品目录和数据库。"
+                color: dtTextSec
+                font.pixelSize: 11
+                wrapMode: Text.WordWrap
+            }
+            GridLayout {
+                Layout.fillWidth: true
+                columns: 2
+                columnSpacing: 16
+                rowSpacing: 7
+                Label { text: "型号 / 版本"; color: dtTextSec; font.pixelSize: 11 }
+                Label { text: pendingCloneProductSummary.productCode + " / " + pendingCloneProductSummary.version; color: dtText; font.pixelSize: 11; font.bold: true }
+                Label { text: "客户"; color: dtTextSec; font.pixelSize: 11 }
+                Label { text: pendingCloneProductSummary.customerName || "---"; color: dtText; font.pixelSize: 11 }
+                Label { text: "主摇杆"; color: dtTextSec; font.pixelSize: 11 }
+                Label {
+                    text: ({ xy2D: "普通 XY 双轴", crossXY: "十字 XY 轴", singleAxisX: "单轴 X", singleAxisY: "单轴 Y" })[pendingCloneProductSummary.joystickTopology] || "---"
+                    color: dtText; font.pixelSize: 11
+                }
+                Label { text: "轴反转"; color: dtTextSec; font.pixelSize: 11 }
+                Label { text: "X=" + (pendingCloneProductSummary.xInverted ? "是" : "否") + "，Y=" + (pendingCloneProductSummary.yInverted ? "是" : "否"); color: dtText; font.pixelSize: 11 }
+                Label { text: "按钮编号"; color: dtTextSec; font.pixelSize: 11 }
+                Label { text: (pendingCloneProductSummary.buttonNumbers || []).join(", ") || "无"; color: dtText; font.pixelSize: 11 }
+                Label { text: "滚轮 / 灯光"; color: dtTextSec; font.pixelSize: 11 }
+                Label { text: pendingCloneProductSummary.rollerCount + " 个 / " + (pendingCloneProductSummary.hasWorkLight ? "包含工作灯测试" : "无工作灯测试"); color: dtText; font.pixelSize: 11 }
+                Label { text: "协议 / 波特率"; color: dtTextSec; font.pixelSize: 11 }
+                Label { text: String(pendingCloneProductSummary.protocol || "").toUpperCase() + " / " + pendingCloneProductSummary.bitrateKbps + " kbit/s"; color: dtText; font.pixelSize: 11 }
+                Label { text: "校准"; color: dtTextSec; font.pixelSize: 11 }
+                Label { text: pendingCloneProductSummary.calibrationMode || "---"; color: dtText; font.pixelSize: 11 }
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                Item { Layout.fillWidth: true }
+                Button {
+                    text: "返回修改"
+                    font.pixelSize: 11
+                    onClicked: {
+                        createProductConfirmationPopup.close()
+                        cloneProductPopup.open()
+                    }
+                }
+                Button {
+                    text: "确认创建"
+                    font.pixelSize: 11
+                    palette.button: dtAccent
+                    palette.buttonText: "white"
+                    onClicked: root.confirmPendingProductCreation()
+                }
+            }
+        }
+    }
+
+    Popup {
+        id: deleteProductPopup
+        parent: root
+        width: Math.min(540, root.width - 32)
+        height: Math.min(root.height - 32, deleteProductContent.implicitHeight + 32)
+        x: Math.max(16, (root.width - width) / 2)
+        y: Math.max(16, (root.height - height) / 2)
+        padding: 16
+        modal: true
+        focus: true
+        closePolicy: Popup.CloseOnEscape
+        z: 10001
+
+        background: Rectangle {
+            radius: 8
+            color: "white"
+            border.width: 1
+            border.color: pendingProductDeletion.allowed ? "#ff9f0a" : "#d70015"
+        }
+        contentItem: ColumnLayout {
+            id: deleteProductContent
+            spacing: 10
+            Label {
+                text: pendingProductDeletion.allowed ? "确认删除产品版本" : "当前产品不能删除"
+                color: pendingProductDeletion.allowed ? "#b25000" : "#d70015"
+                font.pixelSize: 15
+                font.bold: true
+            }
+            Label {
+                Layout.fillWidth: true
+                text: pendingProductDeletion.allowed
+                      ? "删除会同步移除 JSON 和产品数据库记录；原 JSON 会保存到 catalog/backups/deleted，可用于人工恢复。"
+                      : "检测到生产历史、设备绑定、固件依赖，或 JSON 与数据库状态不一致。为避免 DownloadTool 丢失追溯关系，已禁止删除。"
+                color: dtTextSec
+                font.pixelSize: 11
+                wrapMode: Text.WordWrap
+            }
+            Repeater {
+                model: pendingProductDeletion.blockers || []
+                Label {
+                    Layout.fillWidth: true
+                    text: "• " + modelData
+                    color: "#d70015"
+                    font.pixelSize: 10
+                    wrapMode: Text.WordWrap
+                }
+            }
+            Label {
+                visible: pendingProductDeletion.allowed === true
+                text: "请输入 “" + (pendingProductDeletion.confirmationText || "") + "” 以确认："
+                color: dtText
+                font.pixelSize: 11
+            }
+            TextField {
+                id: deleteConfirmationField
+                Layout.fillWidth: true
+                visible: pendingProductDeletion.allowed === true
+                selectByMouse: true
+                placeholderText: pendingProductDeletion.confirmationText || ""
+                font.pixelSize: 11
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                Item { Layout.fillWidth: true }
+                Button {
+                    text: "取消"
+                    font.pixelSize: 11
+                    onClicked: deleteProductPopup.close()
+                }
+                Button {
+                    visible: pendingProductDeletion.allowed === true
+                    enabled: deleteConfirmationField.text.trim()
+                             === String(pendingProductDeletion.confirmationText || "")
+                    text: "删除并保留备份"
+                    font.pixelSize: 11
+                    palette.button: "#d70015"
+                    palette.buttonText: "white"
+                    onClicked: root.confirmProductDeletion()
                 }
             }
         }

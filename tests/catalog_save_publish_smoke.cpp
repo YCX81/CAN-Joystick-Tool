@@ -3,6 +3,7 @@
 #include <QCoreApplication>
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -11,6 +12,8 @@
 #include <QTcpServer>
 #include <QTcpSocket>
 #include <QTemporaryDir>
+
+#include <cstdio>
 
 namespace {
 
@@ -88,7 +91,8 @@ public:
                     paths.append(path);
                     int status = 200;
                     QJsonObject body{{QStringLiteral("ok"), true}};
-                    if (path == QStringLiteral("/publish")) {
+                    if (path == QStringLiteral("/publish")
+                        || path == QStringLiteral("/remove")) {
                         if (failPublish) {
                             status = 409;
                             body = QJsonObject{{QStringLiteral("ok"), false},
@@ -153,6 +157,9 @@ int main(int argc, char **argv)
             QByteArray("http://127.0.0.1:") + QByteArray::number(publisher.serverPort()));
 
     LayoutManager manager;
+    QString lastError;
+    QObject::connect(&manager, &LayoutManager::errorOccurred, &manager,
+                     [&lastError](const QString &error) { lastError = error; });
     const QString catalogRoot = QDir(root.path()).filePath(QStringLiteral("catalog"));
     manager.setProductCatalogRoot(catalogRoot);
     const QString active = QDir(catalogRoot).filePath(
@@ -185,6 +192,7 @@ int main(int argc, char **argv)
         return 9;
     const QJsonObject restoredConfig =
         QJsonDocument::fromJson(restored.readAll()).object();
+    restored.close();
     if (restoredConfig.value(QStringLiteral("product")).toObject()
             .value(QStringLiteral("description")).toString()
         != QStringLiteral("old description")) {
@@ -196,5 +204,33 @@ int main(int argc, char **argv)
         != QStringLiteral("old description")) {
         return 11;
     }
+
+    publisher.paths.clear();
+    publisher.failCommit = false;
+    const QJsonObject deletion = manager.analyzeProductConfigDeletion(active);
+    if (!deletion.value(QStringLiteral("allowed")).toBool()
+        || deletion.value(QStringLiteral("confirmationText")).toString()
+               != QStringLiteral("JC6000-BGA-UTPUB/V1")) {
+        return 12;
+    }
+    if (!manager.deleteProductConfigVersion(
+            active, deletion.value(QStringLiteral("confirmationText")).toString())) {
+        std::fprintf(stderr, "delete failed: %s\n", qPrintable(lastError));
+        return 13;
+    }
+    if (publisher.paths != QStringList{QStringLiteral("/remove"),
+                                       QStringLiteral("/commit")}) {
+        return 14;
+    }
+    if (QFileInfo::exists(active)
+        || scalar(databasePath, QStringLiteral("SELECT COUNT(*) FROM products")).toInt() != 0
+        || scalar(databasePath,
+                  QStringLiteral("SELECT COUNT(*) FROM product_config_versions")).toInt() != 0) {
+        return 15;
+    }
+    const QDir deletedBackups(
+        QDir(catalogRoot).filePath(QStringLiteral("backups/deleted")));
+    if (deletedBackups.entryInfoList(QDir::Files | QDir::NoDotAndDotDot).isEmpty())
+        return 16;
     return 0;
 }

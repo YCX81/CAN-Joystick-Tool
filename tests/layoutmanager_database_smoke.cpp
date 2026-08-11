@@ -419,16 +419,9 @@ int main(int argc, char *argv[])
     const QJsonObject testOnlyConfig = testOnlyV3Config(manager, testOnlyCode);
     const QString testOnlyPath =
         manager.productConfigVersionPath(testOnlyCode, QStringLiteral("V1"));
-    if (!manager.saveProductDraft(testOnlyConfig, testOnlyPath)
-        || !QFileInfo::exists(manager.productDraftPath(testOnlyPath))) {
-        return 35;
-    }
     if (!manager.saveProductConfigVersionWithCustomerAs(
             testOnlyConfig, testOnlyCode, QStringLiteral("V1"), QStringLiteral("安徽好运来叉车"))) {
         return 23;
-    }
-    if (QFileInfo::exists(manager.productDraftPath(testOnlyPath))) {
-        return 36;
     }
     QFile persistedTestOnlyFile(testOnlyPath);
     if (!persistedTestOnlyFile.open(QIODevice::ReadOnly)) {

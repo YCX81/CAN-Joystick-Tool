@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 
-project(CANJoystickTool VERSION 0.4.0 LANGUAGES CXX)
+project(CANJoystickTool VERSION 0.4.1 LANGUAGES CXX)
 
 include(CTest)
 
@@ -36,7 +36,7 @@ set_source_files_properties(CANJoystickTool/CardTemplateManager.qml
 
 qt_add_qml_module(CANJoystickTool
     URI CANJoystickTool
-    VERSION 0.4.0
+    VERSION 0.4.1
     RESOURCE_PREFIX /qt/qml
     SOURCES
         LayoutManager.h
@@ -84,7 +84,6 @@ qt_add_qml_module(CANJoystickTool
         CANJoystickToolContent/HandleCard.qml
         CANJoystickToolContent/CustomCard.qml
         CANJoystickToolContent/ProductConfigV3EditorAdapter.js
-        CANJoystickToolContent/ProductDraftPolicy.js
         CANJoystickToolContent/ProductEditor.qml
     RESOURCES
         qtquickcontrols2.conf
@@ -171,6 +170,40 @@ if(BUILD_TESTING)
     )
     add_qt_runtime_test(layoutmanager_database_smoke layoutmanager_database_smoke)
 
+    add_executable(product_config_deletion_smoke
+        tests/product_config_deletion_smoke.cpp
+        LayoutManager.h
+        LayoutManager.cpp
+        ProductConfigV3Validator.h
+        ProductConfigV3Validator.cpp
+    )
+    target_include_directories(product_config_deletion_smoke PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    target_link_libraries(product_config_deletion_smoke PRIVATE
+        Qt6::Quick
+        Qt6::QuickControls2
+        Qt6::Widgets
+        Qt6::Sql
+        Qt6::Network
+    )
+    add_qt_runtime_test(product_config_deletion_smoke product_config_deletion_smoke)
+
+    add_executable(product_config_v3_creation_policy_smoke
+        tests/product_config_v3_creation_policy_smoke.cpp
+        LayoutManager.h
+        LayoutManager.cpp
+        ProductConfigV3Validator.h
+        ProductConfigV3Validator.cpp
+    )
+    target_include_directories(product_config_v3_creation_policy_smoke PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    target_link_libraries(product_config_v3_creation_policy_smoke PRIVATE
+        Qt6::Core
+        Qt6::Gui
+        Qt6::Qml
+        Qt6::Sql
+        Qt6::Network
+    )
+    add_qt_runtime_test(product_config_v3_creation_policy_smoke product_config_v3_creation_policy_smoke)
+
     add_executable(catalog_save_publish_smoke
         tests/catalog_save_publish_smoke.cpp
         LayoutManager.h
@@ -235,16 +268,17 @@ if(BUILD_TESTING)
         product_config_v3_editor_adapter_smoke
     )
 
-    add_executable(product_draft_policy_smoke
-        tests/product_draft_policy_smoke.cpp
+    add_executable(product_editor_creation_lifecycle_smoke
+        tests/product_editor_creation_lifecycle_smoke.cpp
     )
-    target_compile_definitions(product_draft_policy_smoke PRIVATE
-        PRODUCT_DRAFT_POLICY_SOURCE="${CMAKE_CURRENT_SOURCE_DIR}/CANJoystickToolContent/ProductDraftPolicy.js"
+    target_compile_definitions(product_editor_creation_lifecycle_smoke PRIVATE
+        PRODUCT_EDITOR_QML_SOURCE="${CMAKE_CURRENT_SOURCE_DIR}/CANJoystickToolContent/ProductEditor.qml"
+        PRODUCT_CONFIG_V3_EDITOR_ADAPTER_SOURCE="${CMAKE_CURRENT_SOURCE_DIR}/CANJoystickToolContent/ProductConfigV3EditorAdapter.js"
     )
-    target_link_libraries(product_draft_policy_smoke PRIVATE Qt6::Quick)
+    target_link_libraries(product_editor_creation_lifecycle_smoke PRIVATE Qt6::Core)
     add_qt_runtime_test(
-        product_draft_policy_smoke
-        product_draft_policy_smoke
+        product_editor_creation_lifecycle_smoke
+        product_editor_creation_lifecycle_smoke
     )
 
     add_executable(layoutmanager_v3_validation_smoke

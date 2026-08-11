@@ -781,20 +781,6 @@ bool verifyCatalogStorePersistence()
                      QStringList{QStringLiteral("*.json")}, QDir::Files).size() == 1,
                  QStringLiteral("identical catalog save must not create another backup"));
 
-    ok &= expect(manager.saveProductDraft(config, activePath),
-                 QStringLiteral("catalog draft save failed"));
-    const QString draftPath = manager.productDraftPath(activePath);
-    ok &= expect(QFileInfo::exists(draftPath),
-                 QStringLiteral("catalog draft was not persisted"));
-    ok &= expect(manager.loadProductDraft(activePath)
-                     .value(QStringLiteral("product")).toObject()
-                     .value(QStringLiteral("description")).toString()
-                     == QStringLiteral("second revision"),
-                 QStringLiteral("catalog draft could not be recovered"));
-    ok &= expect(manager.discardProductDraft(activePath),
-                 QStringLiteral("catalog draft discard failed"));
-    ok &= expect(!QFileInfo::exists(draftPath),
-                 QStringLiteral("catalog draft was not removed after save"));
     return ok;
 }
 
@@ -961,6 +947,127 @@ bool verifySparseButtonConfig(LayoutManager &manager, const QJsonObject &config)
     return ok;
 }
 
+bool verifyV3CreationPolicy(LayoutManager &manager)
+{
+    const QJsonObject validSpec{
+        {QStringLiteral("code"), QStringLiteral("CONFIRM-V3")},
+        {QStringLiteral("version"), QStringLiteral("V2")},
+        {QStringLiteral("customerName"), QStringLiteral("确认客户")},
+        {QStringLiteral("calibrationMode"), QStringLiteral("minCenterMax")},
+        {QStringLiteral("baudRate"), 250},
+        {QStringLiteral("joystickTopology"), QStringLiteral("singleAxisY")},
+        {QStringLiteral("buttonCount"), 3},
+        {QStringLiteral("buttonNumbers"), QJsonArray{2, 3, 8}},
+        {QStringLiteral("rollerCount"), 2},
+        {QStringLiteral("hasWorkLight"), true}
+    };
+
+    bool ok = true;
+    const QJsonObject specValidation = manager.validateStandardProductSpecV3(validSpec);
+    ok &= expect(specValidation.value(QStringLiteral("ok")).toBool(),
+                 QStringLiteral("valid V3 creation spec was rejected"));
+
+    const QJsonObject config = manager.buildStandardProductConfigV3(validSpec);
+    ok &= expect(!config.isEmpty(), QStringLiteral("valid V3 creation spec produced no config"));
+    const QJsonObject summary = manager.summarizeProductConfigV3(config);
+    ok &= expect(summary.value(QStringLiteral("ok")).toBool(),
+                 QStringLiteral("generated V3 config could not be summarized"));
+    ok &= expect(summary.value(QStringLiteral("productCode")).toString()
+                     == QStringLiteral("CONFIRM-V3")
+                     && summary.value(QStringLiteral("version")).toString()
+                         == QStringLiteral("V2")
+                     && summary.value(QStringLiteral("customerName")).toString()
+                         == QStringLiteral("确认客户")
+                     && summary.value(QStringLiteral("joystickTopology")).toString()
+                         == QStringLiteral("singleAxisY")
+                     && summary.value(QStringLiteral("buttonNumbers")).toArray()
+                         == QJsonArray{2, 3, 8}
+                     && summary.value(QStringLiteral("rollerCount")).toInt() == 2
+                     && summary.value(QStringLiteral("hasWorkLight")).toBool(),
+                 QStringLiteral("creation confirmation summary differs from generated config"));
+
+    const auto withValue = [](QJsonObject spec, const QString &key, const QJsonValue &value) {
+        spec.insert(key, value);
+        return spec;
+    };
+    const QList<QJsonObject> invalidSpecs{
+        withValue(validSpec, QStringLiteral("buttonCount"), 13),
+        withValue(validSpec, QStringLiteral("rollerCount"), 5),
+        withValue(validSpec, QStringLiteral("buttonNumbers"), QJsonArray{2, 2, 8}),
+        withValue(validSpec, QStringLiteral("buttonNumbers"), QJsonArray{2, 3}),
+        withValue(validSpec, QStringLiteral("joystickTopology"), QStringLiteral("diagonal"))
+    };
+    for (const QJsonObject &invalidSpec : invalidSpecs) {
+        ok &= expect(!manager.validateStandardProductSpecV3(invalidSpec)
+                          .value(QStringLiteral("ok")).toBool(),
+                     QStringLiteral("invalid V3 creation spec was accepted"));
+        ok &= expect(manager.buildStandardProductConfigV3(invalidSpec).isEmpty(),
+                     QStringLiteral("invalid V3 creation spec was silently normalized"));
+    }
+
+    const QJsonObject xyConfig = manager.buildStandardProductConfigV3(QJsonObject{
+        {QStringLiteral("code"), QStringLiteral("INVERT-V3")},
+        {QStringLiteral("version"), QStringLiteral("V1")},
+        {QStringLiteral("buttonCount"), 0},
+        {QStringLiteral("rollerCount"), 0},
+        {QStringLiteral("joystickTopology"), QStringLiteral("xy2D")}
+    });
+    const QJsonObject invertResult =
+        manager.setPrimaryJoystickAxisInvertedV3(xyConfig, QStringLiteral("x"), true);
+    const QJsonObject invertedConfig = invertResult.value(QStringLiteral("config")).toObject();
+    const QJsonObject primary = findObject(
+        invertedConfig.value(QStringLiteral("controls")).toArray(),
+        QStringLiteral("id"),
+        QStringLiteral("joystickXY"));
+    ok &= expect(invertResult.value(QStringLiteral("ok")).toBool()
+                     && primary.value(QStringLiteral("xAxis")).toObject()
+                            .value(QStringLiteral("transform")).toObject()
+                            .value(QStringLiteral("invert")).toBool()
+                     && !primary.value(QStringLiteral("yAxis")).toObject()
+                             .value(QStringLiteral("transform")).toObject()
+                             .value(QStringLiteral("invert")).toBool(),
+                 QStringLiteral("targeted primary X-axis inversion was not persisted canonically"));
+    ok &= expect(!manager.setPrimaryJoystickAxisInvertedV3(
+                          xyConfig, QStringLiteral("z"), true)
+                          .value(QStringLiteral("ok")).toBool(),
+                 QStringLiteral("unknown primary axis was accepted"));
+
+    const QJsonObject singleXConfig = manager.buildStandardProductConfigV3(QJsonObject{
+        {QStringLiteral("code"), QStringLiteral("INVERT-X")},
+        {QStringLiteral("buttonCount"), 0},
+        {QStringLiteral("rollerCount"), 0},
+        {QStringLiteral("joystickTopology"), QStringLiteral("singleAxisX")}
+    });
+    const QJsonObject singleYConfig = manager.buildStandardProductConfigV3(QJsonObject{
+        {QStringLiteral("code"), QStringLiteral("INVERT-Y")},
+        {QStringLiteral("buttonCount"), 0},
+        {QStringLiteral("rollerCount"), 0},
+        {QStringLiteral("joystickTopology"), QStringLiteral("singleAxisY")}
+    });
+    ok &= expect(manager.setPrimaryJoystickAxisInvertedV3(
+                          singleXConfig, QStringLiteral("x"), true)
+                          .value(QStringLiteral("ok")).toBool()
+                     && !manager.setPrimaryJoystickAxisInvertedV3(
+                            singleXConfig, QStringLiteral("y"), true)
+                            .value(QStringLiteral("ok")).toBool(),
+                 QStringLiteral("single-axis X inversion availability is incorrect"));
+    const QJsonObject singleYResult = manager.setPrimaryJoystickAxisInvertedV3(
+        singleYConfig, QStringLiteral("y"), true);
+    const QJsonObject singleYControl = findObject(
+        singleYResult.value(QStringLiteral("config")).toObject()
+            .value(QStringLiteral("controls")).toArray(),
+        QStringLiteral("id"), QStringLiteral("joystickY"));
+    ok &= expect(singleYResult.value(QStringLiteral("ok")).toBool()
+                     && singleYControl.value(QStringLiteral("axis")).toObject()
+                            .value(QStringLiteral("transform")).toObject()
+                            .value(QStringLiteral("invert")).toBool()
+                     && !manager.setPrimaryJoystickAxisInvertedV3(
+                            singleYConfig, QStringLiteral("x"), true)
+                            .value(QStringLiteral("ok")).toBool(),
+                 QStringLiteral("single-axis Y inversion availability is incorrect"));
+    return ok;
+}
+
 QJsonObject withMiniJoystickVisual(const QJsonObject &source,
                                    const QString &xBindingId,
                                    const QString &yBindingId)
@@ -1107,6 +1214,7 @@ int main(int argc, char *argv[])
     });
     ok &= verifyGenericConfig(manager, emptyConfig, 0, 0, QString());
     ok &= verifyMiniJoystickDualBindingValidation(manager);
+    ok &= verifyV3CreationPolicy(manager);
     ok &= verifyTypedCustomerPersistence();
     ok &= verifyCloneCustomerReplacementPersistence();
     ok &= verifyV3BuilderAndClone();

@@ -138,7 +138,11 @@ public:
     Q_INVOKABLE bool saveProductConfig(const QJsonObject &configJson, const QString &filePath);
     Q_INVOKABLE QJsonObject validateProductConfig(const QJsonObject &configJson) const;
     Q_INVOKABLE QJsonObject buildStandardProductConfig(const QJsonObject &spec) const;
+    Q_INVOKABLE QJsonObject validateStandardProductSpecV3(const QJsonObject &spec) const;
     Q_INVOKABLE QJsonObject buildStandardProductConfigV3(const QJsonObject &spec) const;
+    Q_INVOKABLE QJsonObject summarizeProductConfigV3(const QJsonObject &configJson) const;
+    Q_INVOKABLE QJsonObject setPrimaryJoystickAxisInvertedV3(
+        const QJsonObject &configJson, const QString &axisName, bool inverted) const;
     Q_INVOKABLE QJsonObject cloneProductConfigV3(const QJsonObject &sourceConfig,
                                                  const QString &productCode,
                                                  const QString &description,
@@ -162,10 +166,9 @@ public:
     Q_INVOKABLE QString productConfigPath(const QString &model) const;
     Q_INVOKABLE bool openProductConfigFile(const QString &model) const;
     Q_INVOKABLE bool openProductConfigPath(const QString &filePath);
-    Q_INVOKABLE QString productDraftPath(const QString &filePath) const;
-    Q_INVOKABLE bool saveProductDraft(const QJsonObject &configJson, const QString &filePath);
-    Q_INVOKABLE QJsonObject loadProductDraft(const QString &filePath) const;
-    Q_INVOKABLE bool discardProductDraft(const QString &filePath);
+    Q_INVOKABLE QJsonObject analyzeProductConfigDeletion(const QString &filePath);
+    Q_INVOKABLE bool deleteProductConfigVersion(const QString &filePath,
+                                                const QString &confirmationText);
 
     // ========== 工具方法 ==========
 
@@ -190,6 +193,7 @@ signals:
     void productsDirectoryChanged();
     void productCatalogRootChanged();
     void productConfigSaved(const QString &path);
+    void productConfigDeleted(const QString &path);
     void productConfigExternallyChanged(const QString &path);
     void productConfigLoaded(const QString &path);
     void currentLayoutPathChanged();
@@ -234,7 +238,8 @@ private:
                                      const QString &customerName = QString(),
                                      bool makeDefault = true);
     bool removeProductConfigFromDatabase(const QJsonObject &configJson,
-                                         const QString &filePath);
+                                         const QString &filePath,
+                                         bool requireNoDependencies = false);
     QString catalogActiveDirectory() const;
     bool isCatalogActivePath(const QString &filePath) const;
     bool persistCatalogProductConfig(const QJsonObject &configJson,
