@@ -1210,9 +1210,14 @@ Item {
         if (cloneProductError.length > 0)
             return
 
-        if (!cloneProductUsesBlankTemplate && currentConfig && currentConfig.product
-                && !syncCurrentLayoutFromCells())
+        if (!cloneProductUsesBlankTemplate && hasUnsavedChanges
+                && currentConfig && currentConfig.product
+                && !syncCurrentLayoutFromCells()) {
+            cloneProductError = saveProductMessage.length > 0
+                    ? saveProductMessage
+                    : "当前布局同步失败，请检查组件绑定后重试。"
             return
+        }
         var model = sanitizeProductModel(cloneModelField.text)
         var versionCode = normalizedCloneVersionCode()
         var description = String(cloneDescriptionArea.text || "").trim()

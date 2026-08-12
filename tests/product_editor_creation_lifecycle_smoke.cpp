@@ -57,6 +57,12 @@ int main(int argc, char *argv[])
                          "text: createProductConfirmationError")),
                  "confirmation popup must render backend save errors");
     ok &= expect(editor.contains(QStringLiteral(
+                     "if (!cloneProductUsesBlankTemplate && hasUnsavedChanges")),
+                 "cloning an unchanged product must not reserialize and reject its loaded layout");
+    ok &= expect(editor.contains(QStringLiteral(
+                     "cloneProductError = saveProductMessage.length > 0")),
+                 "layout synchronization failures must be visible inside the clone popup");
+    ok &= expect(editor.contains(QStringLiteral(
                      "text: \"共 \" + cloneCustomerModel.count + \" 个客户"))
                      && editor.contains(QStringLiteral(
                          "policy: ScrollBar.AlwaysOn")),
