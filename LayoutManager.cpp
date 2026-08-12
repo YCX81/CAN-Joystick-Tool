@@ -1138,9 +1138,16 @@ void LayoutManager::initDefaultDirectories()
     m_templatesDirectory = appDataPath + "/templates";
     const QString configuredCatalogRoot =
         qEnvironmentVariable("CANJOYSTICK_PRODUCT_CATALOG_ROOT").trimmed();
-    m_productCatalogRoot = configuredCatalogRoot.isEmpty()
-        ? QDir(appDataPath).filePath(QStringLiteral("product-catalog"))
-        : QDir::cleanPath(configuredCatalogRoot);
+    const QString sharedCatalogRoot = QDir(
+        QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation))
+                                          .filePath(QStringLiteral("CANJoystickSuite/product-catalog"));
+    const bool sharedCatalogPublished =
+        QFileInfo::exists(QDir(sharedCatalogRoot).filePath(QStringLiteral("current.json")));
+    m_productCatalogRoot = !configuredCatalogRoot.isEmpty()
+        ? QDir::cleanPath(configuredCatalogRoot)
+        : (sharedCatalogPublished
+               ? QDir::cleanPath(sharedCatalogRoot)
+               : QDir(appDataPath).filePath(QStringLiteral("product-catalog")));
     hydrateCatalogActiveFromCurrent();
 
     // 产品配置目录优先使用 DownloadTool 当前的 firmware 资产根；保留 products 作为旧版本回退。

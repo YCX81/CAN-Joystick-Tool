@@ -28,10 +28,16 @@ int main(int argc, char *argv[])
     QCoreApplication application(argc, argv);
     const QString editor = readUtf8(QString::fromUtf8(PRODUCT_EDITOR_QML_SOURCE));
     const QString adapter = readUtf8(QString::fromUtf8(PRODUCT_CONFIG_V3_EDITOR_ADAPTER_SOURCE));
+    const QString layoutManager = readUtf8(QString::fromUtf8(LAYOUT_MANAGER_SOURCE));
 
     bool ok = true;
     ok &= expect(!editor.isEmpty(), "ProductEditor.qml could not be read");
     ok &= expect(!adapter.isEmpty(), "ProductConfigV3EditorAdapter.js could not be read");
+    ok &= expect(!layoutManager.isEmpty(), "LayoutManager.cpp could not be read");
+    ok &= expect(layoutManager.contains(QStringLiteral("QStandardPaths::GenericDataLocation"))
+                     && layoutManager.contains(QStringLiteral("CANJoystickSuite/product-catalog"))
+                     && layoutManager.contains(QStringLiteral("current.json")),
+                 "the editor must discover the shared ProgramData catalog without an inherited environment variable");
 
     ok &= expect(editor.contains(QStringLiteral("id: createProductConfirmationPopup")),
                  "new products must have a second confirmation popup");

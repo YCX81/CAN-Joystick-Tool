@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 
-project(CANJoystickTool VERSION 0.4.15 LANGUAGES CXX)
+project(CANJoystickTool VERSION 0.4.16 LANGUAGES CXX)
 
 include(CTest)
 
@@ -274,6 +274,7 @@ if(BUILD_TESTING)
     target_compile_definitions(product_editor_creation_lifecycle_smoke PRIVATE
         PRODUCT_EDITOR_QML_SOURCE="${CMAKE_CURRENT_SOURCE_DIR}/CANJoystickToolContent/ProductEditor.qml"
         PRODUCT_CONFIG_V3_EDITOR_ADAPTER_SOURCE="${CMAKE_CURRENT_SOURCE_DIR}/CANJoystickToolContent/ProductConfigV3EditorAdapter.js"
+        LAYOUT_MANAGER_SOURCE="${CMAKE_CURRENT_SOURCE_DIR}/LayoutManager.cpp"
     )
     target_link_libraries(product_editor_creation_lifecycle_smoke PRIVATE Qt6::Core)
     add_qt_runtime_test(
