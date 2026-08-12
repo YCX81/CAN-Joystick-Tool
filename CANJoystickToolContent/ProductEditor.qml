@@ -32,6 +32,7 @@ Item {
     property bool pendingCloneUsesSourceConfig: false
     property var pendingCloneSourceConfig: ({})
     property string createProductConfirmationError: ""
+    property bool productCreationInProgress: false
     property var pendingProductDeletion: ({})
     property string saveProductMessage: ""
     property bool saveProductMessageIsError: false
@@ -1151,6 +1152,7 @@ Item {
     }
 
     function finishProductCreation(model, versionCode) {
+        productCreationInProgress = false
         cloneProductPopup.close()
         createProductConfirmationPopup.close()
         createProductConfirmationError = ""
@@ -1171,9 +1173,13 @@ Item {
             layoutManager.openProductConfigPath(
                         layoutManager.productConfigVersionPath(model, versionCode))
         }
+        saveProductMessage = "已创建：" + model + " / " + versionCode
+        saveProductMessageIsError = false
     }
 
     function confirmPendingProductCreation() {
+        if (productCreationInProgress)
+            return
         createProductConfirmationError = ""
         var config = pendingCloneProductConfig
         var model = pendingCloneProductModel
@@ -1190,13 +1196,26 @@ Item {
             cloneProductPopup.open()
             return
         }
+        productCreationInProgress = true
+        Qt.callLater(function() {
+            root.performPendingProductCreation()
+        })
+    }
+
+    function performPendingProductCreation() {
+        var config = pendingCloneProductConfig
+        var model = pendingCloneProductModel
+        var versionCode = pendingCloneProductVersion
         if (pendingCloneUsesSourceConfig) {
             if (!layoutManager.cloneProductConfigVersionWithCustomerAs(
                         pendingCloneSourceConfig, model, versionCode,
-                        pendingCloneProductDescription, pendingCloneProductCustomer))
+                        pendingCloneProductDescription, pendingCloneProductCustomer)) {
+                productCreationInProgress = false
                 return
+            }
         } else if (!layoutManager.saveProductConfigVersionWithCustomerAs(
                        config, model, versionCode, pendingCloneProductCustomer)) {
+            productCreationInProgress = false
             return
         }
         pendingCloneProductConfig = ({})
@@ -1248,6 +1267,7 @@ Item {
             pendingCloneSourceConfig = pendingCloneUsesSourceConfig
                     ? deepCopyConfig(productTemplateConfig()) : ({})
             createProductConfirmationError = ""
+            productCreationInProgress = false
             cloneProductPopup.close()
             createProductConfirmationPopup.open()
             return
@@ -3967,7 +3987,8 @@ Item {
                     }
                 }
                 Button {
-                    text: "确认创建"
+                    text: productCreationInProgress ? "创建中..." : "确认创建"
+                    enabled: !productCreationInProgress
                     font.pixelSize: 11
                     palette.button: dtAccent
                     palette.buttonText: "white"

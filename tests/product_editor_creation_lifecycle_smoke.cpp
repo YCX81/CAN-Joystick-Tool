@@ -62,6 +62,15 @@ int main(int argc, char *argv[])
     ok &= expect(editor.contains(QStringLiteral(
                      "cloneProductError = saveProductMessage.length > 0")),
                  "layout synchronization failures must be visible inside the clone popup");
+    ok &= expect(editor.contains(QStringLiteral("property bool productCreationInProgress: false"))
+                     && editor.contains(QStringLiteral("Qt.callLater(function()"))
+                     && editor.contains(QStringLiteral("performPendingProductCreation()")),
+                 "confirmed product creation must yield to the UI and expose an in-progress state");
+    ok &= expect(editor.contains(QStringLiteral("text: productCreationInProgress ? \"创建中...\" : \"确认创建\""))
+                     && editor.contains(QStringLiteral("enabled: !productCreationInProgress")),
+                 "confirmation must show progress and prevent duplicate clicks");
+    ok &= expect(editor.contains(QStringLiteral("saveProductMessage = \"已创建：\"")),
+                 "successful creation must provide visible completion feedback");
     ok &= expect(editor.contains(QStringLiteral(
                      "text: \"共 \" + cloneCustomerModel.count + \" 个客户"))
                      && editor.contains(QStringLiteral(
