@@ -43,6 +43,24 @@ int main(int argc, char *argv[])
     ok &= expect(editor.contains(QStringLiteral("summarizeProductConfigV3"))
                      && editor.contains(QStringLiteral("validateProductConfig")),
                  "confirmation must summarize and validate the generated config");
+    ok &= expect(editor.contains(QStringLiteral(
+                     "text: pendingCloneProductCustomer || \"---\"")),
+                 "confirmation must show the customer's final form selection");
+    ok &= expect(editor.contains(QStringLiteral(
+                     "if (createProductConfirmationPopup.opened)"))
+                     && editor.contains(QStringLiteral(
+                         "createProductConfirmationError = error")),
+                 "save failures must be routed into the open confirmation popup");
+    ok &= expect(editor.contains(QStringLiteral(
+                     "visible: createProductConfirmationError.length > 0"))
+                     && editor.contains(QStringLiteral(
+                         "text: createProductConfirmationError")),
+                 "confirmation popup must render backend save errors");
+    ok &= expect(editor.contains(QStringLiteral(
+                     "text: \"共 \" + cloneCustomerModel.count + \" 个客户"))
+                     && editor.contains(QStringLiteral(
+                         "policy: ScrollBar.AlwaysOn")),
+                 "the complete customer list must advertise its count and remain visibly scrollable");
 
     ok &= expect(!editor.contains(QStringLiteral("ProductDraftPolicy"))
                      && !editor.contains(QStringLiteral("productDraftTimer"))

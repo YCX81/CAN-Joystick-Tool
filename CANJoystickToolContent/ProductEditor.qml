@@ -31,6 +31,7 @@ Item {
     property string pendingCloneProductDescription: ""
     property bool pendingCloneUsesSourceConfig: false
     property var pendingCloneSourceConfig: ({})
+    property string createProductConfirmationError: ""
     property var pendingProductDeletion: ({})
     property string saveProductMessage: ""
     property bool saveProductMessageIsError: false
@@ -1152,6 +1153,7 @@ Item {
     function finishProductCreation(model, versionCode) {
         cloneProductPopup.close()
         createProductConfirmationPopup.close()
+        createProductConfirmationError = ""
         loadProductList()
         var idx = findProductIndexByName(model)
         if (idx >= 0) {
@@ -1172,11 +1174,14 @@ Item {
     }
 
     function confirmPendingProductCreation() {
+        createProductConfirmationError = ""
         var config = pendingCloneProductConfig
         var model = pendingCloneProductModel
         var versionCode = pendingCloneProductVersion
-        if (!config || Object.keys(config).length === 0)
+        if (!config || Object.keys(config).length === 0) {
+            createProductConfirmationError = "待确认的产品配置已失效，请返回后重新生成。"
             return
+        }
         if ((layoutManager.productConfigExists && layoutManager.productConfigExists(model))
                 || (layoutManager.productConfigVersionExists
                     && layoutManager.productConfigVersionExists(model, versionCode))) {
@@ -1237,6 +1242,7 @@ Item {
                     && layoutManager.cloneProductConfigVersionWithCustomerAs
             pendingCloneSourceConfig = pendingCloneUsesSourceConfig
                     ? deepCopyConfig(productTemplateConfig()) : ({})
+            createProductConfirmationError = ""
             cloneProductPopup.close()
             createProductConfirmationPopup.open()
             return
@@ -2089,7 +2095,9 @@ Item {
     Connections {
         target: layoutManager
         function onErrorOccurred(error) {
-            if (cloneProductPopup.opened)
+            if (createProductConfirmationPopup.opened)
+                createProductConfirmationError = error
+            else if (cloneProductPopup.opened)
                 cloneProductError = error
             else {
                 saveProductMessage = error
@@ -3638,6 +3646,45 @@ Item {
                     visible: !cloneProductCreatesVersion
                     onActivated: root.cloneProductError = ""
                     onEditTextChanged: root.cloneProductError = ""
+
+                    popup: Popup {
+                        y: cloneCustomerBox.height - 4
+                        width: cloneCustomerBox.width
+                        height: Math.min(customerOptionsList.contentHeight + verticalPadding * 2,
+                                         360, root.height - 48)
+                        topMargin: 12
+                        bottomMargin: 12
+                        verticalPadding: 6
+                        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutsideParent
+
+                        contentItem: ListView {
+                            id: customerOptionsList
+                            clip: true
+                            implicitHeight: contentHeight
+                            model: cloneCustomerBox.delegateModel
+                            currentIndex: cloneCustomerBox.highlightedIndex
+                            highlightMoveDuration: 0
+                            ScrollBar.vertical: ScrollBar {
+                                policy: ScrollBar.AlwaysOn
+                            }
+                        }
+
+                        background: Rectangle {
+                            radius: 4
+                            color: "white"
+                            border.width: 1
+                            border.color: root.dtBorder
+                        }
+                    }
+                }
+
+                Label {
+                    Layout.columnSpan: 2
+                    Layout.fillWidth: true
+                    visible: !cloneProductCreatesVersion
+                    text: "共 " + cloneCustomerModel.count + " 个客户，可滚动查看或直接输入"
+                    color: root.dtTextSec
+                    font.pixelSize: 10
                 }
 
                 Label {
@@ -3846,7 +3893,13 @@ Item {
                 Label { text: "型号 / 版本"; color: dtTextSec; font.pixelSize: 11 }
                 Label { text: pendingCloneProductSummary.productCode + " / " + pendingCloneProductSummary.version; color: dtText; font.pixelSize: 11; font.bold: true }
                 Label { text: "客户"; color: dtTextSec; font.pixelSize: 11 }
-                Label { text: pendingCloneProductSummary.customerName || "---"; color: dtText; font.pixelSize: 11 }
+                Label {
+                    Layout.fillWidth: true
+                    text: pendingCloneProductCustomer || "---"
+                    color: dtText
+                    font.pixelSize: 11
+                    wrapMode: Text.WordWrap
+                }
                 Label { text: "主摇杆"; color: dtTextSec; font.pixelSize: 11 }
                 Label {
                     text: ({ xy2D: "普通 XY 双轴", crossXY: "十字 XY 轴", singleAxisX: "单轴 X", singleAxisY: "单轴 Y" })[pendingCloneProductSummary.joystickTopology] || "---"
@@ -3863,6 +3916,14 @@ Item {
                 Label { text: "校准"; color: dtTextSec; font.pixelSize: 11 }
                 Label { text: pendingCloneProductSummary.calibrationMode || "---"; color: dtText; font.pixelSize: 11 }
             }
+            Label {
+                Layout.fillWidth: true
+                visible: createProductConfirmationError.length > 0
+                text: createProductConfirmationError
+                color: "#d70015"
+                font.pixelSize: 11
+                wrapMode: Text.WordWrap
+            }
             RowLayout {
                 Layout.fillWidth: true
                 Item { Layout.fillWidth: true }
@@ -3870,6 +3931,7 @@ Item {
                     text: "返回修改"
                     font.pixelSize: 11
                     onClicked: {
+                        createProductConfirmationError = ""
                         createProductConfirmationPopup.close()
                         cloneProductPopup.open()
                     }
