@@ -2230,12 +2230,37 @@ Item {
             }
             Label { visible: !!currentConfig.product; text: root.productDescriptionText(); font.pixelSize: 10; color: dtTextSec; elide: Text.ElideRight; Layout.fillWidth: true }
             Label {
+                id: saveProductStatusLabel
                 visible: saveProductMessage.length > 0
                 text: saveProductMessage
                 font.pixelSize: 10
                 color: saveProductMessageIsError ? "#d70015" : dtSuccess
                 elide: Text.ElideRight
                 Layout.maximumWidth: 360
+                HoverHandler { id: saveProductMessageHover }
+                ToolTip {
+                    id: saveProductMessageToolTip
+                    visible: saveProductMessageHover.hovered
+                             && root.saveProductMessage.length > 0
+                    delay: 250
+                    timeout: -1
+                    text: root.saveProductMessage
+                    width: Math.min(560, Math.max(240, implicitWidth))
+                    padding: 10
+                    contentItem: Label {
+                        text: root.saveProductMessage
+                        color: root.saveProductMessageIsError ? "#7a000b" : "#155724"
+                        font.pixelSize: 11
+                        wrapMode: Text.Wrap
+                        textFormat: Text.PlainText
+                    }
+                    background: Rectangle {
+                        color: root.saveProductMessageIsError ? "#fff1f2" : "#f0fff4"
+                        border.color: root.saveProductMessageIsError ? "#d70015" : root.dtSuccess
+                        border.width: 1
+                        radius: 6
+                    }
+                }
             }
             Item { Layout.fillWidth: true }
             CheckBox {

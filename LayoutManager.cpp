@@ -1329,6 +1329,10 @@ void LayoutManager::queueExternalProductConfigSync(const QString &filePath)
         return;
     }
 
+    const QString candidateKey = QDir::cleanPath(candidate).toCaseFolded();
+    if (m_internalProductConfigWritePaths.contains(candidateKey))
+        return;
+
     m_pendingExternalProductConfigPaths.insert(QDir::cleanPath(candidate));
     m_externalProductConfigSyncTimer.start();
 }
@@ -3610,6 +3614,15 @@ bool LayoutManager::persistCatalogProductConfig(const QJsonObject &configJson,
         }
     }
 
+    const QString internalWritePath = QFileInfo(filePath).absoluteFilePath();
+    const QString internalWriteKey = QDir::cleanPath(internalWritePath).toCaseFolded();
+    m_pendingExternalProductConfigPaths.remove(QDir::cleanPath(internalWritePath));
+    m_internalProductConfigWritePaths.insert(internalWriteKey);
+    const auto finishInternalWrite = [this, internalWritePath, internalWriteKey]() {
+        m_internalProductConfigWritePaths.remove(internalWriteKey);
+        m_pendingExternalProductConfigPaths.remove(QDir::cleanPath(internalWritePath));
+    };
+
     QSaveFile activeFile(filePath);
     if (!activeFile.open(QIODevice::WriteOnly)
         || activeFile.write(newContents) != newContents.size()
@@ -3618,6 +3631,7 @@ bool LayoutManager::persistCatalogProductConfig(const QJsonObject &configJson,
         if (!backupPath.isEmpty()) {
             QFile::remove(backupPath);
         }
+        finishInternalWrite();
         return false;
     }
 
@@ -3644,6 +3658,7 @@ bool LayoutManager::persistCatalogProductConfig(const QJsonObject &configJson,
             tr("Product catalog publish failed: %1%2")
                 .arg(publish.error,
                      restored ? QString() : tr("; active config rollback also failed")));
+        finishInternalWrite();
         return false;
     }
 
@@ -3665,6 +3680,7 @@ bool LayoutManager::persistCatalogProductConfig(const QJsonObject &configJson,
             tr("Product database import failed; catalog rollback: %1; active config rollback: %2")
                 .arg(catalogRolledBack ? tr("ok") : tr("failed"),
                      activeRestored ? tr("ok") : tr("failed")));
+        finishInternalWrite();
         return false;
     }
 
@@ -3689,10 +3705,12 @@ bool LayoutManager::persistCatalogProductConfig(const QJsonObject &configJson,
                          catalogRolledBack ? tr("ok") : tr("failed"),
                          databaseRolledBack ? tr("ok") : tr("failed"),
                          activeRestored ? tr("ok") : tr("failed")));
+            finishInternalWrite();
             return false;
         }
     }
 
+    finishInternalWrite();
     emit productConfigSaved(filePath);
     return true;
 }

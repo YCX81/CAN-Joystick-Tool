@@ -7,11 +7,13 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QEventLoop>
 #include <QSqlDatabase>
 #include <QSqlQuery>
 #include <QTcpServer>
 #include <QTcpSocket>
 #include <QTemporaryDir>
+#include <QTimer>
 
 #include <cstdio>
 
@@ -75,6 +77,7 @@ class FakePublisher final : public QTcpServer
 public:
     bool failCommit = false;
     bool failPublish = false;
+    int publishResponseDelayMs = 0;
     QStringList paths;
 
     FakePublisher()
@@ -110,16 +113,32 @@ public:
                     const QByteArray payload =
                         QJsonDocument(body).toJson(QJsonDocument::Compact);
                     const QByteArray reason = status == 200 ? "OK" : "Conflict";
-                    socket->write("HTTP/1.1 " + QByteArray::number(status) + " " + reason
-                                  + "\r\nContent-Type: application/json\r\nContent-Length: "
-                                  + QByteArray::number(payload.size())
-                                  + "\r\nConnection: close\r\n\r\n" + payload);
-                    socket->disconnectFromHost();
+                    const QByteArray response =
+                        "HTTP/1.1 " + QByteArray::number(status) + " " + reason
+                        + "\r\nContent-Type: application/json\r\nContent-Length: "
+                        + QByteArray::number(payload.size())
+                        + "\r\nConnection: close\r\n\r\n" + payload;
+                    const auto sendResponse = [socket, response]() {
+                        socket->write(response);
+                        socket->disconnectFromHost();
+                    };
+                    if (path == QStringLiteral("/publish") && publishResponseDelayMs > 0) {
+                        QTimer::singleShot(publishResponseDelayMs, socket, sendResponse);
+                    } else {
+                        sendResponse();
+                    }
                 });
             }
         });
     }
 };
+
+void processEventsFor(int milliseconds)
+{
+    QEventLoop loop;
+    QTimer::singleShot(milliseconds, &loop, &QEventLoop::quit);
+    loop.exec();
+}
 
 QJsonObject config(LayoutManager &manager, const QString &description)
 {
@@ -162,8 +181,17 @@ int main(int argc, char **argv)
                      [&lastError](const QString &error) { lastError = error; });
     const QString catalogRoot = QDir(root.path()).filePath(QStringLiteral("catalog"));
     manager.setProductCatalogRoot(catalogRoot);
+    manager.setProductsDirectory(
+        QDir(catalogRoot).filePath(QStringLiteral("active")));
     const QString active = QDir(catalogRoot).filePath(
         QStringLiteral("active/JC6000-BGA-UTPUB_V1.json"));
+    int externalChangeCount = 0;
+    QObject::connect(&manager,
+                     &LayoutManager::productConfigExternallyChanged,
+                     &manager,
+                     [&externalChangeCount](const QString &) {
+                         ++externalChangeCount;
+                     });
 
     const QJsonObject oldConfig = config(manager, QStringLiteral("old description"));
     if (!manager.saveProductConfig(oldConfig, active))
@@ -177,7 +205,26 @@ int main(int argc, char **argv)
         return 6;
     }
 
+    // Drain the watcher event from the initial product creation. A later
+    // internal save of an already registered product must not be reported as
+    // an external edit, even while /publish keeps the nested event loop open.
+    processEventsFor(300);
+    externalChangeCount = 0;
     publisher.paths.clear();
+    publisher.publishResponseDelayMs = 350;
+    const QString internallySavedDescription = QStringLiteral("internal save");
+    if (!manager.saveProductConfig(config(manager, internallySavedDescription), active))
+        return 17;
+    processEventsFor(300);
+    if (publisher.paths != QStringList{QStringLiteral("/publish"),
+                                       QStringLiteral("/commit")}) {
+        return 18;
+    }
+    if (externalChangeCount != 0)
+        return 19;
+
+    publisher.paths.clear();
+    publisher.publishResponseDelayMs = 0;
     publisher.failCommit = true;
     const QJsonObject newConfig = config(manager, QStringLiteral("must roll back"));
     if (manager.saveProductConfig(newConfig, active))
@@ -195,13 +242,13 @@ int main(int argc, char **argv)
     restored.close();
     if (restoredConfig.value(QStringLiteral("product")).toObject()
             .value(QStringLiteral("description")).toString()
-        != QStringLiteral("old description")) {
+        != internallySavedDescription) {
         return 10;
     }
     if (scalar(databasePath,
                QStringLiteral("SELECT description FROM product_config_versions pcv JOIN products p ON p.id=pcv.product_id WHERE p.name='JC6000-BGA-UTPUB' AND pcv.version_code='V1'"))
             .toString()
-        != QStringLiteral("old description")) {
+        != internallySavedDescription) {
         return 11;
     }
 

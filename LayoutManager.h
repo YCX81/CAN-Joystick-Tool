@@ -215,6 +215,7 @@ private:
     QFileSystemWatcher m_productConfigWatcher;
     QTimer m_externalProductConfigSyncTimer;
     QSet<QString> m_pendingExternalProductConfigPaths;
+    QSet<QString> m_internalProductConfigWritePaths;
 
     // 初始化默认目录
     void initDefaultDirectories();

@@ -61,6 +61,25 @@ if ($externalBody -notmatch 'hasUnsavedChanges') {
 if ($externalBody -notmatch 'loadProductVersion\s*\(') {
     throw 'A clean editor must reload the externally changed JSON.'
 }
+if ($editor -notmatch 'HoverHandler\s*\{\s*id:\s*saveProductMessageHover\s*\}') {
+    throw 'The save status message must expose a hover target for its full text.'
+}
+$saveMessageToolTip = [regex]::Match(
+    $editor,
+    'ToolTip\s*\{\s*id:\s*saveProductMessageToolTip(?<body>[\s\S]*?)\n\s*\}')
+if (-not $saveMessageToolTip.Success) {
+    throw 'The save status message must provide a dedicated full-text ToolTip.'
+}
+$saveMessageToolTipBody = $saveMessageToolTip.Groups['body'].Value
+if ($saveMessageToolTipBody -notmatch 'visible:\s*saveProductMessageHover\.hovered') {
+    throw 'The full save status ToolTip must remain tied to pointer hover.'
+}
+if ($saveMessageToolTipBody -notmatch 'text:\s*root\.saveProductMessage') {
+    throw 'The full save status ToolTip must display the complete status text.'
+}
+if ($saveMessageToolTipBody -notmatch 'wrapMode:\s*Text\.Wrap') {
+    throw 'The full save status ToolTip must wrap long error messages.'
+}
 
 if (-not (Test-Path -LiteralPath $AdapterPath)) {
     throw "V3 editor layout adapter is missing: $AdapterPath"
