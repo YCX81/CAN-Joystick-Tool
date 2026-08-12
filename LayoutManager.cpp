@@ -2689,6 +2689,21 @@ QJsonObject LayoutManager::buildStandardProductConfigV3(const QJsonObject &spec)
                          1,
                          1)
     };
+    cards.append(QJsonObject{
+        {QStringLiteral("id"), QStringLiteral("leftRegion")},
+        {QStringLiteral("kind"), QStringLiteral("leftRegion")},
+        {QStringLiteral("title"), QString()},
+        {QStringLiteral("grid"),
+         QJsonObject{
+             {QStringLiteral("row"), 0},
+             {QStringLiteral("column"), 0},
+             {QStringLiteral("rowSpan"), 2},
+             {QStringLiteral("columnSpan"), 1}
+         }},
+        {QStringLiteral("controlId"),
+         joystickControl.value(QStringLiteral("id")).toString()},
+        {QStringLiteral("widthRatio"), 0.52}
+    });
 
     return QJsonObject{
         {QStringLiteral("$schema"), QStringLiteral("../../schemas/product-config-v3.schema.json")},

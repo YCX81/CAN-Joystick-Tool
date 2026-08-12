@@ -398,7 +398,7 @@ bool verifyV3BuilderAndClone()
     const QJsonObject busStatsCard = findCard(blankCards, 0, 1);
     const QJsonObject backCard = findCard(blankCards, 1, 0);
     const QJsonObject recordInfoCard = findCard(blankCards, 1, 1);
-    ok &= expect(blankCards.size() == 4
+    ok &= expect(blankCards.size() == 5
                      && frontCard.value(QStringLiteral("kind")).toString()
                             == QStringLiteral("controls")
                      && frontCard.value(QStringLiteral("title")).toString()
@@ -427,12 +427,13 @@ bool verifyV3BuilderAndClone()
                      && backCard.value(QStringLiteral("elements")).toArray().isEmpty(),
                  QStringLiteral(
                      "blank V3 products must not place or bind visual components by default"));
-    ok &= expect(countObjects(blankCards,
-                              QStringLiteral("kind"),
-                              QStringLiteral("leftRegion"))
-                     == 0,
+    const QJsonObject basicLeftRegion =
+        findObject(blankCards, QStringLiteral("kind"), QStringLiteral("leftRegion"));
+    ok &= expect(blankCards.size() == 5
+                     && basicLeftRegion.value(QStringLiteral("controlId")).toString()
+                            == QStringLiteral("joystickXY"),
                  QStringLiteral(
-                     "blank V3 products must not create an implicit bound left-region component"));
+                     "a new V3 product must persist its selected primary joystick in the left region"));
     const QJsonObject basicJoystick =
         findObject(basic.value(QStringLiteral("controls")).toArray(),
                    QStringLiteral("id"),
@@ -577,6 +578,14 @@ bool verifyV3BuilderAndClone()
                             .value(QStringLiteral("signalId")).toString()
                             == QStringLiteral("axisX"),
                  QStringLiteral("single-axis X config must bind one joystick axis control"));
+    const QJsonObject singleXLeftRegion =
+        findObject(singleX.value(QStringLiteral("layout")).toObject()
+                       .value(QStringLiteral("cards")).toArray(),
+                   QStringLiteral("kind"),
+                   QStringLiteral("leftRegion"));
+    ok &= expect(singleXLeftRegion.value(QStringLiteral("controlId")).toString()
+                         == QStringLiteral("joystickX"),
+                 QStringLiteral("single-axis X config must reference joystickX in layout"));
     ok &= expect(manager.validateProductConfig(singleX).value(QStringLiteral("ok")).toBool(),
                  QStringLiteral("single-axis X V3 output failed validation"));
 
@@ -599,6 +608,14 @@ bool verifyV3BuilderAndClone()
                             .value(QStringLiteral("orientation")).toString()
                             == QStringLiteral("vertical"),
                  QStringLiteral("single-axis Y config must use a vertical single-axis topology"));
+    const QJsonObject singleYLeftRegion =
+        findObject(singleY.value(QStringLiteral("layout")).toObject()
+                       .value(QStringLiteral("cards")).toArray(),
+                   QStringLiteral("kind"),
+                   QStringLiteral("leftRegion"));
+    ok &= expect(singleYLeftRegion.value(QStringLiteral("controlId")).toString()
+                         == QStringLiteral("joystickY"),
+                 QStringLiteral("single-axis Y config must reference joystickY in layout"));
     ok &= expect(manager.validateProductConfig(singleY).value(QStringLiteral("ok")).toBool(),
                   QStringLiteral("single-axis Y V3 output failed validation"));
 
@@ -618,6 +635,14 @@ bool verifyV3BuilderAndClone()
                                 {QStringLiteral("gate"), QStringLiteral("cross")}
                             },
                  QStringLiteral("explicit cross-XY config must retain cross2D topology"));
+    const QJsonObject crossLeftRegion =
+        findObject(crossXY.value(QStringLiteral("layout")).toObject()
+                       .value(QStringLiteral("cards")).toArray(),
+                   QStringLiteral("kind"),
+                   QStringLiteral("leftRegion"));
+    ok &= expect(crossLeftRegion.value(QStringLiteral("controlId")).toString()
+                         == QStringLiteral("joystickXY"),
+                 QStringLiteral("cross-XY config must reference joystickXY in layout"));
     ok &= expect(manager.validateProductConfig(crossXY).value(QStringLiteral("ok")).toBool(),
                  QStringLiteral("cross-XY V3 output failed validation"));
 
