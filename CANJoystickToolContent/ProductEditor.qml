@@ -1263,7 +1263,7 @@ Item {
             pendingCloneProductCustomer = currentCloneCustomerName()
             pendingCloneProductDescription = description
             pendingCloneUsesSourceConfig = !cloneProductUsesBlankTemplate
-                    && layoutManager.cloneProductConfigVersionWithCustomerAs
+                    && typeof layoutManager.cloneProductConfigVersionWithCustomerAs === "function"
             pendingCloneSourceConfig = pendingCloneUsesSourceConfig
                     ? deepCopyConfig(productTemplateConfig()) : ({})
             createProductConfirmationError = ""

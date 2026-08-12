@@ -72,6 +72,9 @@ int main(int argc, char *argv[])
     ok &= expect(editor.contains(QStringLiteral("saveProductMessage = \"已创建：\"")),
                  "successful creation must provide visible completion feedback");
     ok &= expect(editor.contains(QStringLiteral(
+                     "typeof layoutManager.cloneProductConfigVersionWithCustomerAs === \"function\"")),
+                 "source-config cloning capability must be converted to a boolean before assignment");
+    ok &= expect(editor.contains(QStringLiteral(
                      "text: \"共 \" + cloneCustomerModel.count + \" 个客户"))
                      && editor.contains(QStringLiteral(
                          "policy: ScrollBar.AlwaysOn")),
