@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 
-project(CANJoystickTool VERSION 0.4.2 LANGUAGES CXX)
+project(CANJoystickTool VERSION 0.4.3 LANGUAGES CXX)
 
 include(CTest)
 
